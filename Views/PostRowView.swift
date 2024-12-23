@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct PostRowView: View {
-    let post: Post // Changed from @ObservedObject to a simple let property
+    let post: Post
     @EnvironmentObject var viewModel: TimelineViewModel
 
     @State private var showingCommentSheet = false
@@ -86,7 +86,11 @@ struct PostRowView: View {
 
             // Action Buttons
             HStack(spacing: 16) {
-                Button(action: { toggleLike() }) {
+                Button(action: {
+                    Task {
+                        await viewModel.toggleLike(post: post)
+                    }
+                }) {
                     Image(systemName: post.isFavourited ? "heart.fill" : "heart")
                         .foregroundColor(post.isFavourited ? .red : .gray)
                 }
@@ -94,7 +98,11 @@ struct PostRowView: View {
                     .font(.caption)
                     .foregroundColor(.gray)
 
-                Button(action: { toggleRepost() }) {
+                Button(action: {
+                    Task {
+                        await viewModel.toggleRepost(post: post)
+                    }
+                }) {
                     Image(systemName: post.isReblogged ? "arrow.2.squarepath" : "arrow.2.squarepath")
                         .foregroundColor(post.isReblogged ? .green : .gray)
                 }
@@ -115,56 +123,6 @@ struct PostRowView: View {
         .padding()
         .sheet(isPresented: $showingCommentSheet) {
             commentSheetView
-        }
-    }
-
-    // MARK: - Actions
-
-    private func toggleLike() {
-        Task {
-            do {
-                if post.isFavourited {
-                    let updatedPost = try await MastodonService.shared.unlikePost(postID: post.id)
-                    handleActionResult(.success(updatedPost))
-                } else {
-                    let updatedPost = try await MastodonService.shared.likePost(postID: post.id)
-                    handleActionResult(.success(updatedPost))
-                }
-            } catch {
-                handleActionResult(.failure(error))
-            }
-        }
-    }
-
-    private func toggleRepost() {
-        Task {
-            do {
-                if post.isReblogged {
-                    let updatedPost = try await MastodonService.shared.undoRepost(postID: post.id)
-                    handleActionResult(.success(updatedPost))
-                } else {
-                    let updatedPost = try await MastodonService.shared.repost(postID: post.id)
-                    handleActionResult(.success(updatedPost))
-                }
-            } catch {
-                handleActionResult(.failure(error))
-            }
-        }
-    }
-
-    private func handleActionResult(_ result: Result<Post, Error>) {
-        switch result {
-        case .success(let updatedPost):
-            Task { @MainActor in
-                // Update the viewModel's posts array
-                viewModel.updatePost(updatedPost)
-            }
-        case .failure(let error):
-            Task { @MainActor in
-                print("Action failed: \(error.localizedDescription)")
-                // Update an alert in the viewModel to display the error to the user
-                viewModel.alertError = MustardAppError(message: error.localizedDescription)
-            }
         }
     }
 
@@ -196,15 +154,9 @@ struct PostRowView: View {
                     Spacer()
                     Button("Post") {
                         Task {
-                            do {
-                                let _ = try await MastodonService.shared.comment(postID: post.id, content: commentText)
-                                showingCommentSheet = false
-                                commentText = ""
-                            } catch {
-                                print("Comment failed: \(error.localizedDescription)")
-                                // Update an alert in the viewModel to display the error to the user
-                                viewModel.alertError = MustardAppError(message: error.localizedDescription)
-                            }
+                            await viewModel.comment(post: post, content: commentText)
+                            showingCommentSheet = false
+                            commentText = ""
                         }
                     }
                 }
@@ -234,29 +186,3 @@ struct PostRowView: View {
     }
 }
 
-struct PostRowView_Previews: PreviewProvider {
-    static var previews: some View {
-        // Create a sample post for preview
-        let sampleAccount = Account(
-            id: "a1",
-            username: "user1",
-            displayName: "User One",
-            avatar: URL(string: "https://example.com/avatar1.png")!,
-            acct: "user1"
-        )
-        let samplePost = Post(
-            id: "1",
-            content: "<p>Hello, world!</p>",
-            createdAt: Date(),
-            account: sampleAccount,
-            mediaAttachments: [],
-            isFavourited: false,
-            isReblogged: false,
-            reblogsCount: 0,
-            favouritesCount: 0,
-            repliesCount: 0
-        )
-        PostRowView(post: samplePost)
-            .environmentObject(TimelineViewModel(mastodonService: MastodonService.shared))
-    }
-}

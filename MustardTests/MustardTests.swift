@@ -10,14 +10,11 @@ import XCTest
 
 @MainActor
 class MustardTests: XCTestCase {
-    
-    override func setUp() async throws {
-        // Reset MastodonService.shared to default before each test
-        MastodonService.shared = MastodonService()
-    }
-    
+
     func testPostRowViewHandlesErrors() async throws {
-        let viewModel = TimelineViewModel()
+        let mockService = MockMastodonService(shouldSucceed: false)
+        let viewModel = TimelineViewModel(mastodonService: mockService)
+        
         let sampleAccount = Account(
             id: "a1",
             username: "user1",
@@ -39,39 +36,35 @@ class MustardTests: XCTestCase {
         )
         viewModel.posts.append(samplePost)
 
-        // Simulate a failure in handling action
+        // Simulate an error
         viewModel.alertError = MustardAppError(message: "Failed to handle action.")
 
         XCTAssertNotNil(viewModel.alertError)
         XCTAssertEqual(viewModel.alertError?.message, "Failed to handle action.")
     }
-    
+
     func testTimelineViewModelLoadTimelineSuccess() async throws {
         let mockService = MockMastodonService(shouldSucceed: true)
-        MastodonService.shared = mockService
+        let viewModel = TimelineViewModel(mastodonService: mockService)
+        viewModel.instanceURL = URL(string: "https://mastodon.social")
 
-        let viewModel = TimelineViewModel()
-        viewModel.instanceURL = URL(string: "https://mastodon.social") // Set instanceURL for testing
-
-        try await viewModel.authenticate() // Ensure authenticate sets isAuthenticated
-
+        await viewModel.loadTimeline()
+        
         XCTAssertFalse(viewModel.isLoading)
-        XCTAssertEqual(viewModel.posts.count, 1) // Assuming MockMastodonService returns one post
-        XCTAssertTrue(viewModel.isAuthenticated)
+        XCTAssertEqual(viewModel.posts.count, 1)
     }
-    
+
     func testTimelineViewModelLoadTimelineFailure() async throws {
         let mockService = MockMastodonService(shouldSucceed: false)
-        MastodonService.shared = mockService
+        let viewModel = TimelineViewModel(mastodonService: mockService)
+        viewModel.instanceURL = URL(string: "https://mastodon.social")
 
-        let viewModel = TimelineViewModel()
-        viewModel.instanceURL = URL(string: "https://mastodon.social") // Set instanceURL for testing
-
-        try await viewModel.authenticate()
+        await viewModel.loadTimeline()
 
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertNotNil(viewModel.alertError)
-        XCTAssertEqual(viewModel.alertError?.message, "Mock fetch failed.")
-        XCTAssertFalse(viewModel.isAuthenticated)
+        XCTAssertEqual(viewModel.alertError?.message, "Mock service error.")
+        XCTAssertTrue(viewModel.posts.isEmpty)
     }
 }
+

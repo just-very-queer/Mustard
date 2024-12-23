@@ -1,71 +1,100 @@
-// ContentView.swift
-// Mustard
 //
-// Created by VAIBHAV SRIVASTAVA on 14/09/24.
+//  ContentView.swift
+//  Mustard
+//
+//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
 //
 
 import SwiftUI
 
 struct ContentView: View {
+    // Use the shared environment objects from MustardApp
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
+    
     @State private var showingServerList = false
 
     var body: some View {
         NavigationView {
             if authViewModel.isAuthenticated {
+                // Already authenticated, show timeline
                 TimelineView()
-                    .environmentObject(timelineViewModel)
                     .navigationTitle("Home")
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button("Logout") {
                                 authViewModel.logout()
+                                // Clear timeline, etc., if desired
+                                timelineViewModel.posts.removeAll()
                             }
                         }
                     }
+                    .onAppear {
+                        // Make sure TimelineViewModel has the same instanceURL
+                        timelineViewModel.instanceURL = authViewModel.instanceURL
+                        
+                        Task {
+                            await timelineViewModel.loadTimeline()
+                        }
+                    }
             } else {
-                VStack {
+                // Not authenticated, show "Welcome" screen
+                VStack(spacing: 20) {
                     Text("Welcome to Mustard")
                         .font(.largeTitle)
                         .padding()
 
-                    Button("Select Server") {
+                    Button(action: {
                         showingServerList = true
+                    }) {
+                        Text("Select Server")
+                            .font(.headline)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
                     }
-                    .padding()
                 }
                 .sheet(isPresented: $showingServerList) {
-                    ServerListView(servers: sampleServers) { selectedServer in
-                        authViewModel.instanceURL = selectedServer.url
-                        Task {
-                            await authViewModel.authenticate()
+                    ServerListView(
+                        servers: SampleServers.servers,
+                        onSelect: { selectedServer in
+                            // IMPORTANT: set instanceURL for auth (and maybe timeline)
+                            authViewModel.instanceURL = selectedServer.url
+                            timelineViewModel.instanceURL = selectedServer.url
+                            
+                            Task {
+                                await authViewModel.authenticate()
+                            }
+                            showingServerList = false
+                        },
+                        onCancel: {
+                            showingServerList = false
                         }
-                        showingServerList = false
-                    }
+                    )
                 }
                 .alert(item: $authViewModel.alertError) { error in
-                    Alert(title: Text("Error"), message: Text(error.message), dismissButton: .default(Text("OK")))
+                    Alert(
+                        title: Text("Error"),
+                        message: Text(error.message),
+                        dismissButton: .default(Text("OK"))
+                    )
                 }
             }
         }
-    }
-
-    // Sample servers for demonstration
-    private var sampleServers: [Server] {
-        [
-            Server(name: "Mastodon Social", url: URL(string: "https://mastodon.social")!, description: "Official Mastodon instance."),
-            Server(name: "Mastodon Cloud", url: URL(string: "https://mastodon.cloud")!, description: "Cloud-hosted Mastodon instance."),
-            // Add more servers as needed
-        ]
     }
 }
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView()
-            .environmentObject(AuthenticationViewModel(mastodonService: MastodonService()))
-            .environmentObject(TimelineViewModel(mastodonService: MastodonService()))
+        // For preview, we can set up mock view models
+        let mockService = MastodonService()
+        let authVM = AuthenticationViewModel(mastodonService: mockService)
+        let timelineVM = TimelineViewModel(mastodonService: mockService)
+        
+        return ContentView()
+            .environmentObject(authVM)
+            .environmentObject(timelineVM)
     }
 }
 

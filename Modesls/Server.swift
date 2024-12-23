@@ -13,3 +13,4 @@ struct Server: Identifiable {
     let url: URL
     let description: String
 }
+

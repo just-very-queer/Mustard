@@ -53,13 +53,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		6680387E2D085DA300DC7BB9 /* Exceptions for "MustardTests" folder in "Mustard" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				MockMastodonService.swift,
-			);
-			target = 6687C34C2C95AE87000ECC5D /* Mustard */;
-		};
 		6680387F2D085DA300DC7BB9 /* Exceptions for "MustardTests" folder in "MustardUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -91,6 +84,7 @@
 				AppError.swift,
 				AuthenticationViewModel.swift,
 				KeychainHelper.swift,
+				TimelineView.swift,
 				TimelineViewModel.swift,
 			);
 			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
@@ -101,6 +95,7 @@
 				AppError.swift,
 				AuthenticationViewModel.swift,
 				KeychainHelper.swift,
+				TimelineView.swift,
 				TimelineViewModel.swift,
 			);
 			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
@@ -126,6 +121,13 @@
 			);
 			target = 6687C34C2C95AE87000ECC5D /* Mustard */;
 		};
+		66EFFE402D194EB8008E373D /* Exceptions for "MustardTests" folder in "Mustard" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				MockMastodonService.swift,
+			);
+			target = 6687C34C2C95AE87000ECC5D /* Mustard */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -140,7 +142,7 @@
 		6687C3632C95AE8A000ECC5D /* MustardTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				6680387E2D085DA300DC7BB9 /* Exceptions for "MustardTests" folder in "Mustard" target */,
+				66EFFE402D194EB8008E373D /* Exceptions for "MustardTests" folder in "Mustard" target */,
 				6680387F2D085DA300DC7BB9 /* Exceptions for "MustardTests" folder in "MustardUITests" target */,
 			);
 			path = MustardTests;

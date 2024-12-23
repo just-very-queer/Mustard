@@ -12,3 +12,4 @@ struct MustardAppError: Identifiable, Error {
     var id = UUID()
     let message: String
 }
+

@@ -22,7 +22,7 @@ class KeychainHelper {
                 kSecValueData: data
             ] as CFDictionary
 
-            SecItemDelete(query)
+            SecItemDelete(query) // Delete old item if exists
             let status = SecItemAdd(query, nil)
             if status != errSecSuccess {
                 print("Error saving to Keychain: \(status)")
@@ -45,7 +45,6 @@ class KeychainHelper {
         if status == errSecSuccess, let data = dataTypeRef as? Data {
             return String(data: data, encoding: .utf8)
         }
-
         return nil
     }
 
@@ -59,3 +58,4 @@ class KeychainHelper {
         SecItemDelete(query)
     }
 }
+

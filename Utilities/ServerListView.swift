@@ -10,6 +10,7 @@ import SwiftUI
 struct ServerListView: View {
     let servers: [Server]
     let onSelect: (Server) -> Void
+    let onCancel: () -> Void  // Added onCancel closure
 
     var body: some View {
         NavigationView {
@@ -29,11 +30,35 @@ struct ServerListView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        // Dismiss the sheet if needed
-                        // Typically handled automatically, but can add custom behavior here
+                        onCancel()  // Invoke the onCancel closure
                     }
                 }
             }
         }
     }
 }
+
+struct SampleServers {
+    static let servers: [Server] = [
+        Server(name: "Mastodon Social",
+               url: URL(string: "https://mastodon.social")!,
+               description: "Official Mastodon instance."),
+        Server(name: "Mastodon Cloud",
+               url: URL(string: "https://mastodon.cloud")!,
+               description: "Cloud-hosted Mastodon instance."),
+        Server(name: "Mstdn Social",
+               url: URL(string: "https://mstdn.social")!,
+               description: "Another Mastodon instance.")
+    ]
+}
+
+struct ServerListView_Previews: PreviewProvider {
+    static var previews: some View {
+        ServerListView(
+            servers: SampleServers.servers,
+            onSelect: { _ in },
+            onCancel: { }
+        )
+    }
+}
+
