@@ -17,12 +17,16 @@ struct TimelineView: View {
                     .padding()
             } else {
                 List(viewModel.posts) { post in
-                    PostRowView(post: post)
-                        .environmentObject(viewModel)
+                    // Navigate to PostDetailView on tap
+                    NavigationLink(destination: PostDetailView(post: post)) {
+                        PostRowView(post: post)
+                            .environmentObject(viewModel)
+                    }
                 }
                 .listStyle(PlainListStyle())
             }
         }
+        .navigationTitle("Home")
         .alert(item: $viewModel.alertError) { error in
             Alert(
                 title: Text("Error"),
@@ -61,9 +65,7 @@ struct TimelineView_Previews: PreviewProvider {
         class PreviewService: MastodonServiceProtocol {
             var baseURL: URL?
             
-            // Store a reference to our sample post
             private let previewPost: Post
-            
             init(samplePost: Post) {
                 self.previewPost = samplePost
             }
@@ -91,15 +93,14 @@ struct TimelineView_Previews: PreviewProvider {
             }
         }
         
-        // Instantiate the preview service, passing in the sample post
         let service = PreviewService(samplePost: samplePost)
         let viewModel = TimelineViewModel(mastodonService: service)
-        
-        // Give the view model the sample post
         viewModel.posts = [samplePost]
 
-        return TimelineView()
-            .environmentObject(viewModel)
+        return NavigationStack {
+            TimelineView()
+                .environmentObject(viewModel)
+        }
     }
 }
 
