@@ -44,33 +44,62 @@ struct MustardApp: App {
 
     var body: some Scene {
         WindowGroup {
-            // Prepare for a TabView with multiple tabs
-            TabView {
-                // Home Tab
-                NavigationStack {
-                    ContentView()
-                        .environmentObject(authViewModel)
-                        .environmentObject(timelineViewModel)
-                        .modelContainer(container)
-                }
-                .tabItem {
-                    Label("Home", systemImage: "house")
-                }
+            if authViewModel.isAuthenticated {
+                TabView {
+                    // Home Tab
+                    NavigationStack {
+                        TimelineView()
+                            .environmentObject(authViewModel)
+                            .environmentObject(timelineViewModel)
+                            .modelContainer(container)
+                    }
+                    .tabItem {
+                        Label("Home", systemImage: "house")
+                    }
 
-                // Accounts Management Tab
+                    // Accounts Management Tab
+                    NavigationStack {
+                        AccountsView()
+                            .environmentObject(accountsViewModel)
+                            .environmentObject(authViewModel)
+                            .environmentObject(timelineViewModel)
+                    }
+                    .tabItem {
+                        Label("Accounts", systemImage: "person.2")
+                    }
+                }
+                .onOpenURL { url in
+                    // Post a notification to handle the OAuth callback
+                    NotificationCenter.default.post(name: .didReceiveOAuthCallback, object: nil, userInfo: ["url": url])
+                }
+                .alert(item: $timelineViewModel.alertError) { error in
+                    Alert(
+                        title: Text("Error"),
+                        message: Text(error.message),
+                        dismissButton: .default(Text("OK"))
+                    )
+                }
+            } else {
+                // Show Authentication View if not authenticated
                 NavigationStack {
-                    AccountsView()
-                        .environmentObject(accountsViewModel)
+                    AuthenticationView()
                         .environmentObject(authViewModel)
                         .environmentObject(timelineViewModel)
+                        .environmentObject(accountsViewModel)
+                        .modelContainer(container)
+                        .navigationTitle("Sign In")
                 }
-                .tabItem {
-                    Label("Accounts", systemImage: "person.2")
+                .onOpenURL { url in
+                    // Post a notification to handle the OAuth callback
+                    NotificationCenter.default.post(name: .didReceiveOAuthCallback, object: nil, userInfo: ["url": url])
                 }
-            }
-            .onOpenURL { url in
-                // Post a notification to handle the OAuth callback
-                NotificationCenter.default.post(name: .didReceiveOAuthCallback, object: nil, userInfo: ["url": url])
+                .alert(item: $authViewModel.alertError) { (error: AppError) in
+                    Alert(
+                        title: Text("Error"),
+                        message: Text(error.message),
+                        dismissButton: .default(Text("OK"))
+                    )
+                }
             }
         }
     }

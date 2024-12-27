@@ -18,14 +18,13 @@ struct AccountsView: View {
         NavigationStack {
             List {
                 ForEach(viewModel.accounts) { account in
-                    AccountRowView(account: account, isSelected: viewModel.selectedAccount?.id == account.id)
+                    // Determine if the current account is selected
+                    let isSelected = isAccountSelected(account)
+                    
+                    // Render the AccountRowView with the determined selection state
+                    AccountRowView(account: account, isSelected: isSelected)
                         .onTapGesture {
-                            viewModel.selectAccount(account)
-                            authViewModel.instanceURL = account.instanceURL
-                            timelineViewModel.posts = []
-                            Task {
-                                await timelineViewModel.fetchTimeline()
-                            }
+                            handleAccountSelection(account)
                         }
                 }
                 .onDelete(perform: viewModel.deleteAccounts)
@@ -57,6 +56,29 @@ struct AccountsView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
+        }
+    }
+
+    // MARK: - Helper Methods
+
+    /// Determines if the given account is the currently selected account.
+    /// - Parameter account: The account to check.
+    /// - Returns: A Boolean indicating whether the account is selected.
+    private func isAccountSelected(_ account: Account) -> Bool {
+        guard let selectedAccount = viewModel.selectedAccount else {
+            return false
+        }
+        return selectedAccount.id == account.id
+    }
+
+    /// Handles the selection of an account.
+    /// - Parameter account: The account that was selected.
+    private func handleAccountSelection(_ account: Account) {
+        viewModel.selectAccount(account)
+        authViewModel.instanceURL = account.instanceURL
+        timelineViewModel.posts = []
+        Task {
+            await timelineViewModel.fetchTimeline()
         }
     }
 }
@@ -111,7 +133,7 @@ struct AccountsView_Previews: PreviewProvider {
     static var previews: some View {
         // Initialize MockMastodonService
         let mockService = MockMastodonService()
-        
+
         // Initialize ViewModels with the mock service
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
         let timelineViewModel = TimelineViewModel(mastodonService: mockService)

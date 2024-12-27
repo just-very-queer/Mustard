@@ -93,10 +93,25 @@ class KeychainHelper {
     }
 
     /// Represents possible Keychain errors.
-    enum KeychainError: Error {
+    enum KeychainError: Error, LocalizedError {
         case encodingError
         case dataConversionError
         case unhandledError(status: OSStatus)
+
+        var errorDescription: String? {
+            switch self {
+            case .encodingError:
+                return "Failed to encode data."
+            case .dataConversionError:
+                return "Failed to convert data."
+            case .unhandledError(let status):
+                if let message = SecCopyErrorMessageString(status, nil) as String? {
+                    return message
+                } else {
+                    return "Unhandled Keychain error with status: \(status)."
+                }
+            }
+        }
     }
 }
 

@@ -1,5 +1,9 @@
-// TimelineViewModel.swift
-// Mustard
+//
+//  TimelineViewModel.swift
+//  Mustard
+//
+//  Created by VAIBHAV SRIVASTAVA on [Date].
+//
 
 import Foundation
 import SwiftUI
@@ -12,7 +16,7 @@ class TimelineViewModel: ObservableObject {
     @Published var posts: [Post] = []
     @Published var isLoading: Bool = false
     @Published var alertError: AppError?
-    @Published var selectedFilter: TimeFilter = .day // Default filter
+    @Published var selectedFilter: TimeFilter = TimeFilter.allCases.first ?? .day
     
     // MARK: - Enums
     
@@ -20,6 +24,7 @@ class TimelineViewModel: ObservableObject {
         case hour = "Hour"
         case day = "Day"
         case week = "Week"
+        case all = "All"
         
         var id: String { self.rawValue }
     }
@@ -43,14 +48,21 @@ class TimelineViewModel: ObservableObject {
             }
             .store(in: &cancellables)
         
-        // Observe filter changes
+        // Observe filter changes and persist them
         $selectedFilter
-            .sink { [weak self] _ in
+            .sink { newFilter in
+                UserDefaults.standard.set(newFilter.rawValue, forKey: "SelectedFilter")
                 Task {
-                    await self?.fetchTimeline()
+                    await self.fetchTimeline()
                 }
             }
             .store(in: &cancellables)
+        
+        // Load persisted filter
+        if let savedFilter = UserDefaults.standard.string(forKey: "SelectedFilter"),
+           let filter = TimeFilter(rawValue: savedFilter) {
+            self.selectedFilter = filter
+        }
         
         // If already authenticated, fetch timeline
         if mastodonService.accessToken != nil {
@@ -64,8 +76,8 @@ class TimelineViewModel: ObservableObject {
     
     /// Fetches the user's timeline from Mastodon based on the selected filter.
     func fetchTimeline() async {
-        guard let baseURL = mastodonService.baseURL else {
-            self.alertError = AppError(message: "Base URL not set.")
+        guard let _ = mastodonService.baseURL else {
+            self.alertError = AppError(message: "Instance URL not set.")
             return
         }
         
@@ -143,6 +155,8 @@ class TimelineViewModel: ObservableObject {
             filteredDate = calendar.date(byAdding: .day, value: -1, to: now) ?? now
         case .week:
             filteredDate = calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now
+        case .all:
+            return posts
         }
         
         return posts.filter { $0.createdAt >= filteredDate }

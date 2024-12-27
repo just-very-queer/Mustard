@@ -38,7 +38,11 @@ class AccountsViewModel: ObservableObject {
     /// - Parameter account: The account to select.
     func selectAccount(_ account: Account) {
         selectedAccount = account
-        // Optionally, persist the selected account if needed
+        // Update the mastodonService's baseURL and accessToken
+        mastodonService.baseURL = account.instanceURL
+        mastodonService.accessToken = account.accessToken
+        // Post a notification if needed
+        NotificationCenter.default.post(name: .didAuthenticate, object: nil)
     }
     
     /// Deletes accounts at the specified offsets.

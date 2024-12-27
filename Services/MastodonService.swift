@@ -179,7 +179,6 @@ class MastodonService: MastodonServiceProtocol {
         let tokenURL = instanceURL.appendingPathComponent("/oauth/token")
         var request = URLRequest(url: tokenURL)
         request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let body: [String: Any] = [
             "grant_type": "password",
@@ -191,6 +190,8 @@ class MastodonService: MastodonServiceProtocol {
         ]
         
         request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateResponse(response)
@@ -207,7 +208,7 @@ class MastodonService: MastodonServiceProtocol {
     func retrieveInstanceURL() throws -> URL? {
         return baseURL
     }
-    
+
     // MARK: - Supporting Structures
     
     struct TokenResponse: Decodable {
