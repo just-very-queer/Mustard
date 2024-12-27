@@ -20,6 +20,7 @@ class Account: Identifiable, Codable {
     var accessToken: String?
     
     // MARK: - Coding Keys
+    
     enum CodingKeys: String, CodingKey {
         case id
         case username
@@ -32,7 +33,7 @@ class Account: Identifiable, Codable {
     
     // MARK: - Initializers
     
-    /// Initializes an Account from decoded data.
+    /// Decoding initializer (for when reading from JSON).
     required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decode(String.self, forKey: .id)
@@ -44,7 +45,7 @@ class Account: Identifiable, Codable {
         self.accessToken = try container.decodeIfPresent(String.self, forKey: .accessToken)
     }
     
-    /// Encodes the Account to the given encoder.
+    /// Encoding method (for when writing to JSON).
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -56,8 +57,14 @@ class Account: Identifiable, Codable {
         try container.encode(accessToken, forKey: .accessToken)
     }
     
-    /// Initializes a new Account with all properties.
-    init(id: String, username: String, displayName: String, avatar: URL, acct: String, instanceURL: URL?, accessToken: String?) {
+    /// Normal initializer (for constructing in code).
+    init(id: String,
+         username: String,
+         displayName: String,
+         avatar: URL,
+         acct: String,
+         instanceURL: URL?,
+         accessToken: String?) {
         self.id = id
         self.username = username
         self.displayName = displayName
@@ -67,4 +74,3 @@ class Account: Identifiable, Codable {
         self.accessToken = accessToken
     }
 }
-

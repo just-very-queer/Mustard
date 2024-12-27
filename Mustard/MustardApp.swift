@@ -12,31 +12,35 @@ import SwiftData
 struct MustardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-    /// ViewModels for authentication, timeline, and accounts.
+    // MARK: - ViewModels
     @StateObject private var authViewModel: AuthenticationViewModel
     @StateObject private var timelineViewModel: TimelineViewModel
     @StateObject private var accountsViewModel: AccountsViewModel
 
-    /// The data model container.
+    // MARK: - SwiftData container
     let container: ModelContainer
 
     init() {
-        // Initialize the ModelContainer
+        // 1) Initialize the ModelContainer with your @Model types
         do {
             container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // Initialize the MastodonService
+        // 2) Initialize the MastodonService (or real service)
         let mastodonService = MastodonService()
 
-        // Initialize the ViewModels with dependency injection
+        // 3) Create local instances of the view models
         let localAuthVM = AuthenticationViewModel(mastodonService: mastodonService)
         let localTimelineVM = TimelineViewModel(mastodonService: mastodonService)
-        let localAccountsVM = AccountsViewModel(mastodonService: mastodonService)
+        // -- Provide the container's mainContext to AccountsViewModel
+        let localAccountsVM = AccountsViewModel(
+            mastodonService: mastodonService,
+            modelContext: container.mainContext
+        )
 
-        // Assign to StateObject wrappers
+        // 4) Wrap them in StateObjects
         _authViewModel = StateObject(wrappedValue: localAuthVM)
         _timelineViewModel = StateObject(wrappedValue: localTimelineVM)
         _accountsViewModel = StateObject(wrappedValue: localAccountsVM)
@@ -45,12 +49,14 @@ struct MustardApp: App {
     var body: some Scene {
         WindowGroup {
             if authViewModel.isAuthenticated {
+                // Show the main app (Tabs)
                 TabView {
                     // Home Tab
                     NavigationStack {
                         TimelineView()
                             .environmentObject(authViewModel)
                             .environmentObject(timelineViewModel)
+                            // Attach model container for SwiftData usage
                             .modelContainer(container)
                     }
                     .tabItem {
@@ -69,9 +75,14 @@ struct MustardApp: App {
                     }
                 }
                 .onOpenURL { url in
-                    // Post a notification to handle the OAuth callback
-                    NotificationCenter.default.post(name: .didReceiveOAuthCallback, object: nil, userInfo: ["url": url])
+                    // Post a notification to handle OAuth callback
+                    NotificationCenter.default.post(
+                        name: .didReceiveOAuthCallback,
+                        object: nil,
+                        userInfo: ["url": url]
+                    )
                 }
+                // Show timeline errors in an alert
                 .alert(item: $timelineViewModel.alertError) { error in
                     Alert(
                         title: Text("Error"),
@@ -80,20 +91,24 @@ struct MustardApp: App {
                     )
                 }
             } else {
-                // Show Authentication View if not authenticated
+                // Show the Authentication flow if not authenticated
                 NavigationStack {
                     AuthenticationView()
                         .environmentObject(authViewModel)
                         .environmentObject(timelineViewModel)
                         .environmentObject(accountsViewModel)
+                        // SwiftData container for SwiftData usage
                         .modelContainer(container)
                         .navigationTitle("Sign In")
                 }
                 .onOpenURL { url in
-                    // Post a notification to handle the OAuth callback
-                    NotificationCenter.default.post(name: .didReceiveOAuthCallback, object: nil, userInfo: ["url": url])
+                    NotificationCenter.default.post(
+                        name: .didReceiveOAuthCallback,
+                        object: nil,
+                        userInfo: ["url": url]
+                    )
                 }
-                .alert(item: $authViewModel.alertError) { (error: AppError) in
+                .alert(item: $authViewModel.alertError) { error in
                     Alert(
                         title: Text("Error"),
                         message: Text(error.message),
@@ -112,9 +127,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey : Any] = [:]
     ) -> Bool {
-        // Notify the AuthenticationViewModel about the received URL.
-        NotificationCenter.default.post(name: .didReceiveOAuthCallback, object: nil, userInfo: ["url": url])
+        // Notify the AuthenticationViewModel (or other) about the received URL.
+        NotificationCenter.default.post(
+            name: .didReceiveOAuthCallback,
+            object: nil,
+            userInfo: ["url": url]
+        )
         return true
     }
 }
-

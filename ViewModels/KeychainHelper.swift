@@ -2,69 +2,67 @@
 //  KeychainHelper.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
+//  Created by Your Name on [Date].
 //
 
 import Foundation
 import Security
 
-/// Helper class for interacting with the Keychain.
+/// A simple helper class for reading/writing data to the iOS Keychain.
 class KeychainHelper {
     static let shared = KeychainHelper()
-
     private init() {}
-
-    /// Saves data to the Keychain.
+    
+    /// Saves data (String) to the Keychain.
     /// - Parameters:
     ///   - data: The string data to save.
-    ///   - service: The service identifier.
-    ///   - account: The account identifier.
+    ///   - service: A unique service identifier, e.g., "Mustard-mastodon.social"
+    ///   - account: The account identifier, e.g. "accessToken"
     func save(_ data: String, service: String, account: String) throws {
-        guard let data = data.data(using: .utf8) else {
+        guard let valueData = data.data(using: .utf8) else {
             throw KeychainError.encodingError
         }
-
         let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecClass as String            : kSecClassGenericPassword,
+            kSecAttrService as String      : service,
+            kSecAttrAccount as String      : account
         ]
-
+        
         // Delete any existing item
         SecItemDelete(query as CFDictionary)
-
+        
         // Add new item
         var newItem = query
-        newItem[kSecValueData as String] = data
-
+        newItem[kSecValueData as String] = valueData
+        
         let status = SecItemAdd(newItem as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw KeychainError.unhandledError(status: status)
         }
     }
-
-    /// Reads data from the Keychain.
+    
+    /// Reads data (String) from the Keychain.
     /// - Parameters:
     ///   - service: The service identifier.
     ///   - account: The account identifier.
-    /// - Returns: The retrieved string data, if any.
+    /// - Returns: The retrieved string, if available.
     func read(service: String, account: String) throws -> String? {
         let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecClass as String            : kSecClassGenericPassword,
+            kSecAttrService as String      : service,
+            kSecAttrAccount as String      : account,
+            kSecReturnData as String       : true,
+            kSecMatchLimit as String       : kSecMatchLimitOne
         ]
-
-        var dataTypeRef: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
-
+        
+        var dataRef: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &dataRef)
+        
         switch status {
         case errSecSuccess:
-            if let data = dataTypeRef as? Data,
-               let string = String(data: data, encoding: .utf8) {
-                return string
+            if let data = dataRef as? Data,
+               let stringValue = String(data: data, encoding: .utf8) {
+                return stringValue
             } else {
                 throw KeychainError.dataConversionError
             }
@@ -74,42 +72,40 @@ class KeychainHelper {
             throw KeychainError.unhandledError(status: status)
         }
     }
-
+    
     /// Deletes data from the Keychain.
     /// - Parameters:
     ///   - service: The service identifier.
     ///   - account: The account identifier.
     func delete(service: String, account: String) throws {
         let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecClass as String            : kSecClassGenericPassword,
+            kSecAttrService as String      : service,
+            kSecAttrAccount as String      : account
         ]
-
+        
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.unhandledError(status: status)
         }
     }
-
-    /// Represents possible Keychain errors.
+    
+    // MARK: - Keychain Errors
+    
     enum KeychainError: Error, LocalizedError {
         case encodingError
         case dataConversionError
         case unhandledError(status: OSStatus)
-
+        
         var errorDescription: String? {
             switch self {
             case .encodingError:
-                return "Failed to encode data."
+                return "[KeychainHelper] Failed to encode data."
             case .dataConversionError:
-                return "Failed to convert data."
+                return "[KeychainHelper] Failed to decode data."
             case .unhandledError(let status):
-                if let message = SecCopyErrorMessageString(status, nil) as String? {
-                    return message
-                } else {
-                    return "Unhandled Keychain error with status: \(status)."
-                }
+                let message = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown Keychain error."
+                return "[KeychainHelper] \(message) (OSStatus: \(status))"
             }
         }
     }

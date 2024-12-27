@@ -2,13 +2,14 @@
 //  PreviewService.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on [Date].
+//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
 //
 
 import Foundation
 
 /// A mock service conforming to `MastodonServiceProtocol` for SwiftUI previews.
 class PreviewService: MastodonServiceProtocol {
+    
     // MARK: - Properties
     
     var baseURL: URL?
@@ -77,6 +78,8 @@ class PreviewService: MastodonServiceProtocol {
         // Initialize with mock data
         self.baseURL = URL(string: "https://mastodon.social")
         self.accessToken = "mockAccessToken123"
+        
+        // By default, we add sample posts + accounts
         self.mockPosts = [samplePost1, samplePost2]
         self.mockAccounts = [sampleAccount1, sampleAccount2]
     }
@@ -94,10 +97,37 @@ class PreviewService: MastodonServiceProtocol {
     
     // MARK: - MastodonServiceProtocol Methods
     
-    func fetchTimeline() async throws -> [Post] {
+    /// Fetch timeline; `useCache` is ignored in this mock; we always return `mockPosts`.
+    func fetchTimeline(useCache: Bool) async throws -> [Post] {
         return mockPosts
     }
     
+    /// Clears timeline by removing all mock posts.
+    func clearTimelineCache() {
+        mockPosts.removeAll()
+    }
+    
+    /// Saves the access token in the mock. No real Keychain used here.
+    func saveAccessToken(_ token: String) throws {
+        self.accessToken = token
+    }
+    
+    /// Clears the stored access token in the mock.
+    func clearAccessToken() throws {
+        self.accessToken = nil
+    }
+    
+    /// Retrieves the stored access token (mock).
+    func retrieveAccessToken() throws -> String? {
+        return accessToken
+    }
+    
+    /// Retrieves the stored instance URL (mock).
+    func retrieveInstanceURL() throws -> URL? {
+        return baseURL
+    }
+    
+    /// Toggles like/favourite on a post.
     func toggleLike(postID: String) async throws {
         if let index = mockPosts.firstIndex(where: { $0.id == postID }) {
             mockPosts[index].isFavourited.toggle()
@@ -105,6 +135,7 @@ class PreviewService: MastodonServiceProtocol {
         }
     }
     
+    /// Toggles repost/reblog on a post.
     func toggleRepost(postID: String) async throws {
         if let index = mockPosts.firstIndex(where: { $0.id == postID }) {
             mockPosts[index].isReblogged.toggle()
@@ -112,31 +143,26 @@ class PreviewService: MastodonServiceProtocol {
         }
     }
     
+    /// Increments the replies count to simulate a comment.
     func comment(postID: String, content: String) async throws {
         if let index = mockPosts.firstIndex(where: { $0.id == postID }) {
             mockPosts[index].repliesCount += 1
         }
     }
     
-    func saveAccessToken(_ token: String) throws {
-        self.accessToken = token
-    }
-    
-    func clearAccessToken() throws {
-        self.accessToken = nil
-    }
-    
-    func fetchAccounts() async throws -> [Account] {
-        return mockAccounts
-    }
-    
-    func registerAccount(username: String, password: String, instanceURL: URL) async throws -> Account {
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+    /// Registers a new account (mock).
+    func registerAccount(username: String,
+                         password: String,
+                         instanceURL: URL) async throws -> Account {
+        // Simulate half-second delay
+        try await Task.sleep(nanoseconds: 500_000_000)
         
+        // If username already taken, throw error
         if mockAccounts.contains(where: { $0.username.lowercased() == username.lowercased() }) {
             throw MockError.usernameAlreadyExists
         }
         
+        // Create a new mock account
         let newAccount = Account(
             id: UUID().uuidString,
             username: username,
@@ -148,6 +174,8 @@ class PreviewService: MastodonServiceProtocol {
         )
         
         mockAccounts.append(newAccount)
+        
+        // Add a welcome post for the new user
         mockPosts.append(Post(
             id: UUID().uuidString,
             content: "<p>Welcome, \(username)!</p>",
@@ -164,41 +192,24 @@ class PreviewService: MastodonServiceProtocol {
         return newAccount
     }
     
-    func authenticate(username: String, password: String, instanceURL: URL) async throws -> String {
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        
-        if username.isEmpty || password.isEmpty {
-            throw MockError.invalidCredentials
-        }
-        
-        self.accessToken = "authenticatedMockAccessToken123"
-        self.baseURL = instanceURL
-        
-        return self.accessToken!
-    }
-    
-    func retrieveAccessToken() throws -> String? {
-        return accessToken
-    }
-    
-    func retrieveInstanceURL() throws -> URL? {
-        return baseURL
-    }
-    
     // MARK: - Mock Errors
     
     enum MockError: LocalizedError {
-        case postNotFound
         case usernameAlreadyExists
         case invalidCredentials
         
         var errorDescription: String? {
             switch self {
-            case .postNotFound: return "The specified post was not found."
-            case .usernameAlreadyExists: return "The username is already taken."
-            case .invalidCredentials: return "Invalid username or password."
+            case .usernameAlreadyExists:
+                return "The username is already taken."
+            case .invalidCredentials:
+                return "Invalid username or password."
             }
         }
     }
+    
+    // MARK: - Additional (Optional) Methods
+    
+    /// If you have extra preview logic for accounts, keep them, or remove them if not used.
+    /// For instance, a mock `authenticate(...)`, etc.
 }
-

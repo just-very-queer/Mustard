@@ -2,11 +2,12 @@
 //  AccountsViewModel.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on [Date].
+//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
 //
 
 import Foundation
 import Combine
+import SwiftData
 
 @MainActor
 class AccountsViewModel: ObservableObject {
@@ -19,65 +20,119 @@ class AccountsViewModel: ObservableObject {
     // MARK: - Private Properties
     
     private var mastodonService: MastodonServiceProtocol
+    private var modelContext: ModelContext
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
     
-    init(mastodonService: MastodonServiceProtocol) {
+    init(mastodonService: MastodonServiceProtocol,
+         modelContext: ModelContext) {
         self.mastodonService = mastodonService
+        self.modelContext = modelContext
         
-        // Fetch accounts upon initialization
+        // We call fetchAccounts() (which is synchronous) in a Task if we want concurrency
         Task {
-            await fetchAccounts()
+            fetchAccounts()
         }
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAccountSelection(notification:)),
+            name: .didSelectAccount,
+            object: nil
+        )
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - Public Methods
     
-    /// Selects an account, setting it as the active account.
-    /// - Parameter account: The account to select.
-    func selectAccount(_ account: Account) {
-        selectedAccount = account
-        // Update the mastodonService's baseURL and accessToken
-        mastodonService.baseURL = account.instanceURL
-        mastodonService.accessToken = account.accessToken
-        // Post a notification if needed
-        NotificationCenter.default.post(name: .didAuthenticate, object: nil)
-    }
-    
-    /// Deletes accounts at the specified offsets.
-    /// - Parameter offsets: The index set of accounts to delete.
-    func deleteAccounts(at offsets: IndexSet) {
-        accounts.remove(atOffsets: offsets)
-        // Optionally, handle deletion from persistent storage or remote service
-    }
-    
-    /// Registers a new account.
-    /// - Parameters:
-    ///   - username: The username for the new account.
-    ///   - password: The password for the new account.
-    ///   - instanceURL: The Mastodon instance URL.
-    func registerAccount(username: String, password: String, instanceURL: URL) async {
+    /// Fetches accounts from SwiftData synchronously. No 'await' needed.
+    func fetchAccounts() {
         do {
-            let newAccount = try await mastodonService.registerAccount(username: username, password: password, instanceURL: instanceURL)
-            accounts.append(newAccount)
-            selectAccount(newAccount)
-        } catch {
-            errorMessage = AppError(message: error.localizedDescription)
-        }
-    }
-    
-    /// Fetches the list of user accounts.
-    func fetchAccounts() async {
-        do {
-            let fetchedAccounts = try await mastodonService.fetchAccounts()
+            let fetchRequest = FetchDescriptor<Account>()
+            let fetchedAccounts = try modelContext.fetch(fetchRequest)
             accounts = fetchedAccounts
-            if let firstAccount = fetchedAccounts.first {
+            
+            if let firstAccount = fetchedAccounts.first, selectedAccount == nil {
                 selectAccount(firstAccount)
             }
         } catch {
-            errorMessage = AppError(message: error.localizedDescription)
+            errorMessage = AppError(message: "Failed to fetch accounts: \(error.localizedDescription)")
+            print("[AccountsViewModel] Error: \(error.localizedDescription)")
         }
+    }
+    
+    /// Select an account, updating the Mastodon service with baseURL & token
+    func selectAccount(_ account: Account) {
+        selectedAccount = account
+        mastodonService.baseURL = account.instanceURL
+        mastodonService.accessToken = account.accessToken
+        
+        modelContext.insert(account)
+        do {
+            try modelContext.save()
+            print("[AccountsViewModel] Selected account saved: \(account.id)")
+        } catch {
+            errorMessage = AppError(message: "Failed to persist selected account: \(error.localizedDescription)")
+        }
+        
+        NotificationCenter.default.post(name: .didSelectAccount, object: nil)
+    }
+    
+    /// Deletes accounts from SwiftData and from the local array.
+    func deleteAccounts(at offsets: IndexSet) {
+        let accountsToDelete = offsets.map { accounts[$0] }
+        
+        for account in accountsToDelete {
+            modelContext.delete(account)
+            if let selected = selectedAccount, selected.id == account.id {
+                selectedAccount = nil
+                mastodonService.baseURL = nil
+                mastodonService.accessToken = nil
+            }
+        }
+        
+        accounts.remove(atOffsets: offsets)
+        
+        do {
+            try modelContext.save()
+            print("[AccountsViewModel] Accounts removed & saved.")
+        } catch {
+            errorMessage = AppError(message: "Failed to delete accounts: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Registers a new account by calling an async method in MastodonService.
+    /// We use `try await` to handle concurrency.
+    func registerAccount(username: String,
+                         password: String,
+                         instanceURL: URL) async {
+        do {
+            // Because MastodonService.registerAccount(...) is async throws,
+            // we do 'try await' here.
+            let newAccount = try await mastodonService.registerAccount(
+                username: username,
+                password: password,
+                instanceURL: instanceURL
+            )
+            
+            // Once returned, we add & select it
+            accounts.append(newAccount)
+            selectAccount(newAccount)
+            print("[AccountsViewModel] Registered + selected new account: \(newAccount.id)")
+        } catch {
+            errorMessage = AppError(message: "Failed to register account: \(error.localizedDescription)")
+            print("[AccountsViewModel] Registration error: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Private Methods
+    
+    @objc private func handleAccountSelection(notification: Notification) {
+        // Possibly do more actions upon selection
     }
 }
 

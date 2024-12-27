@@ -6,14 +6,15 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct AccountsView: View {
     @EnvironmentObject var viewModel: AccountsViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
-
+    
     @State private var showingAddAccountSheet = false
-
+    
     var body: some View {
         NavigationStack {
             List {
@@ -58,24 +59,28 @@ struct AccountsView: View {
             }
         }
     }
-
+    
     // MARK: - Helper Methods
-
+    
     /// Determines if the given account is the currently selected account.
-    /// - Parameter account: The account to check.
-    /// - Returns: A Boolean indicating whether the account is selected.
     private func isAccountSelected(_ account: Account) -> Bool {
         guard let selectedAccount = viewModel.selectedAccount else {
             return false
         }
         return selectedAccount.id == account.id
     }
-
+    
     /// Handles the selection of an account.
-    /// - Parameter account: The account that was selected.
     private func handleAccountSelection(_ account: Account) {
         viewModel.selectAccount(account)
-        authViewModel.instanceURL = account.instanceURL
+        if let instanceURL = account.instanceURL {
+            authViewModel.instanceURL = instanceURL // Assign URL directly
+            print("AccountsView: Instance URL set to: \(instanceURL)")
+        } else {
+            authViewModel.alertError = AppError(message: "Selected account has an invalid instance URL.")
+            print("AccountsView: Selected account has an invalid instance URL.")
+            return
+        }
         timelineViewModel.posts = []
         Task {
             await timelineViewModel.fetchTimeline()
@@ -129,17 +134,32 @@ struct AccountRowView: View {
     }
 }
 
+// MARK: - Preview
+
 struct AccountsView_Previews: PreviewProvider {
     static var previews: some View {
-        // Initialize MockMastodonService
+        // 1) Initialize a mock MastodonService
         let mockService = MockMastodonService()
-
-        // Initialize ViewModels with the mock service
+        
+        // 2) Create a SwiftData ModelContainer (or mock context)
+        //    For real usage, add all your @Model types here (e.g., Account, MediaAttachment, Post, etc.)
+        let container: ModelContainer
+        do {
+            container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
+        } catch {
+            fatalError("Failed to create ModelContainer for preview: \(error)")
+        }
+        
+        // 3) Grab the modelContext
+        let modelContext = container.mainContext
+        
+        // 4) Initialize your ViewModels
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
         let timelineViewModel = TimelineViewModel(mastodonService: mockService)
-        let accountsViewModel = AccountsViewModel(mastodonService: mockService)
-
-        // Create sample accounts
+        let accountsViewModel = AccountsViewModel(mastodonService: mockService,
+                                                  modelContext: modelContext)
+        
+        // 5) Create sample accounts
         let sampleAccount1 = Account(
             id: "a1",
             username: "user1",
@@ -149,7 +169,6 @@ struct AccountsView_Previews: PreviewProvider {
             instanceURL: URL(string: "https://mastodon.social")!,
             accessToken: "testToken1"
         )
-        
         let sampleAccount2 = Account(
             id: "a2",
             username: "user2",
@@ -160,20 +179,22 @@ struct AccountsView_Previews: PreviewProvider {
             accessToken: "testToken2"
         )
         
-        // Assign sample accounts to the view model
+        // 6) Populate the AccountsViewModel
         accountsViewModel.accounts = [sampleAccount1, sampleAccount2]
         accountsViewModel.selectedAccount = sampleAccount1
         
-        // Simulate authenticated state
+        // 7) Simulate an authenticated state
         authViewModel.isAuthenticated = true
         authViewModel.instanceURL = mockService.baseURL
         
         return NavigationStack {
             AccountsView()
+                // 8) Provide environment objects
                 .environmentObject(accountsViewModel)
                 .environmentObject(authViewModel)
                 .environmentObject(timelineViewModel)
         }
+        .modelContainer(container) // Attach ModelContainer for SwiftData usage
     }
 }
 

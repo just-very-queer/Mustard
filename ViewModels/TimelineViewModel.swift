@@ -2,7 +2,7 @@
 //  TimelineViewModel.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on [Date].
+//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
 //
 
 import Foundation
@@ -11,6 +11,7 @@ import Combine
 
 @MainActor
 class TimelineViewModel: ObservableObject {
+    
     // MARK: - Published Properties
     
     @Published var posts: [Post] = []
@@ -18,7 +19,7 @@ class TimelineViewModel: ObservableObject {
     @Published var alertError: AppError?
     @Published var selectedFilter: TimeFilter = TimeFilter.allCases.first ?? .day
     
-    // MARK: - Enums
+    // MARK: - Enum: TimeFilter
     
     enum TimeFilter: String, CaseIterable, Identifiable {
         case hour = "Hour"
@@ -31,7 +32,7 @@ class TimelineViewModel: ObservableObject {
     
     // MARK: - Private Properties
     
-    private var mastodonService: MastodonServiceProtocol
+    private let mastodonService: MastodonServiceProtocol
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
@@ -39,7 +40,7 @@ class TimelineViewModel: ObservableObject {
     init(mastodonService: MastodonServiceProtocol) {
         self.mastodonService = mastodonService
         
-        // Observe authentication changes
+        // Observe authentication notifications (optional)
         NotificationCenter.default.publisher(for: .didAuthenticate)
             .sink { [weak self] _ in
                 Task {
@@ -58,13 +59,13 @@ class TimelineViewModel: ObservableObject {
             }
             .store(in: &cancellables)
         
-        // Load persisted filter
-        if let savedFilter = UserDefaults.standard.string(forKey: "SelectedFilter"),
-           let filter = TimeFilter(rawValue: savedFilter) {
-            self.selectedFilter = filter
+        // Load persisted filter from user defaults
+        if let saved = UserDefaults.standard.string(forKey: "SelectedFilter"),
+           let savedFilter = TimeFilter(rawValue: saved) {
+            self.selectedFilter = savedFilter
         }
         
-        // If already authenticated, fetch timeline
+        // If already have a token, fetch timeline
         if mastodonService.accessToken != nil {
             Task {
                 await fetchTimeline()
@@ -74,92 +75,89 @@ class TimelineViewModel: ObservableObject {
     
     // MARK: - Public Methods
     
-    /// Fetches the user's timeline from Mastodon based on the selected filter.
+    /// Fetches the user's timeline from the service (optionally cached),
+    /// then filters & sorts the results based on `selectedFilter`.
     func fetchTimeline() async {
-        guard let _ = mastodonService.baseURL else {
-            self.alertError = AppError(message: "Instance URL not set.")
+        guard mastodonService.baseURL != nil else {
+            self.alertError = AppError(message: "Instance URL not set. Please log in.")
             return
         }
         
-        self.isLoading = true // Start loading
-        defer { self.isLoading = false } // Ensure loading stops
+        self.isLoading = true
+        defer { self.isLoading = false }
         
         do {
-            let fetchedPosts = try await mastodonService.fetchTimeline()
-            let filteredPosts = filterPosts(fetchedPosts, basedOn: selectedFilter)
-            let sortedPosts = filteredPosts.sorted { $0.createdAt > $1.createdAt } // Most recent first
-            self.posts = sortedPosts
+            // Here we call `fetchTimeline(useCache:)`.
+            // If you want immediate cached data, pass `useCache: true`.
+            // If you want a forced network request, pass `useCache: false`.
+            let fetchedPosts = try await mastodonService.fetchTimeline(useCache: true)
+            
+            // Now filter by date range
+            let filtered = filterPosts(fetchedPosts, basedOn: selectedFilter)
+            // Sort newest first
+            self.posts = filtered.sorted { $0.createdAt > $1.createdAt }
         } catch {
             self.alertError = AppError(message: "Failed to fetch timeline: \(error.localizedDescription)")
         }
     }
     
     /// Toggles the like status of a post.
-    /// - Parameter post: The post to like or unlike.
     func toggleLike(post: Post) async {
         do {
             try await mastodonService.toggleLike(postID: post.id)
-            // Update the post locally
-            if let index = posts.firstIndex(where: { $0.id == post.id }) {
-                posts[index].isFavourited.toggle()
-                posts[index].favouritesCount += posts[index].isFavourited ? 1 : -1
+            // Locally update
+            if let idx = posts.firstIndex(where: { $0.id == post.id }) {
+                posts[idx].isFavourited.toggle()
+                posts[idx].favouritesCount += posts[idx].isFavourited ? 1 : -1
             }
         } catch {
             self.alertError = AppError(message: "Failed to toggle like: \(error.localizedDescription)")
         }
     }
     
-    /// Toggles the repost (reblog) status of a post.
-    /// - Parameter post: The post to repost or unrepost.
+    /// Toggles the repost status of a post.
     func toggleRepost(post: Post) async {
         do {
             try await mastodonService.toggleRepost(postID: post.id)
-            // Update the post locally
-            if let index = posts.firstIndex(where: { $0.id == post.id }) {
-                posts[index].isReblogged.toggle()
-                posts[index].reblogsCount += posts[index].isReblogged ? 1 : -1
+            // Locally update
+            if let idx = posts.firstIndex(where: { $0.id == post.id }) {
+                posts[idx].isReblogged.toggle()
+                posts[idx].reblogsCount += posts[idx].isReblogged ? 1 : -1
             }
         } catch {
             self.alertError = AppError(message: "Failed to toggle repost: \(error.localizedDescription)")
         }
     }
     
-    /// Adds a comment to a post.
-    /// - Parameters:
-    ///   - post: The post to comment on.
-    ///   - content: The content of the comment.
+    /// Comments on a post.
     func comment(post: Post, content: String) async throws {
         try await mastodonService.comment(postID: post.id, content: content)
-        // Optionally, refresh repliesCount
-        if let index = posts.firstIndex(where: { $0.id == post.id }) {
-            posts[index].repliesCount += 1
+        // Optionally increment repliesCount
+        if let idx = posts.firstIndex(where: { $0.id == post.id }) {
+            posts[idx].repliesCount += 1
         }
     }
     
     // MARK: - Private Methods
     
-    /// Filters posts based on the selected time frame.
-    /// - Parameters:
-    ///   - posts: The array of posts to filter.
-    ///   - filter: The selected time filter.
-    /// - Returns: An array of filtered posts.
+    /// Filters posts based on the user-selected timeframe (hour/day/week/all).
     private func filterPosts(_ posts: [Post], basedOn filter: TimeFilter) -> [Post] {
-        let calendar = Calendar.current
         let now = Date()
-        let filteredDate: Date
+        let calendar = Calendar.current
         
         switch filter {
         case .hour:
-            filteredDate = calendar.date(byAdding: .hour, value: -1, to: now) ?? now
+            let cutoff = calendar.date(byAdding: .hour, value: -1, to: now) ?? now
+            return posts.filter { $0.createdAt >= cutoff }
         case .day:
-            filteredDate = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+            let cutoff = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+            return posts.filter { $0.createdAt >= cutoff }
         case .week:
-            filteredDate = calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now
+            let cutoff = calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now
+            return posts.filter { $0.createdAt >= cutoff }
         case .all:
             return posts
         }
-        
-        return posts.filter { $0.createdAt >= filteredDate }
     }
 }
 

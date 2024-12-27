@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct AddAccountView: View {
     @EnvironmentObject var viewModel: AccountsViewModel
@@ -87,27 +88,45 @@ struct AddAccountView: View {
             presentationMode.wrappedValue.dismiss()
         }
     }
+}
 
-    struct AddAccountView_Previews: PreviewProvider {
-        static var previews: some View {
-            // Initialize PreviewService
-            let previewService = PreviewService()
-            
-            // Initialize ViewModels with PreviewService
-            let accountsViewModel = AccountsViewModel(mastodonService: previewService)
-            let authViewModel = AuthenticationViewModel(mastodonService: previewService)
-            let timelineViewModel = TimelineViewModel(mastodonService: previewService)
-            
-            // Assign mock data if necessary
-            accountsViewModel.accounts = [previewService.sampleAccount1, previewService.sampleAccount2]
-            accountsViewModel.selectedAccount = previewService.sampleAccount1
-            timelineViewModel.posts = previewService.mockPosts
-
-            return AddAccountView()
+// MARK: - Preview
+struct AddAccountView_Previews: PreviewProvider {
+    static var previews: some View {
+        // 1) Create a mock MastodonService (PreviewService)
+        let previewService = PreviewService()
+        
+        // 2) Create a ModelContainer for SwiftData (with your @Model types)
+        let container: ModelContainer
+        do {
+            container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
+        } catch {
+            fatalError("Failed to create ModelContainer: \(error)")
+        }
+        
+        // 3) Obtain the modelContext
+        let modelContext = container.mainContext
+        
+        // 4) Initialize your ViewModels with the previewService and modelContext
+        let accountsViewModel = AccountsViewModel(mastodonService: previewService,
+                                                  modelContext: modelContext)
+        let authViewModel = AuthenticationViewModel(mastodonService: previewService)
+        let timelineViewModel = TimelineViewModel(mastodonService: previewService)
+        
+        // 5) Optionally add some mock data
+        accountsViewModel.accounts = [previewService.sampleAccount1, previewService.sampleAccount2]
+        accountsViewModel.selectedAccount = previewService.sampleAccount1
+        timelineViewModel.posts = previewService.mockPosts
+        
+        // 6) Present AddAccountView with environment objects
+        return NavigationStack {
+            AddAccountView()
                 .environmentObject(accountsViewModel)
                 .environmentObject(authViewModel)
                 .environmentObject(timelineViewModel)
         }
+        // 7) Attach the model container for SwiftData
+        .modelContainer(container)
     }
 }
 

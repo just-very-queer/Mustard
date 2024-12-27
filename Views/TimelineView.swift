@@ -2,7 +2,7 @@
 //  TimelineView.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
+//  Created by VAIBHAV SRIVASTAVA on [Date].
 //
 
 import SwiftUI
@@ -54,6 +54,11 @@ struct TimelineView: View {
                 message: Text(error.message),
                 dismissButton: .default(Text("OK"))
             )
+        }
+        .onAppear {
+            Task {
+                await viewModel.fetchTimeline()
+            }
         }
     }
 }

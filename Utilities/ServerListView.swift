@@ -62,4 +62,3 @@ struct ServerListView_Previews: PreviewProvider {
         )
     }
 }
-
