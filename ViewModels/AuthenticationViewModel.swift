@@ -33,10 +33,18 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         super.init()
 
         // Attempt to retrieve access token and base URL from the service
-        if let token = try? mastodonService.retrieveAccessToken(),
-           let url = try? mastodonService.retrieveInstanceURL() {
-            self.isAuthenticated = true
-            self.instanceURL = url
+        do {
+            if let token = try mastodonService.retrieveAccessToken(),
+               let url = try mastodonService.retrieveInstanceURL() {
+                self.isAuthenticated = true
+                self.instanceURL = url
+                print("AuthenticationViewModel initialized with baseURL: \(url) and accessToken: \(token)") // Debug statement
+            } else {
+                print("AuthenticationViewModel initialized without authentication.") // Debug statement
+            }
+        } catch {
+            self.alertError = AppError(message: "Failed to retrieve authentication details.")
+            print("AuthenticationViewModel: Failed to retrieve authentication details: \(error.localizedDescription)")
         }
 
         NotificationCenter.default.addObserver(
@@ -52,9 +60,14 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     }
 
     // MARK: - Public Methods
+
+    /// Initiates the authentication process by registering the app and starting the OAuth flow.
     func authenticate() async {
-        guard let url = URL(string: customInstanceURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            self.alertError = AppError(message: "Invalid instance URL.")
+        // Validate the custom instance URL
+        guard let url = URL(string: customInstanceURL.trimmingCharacters(in: .whitespacesAndNewlines)),
+              UIApplication.shared.canOpenURL(url) else {
+            self.alertError = AppError(message: "Invalid or unreachable instance URL.")
+            print("AuthenticationViewModel: Invalid or unreachable instance URL.")
             return
         }
 
@@ -67,9 +80,11 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             try await startAuthentication()
         } catch {
             self.alertError = AppError(message: "Authentication failed: \(error.localizedDescription)")
+            print("AuthenticationViewModel: Authentication failed: \(error.localizedDescription)")
         }
     }
 
+    /// Logs out the user by clearing the access token and resetting authentication state.
     func logout() {
         do {
             try mastodonService.clearAccessToken()
@@ -77,12 +92,16 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             clientID = nil
             clientSecret = nil
             instanceURL = nil
+            print("AuthenticationViewModel: User logged out successfully.")
         } catch {
-            alertError = AppError(message: "Failed to clear access token: \(error.localizedDescription)")
+            self.alertError = AppError(message: "Failed to clear access token: \(error.localizedDescription)")
+            print("AuthenticationViewModel: Failed to clear access token: \(error.localizedDescription)")
         }
     }
 
     // MARK: - Private Methods
+
+    /// Registers the app with the Mastodon instance to obtain client credentials.
     private func registerApp() async throws {
         guard let instanceURL = instanceURL else {
             throw AppError(message: "Instance URL is missing.")
@@ -96,7 +115,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             "client_name": "Mustard",
             "redirect_uris": redirectURI,
             "scopes": scopes,
-            "website": "https://yourappwebsite.com"
+            "website": "https://yourappwebsite.com" // Replace with your app's website
         ]
 
         request.httpBody = parameters
@@ -106,17 +125,25 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
 
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
+        print("AuthenticationViewModel: Registering app at URL: \(appsURL)")
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateResponse(response)
 
+        // Parse the response to extract client_id and client_secret
         if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
-            self.clientID = jsonResponse["client_id"] as? String
-            self.clientSecret = jsonResponse["client_secret"] as? String
+            guard let clientID = jsonResponse["client_id"] as? String,
+                  let clientSecret = jsonResponse["client_secret"] as? String else {
+                throw AppError(message: "Failed to parse app registration response.")
+            }
+            self.clientID = clientID
+            self.clientSecret = clientSecret
+            print("AuthenticationViewModel: App registered successfully with clientID: \(clientID) and clientSecret: \(clientSecret)")
         } else {
             throw AppError(message: "Failed to parse app registration response.")
         }
     }
 
+    /// Starts the OAuth authentication process by initiating a web authentication session.
     private func startAuthentication() async throws {
         guard let instanceURL = instanceURL, let clientID = clientID else {
             throw AppError(message: "Instance URL or client ID not set.")
@@ -135,9 +162,11 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             throw AppError(message: "Failed to construct authentication URL.")
         }
 
+        print("AuthenticationViewModel: Starting authentication with URL: \(url)")
         try await authenticateWithWeb(url: url)
     }
 
+    /// Initiates the web authentication session using ASWebAuthenticationSession.
     private func authenticateWithWeb(url: URL) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             session = ASWebAuthenticationSession(url: url, callbackURLScheme: "mustard") { callbackURL, error in
@@ -160,12 +189,17 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         }
     }
 
+    /// Validates the HTTP response, throwing an error for unsuccessful status codes.
     private func validateResponse(_ response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            throw AppError(message: "HTTP Error: \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("AuthenticationViewModel: HTTP Error: \(statusCode)")
+            throw AppError(message: "HTTP Error: \(statusCode)")
         }
+        print("AuthenticationViewModel: Response validated with status code: \((response as? HTTPURLResponse)?.statusCode ?? 0)")
     }
 
+    /// Handles the OAuth callback by extracting the authorization code and fetching the access token.
     @objc private func handleOAuthCallback(notification: Notification) {
         guard let url = notification.userInfo?["url"] as? URL else { return }
 
@@ -176,22 +210,28 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
                 .first(where: { $0.name == "code" })?
                 .value else {
                 alertError = AppError(message: "No authorization code found.")
+                print("AuthenticationViewModel: No authorization code found in callback URL.")
                 return
             }
 
             do {
                 try await fetchAccessToken(code: code)
                 isAuthenticated = true
+                print("AuthenticationViewModel: Authentication successful.")
                 // Post authentication success notification
                 NotificationCenter.default.post(name: .didAuthenticate, object: nil)
             } catch {
                 alertError = AppError(message: "Failed to fetch access token: \(error.localizedDescription)")
+                print("AuthenticationViewModel: Failed to fetch access token: \(error.localizedDescription)")
             }
         }
     }
 
+    /// Exchanges the authorization code for an access token and saves it securely.
     private func fetchAccessToken(code: String) async throws {
-        guard let instanceURL = instanceURL, let clientID = clientID, let clientSecret = clientSecret else {
+        guard let instanceURL = instanceURL,
+              let clientID = clientID,
+              let clientSecret = clientSecret else {
             throw AppError(message: "Missing parameters for token exchange.")
         }
 
@@ -215,22 +255,27 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
 
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
+        print("AuthenticationViewModel: Exchanging code for access token at URL: \(tokenURL)")
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateResponse(response)
 
+        // Parse the response to extract the access token
         if let jsonResponse = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
            let token = jsonResponse["access_token"] as? String {
-            try mastodonService.saveAccessToken(token)
-            mastodonService.baseURL = instanceURL
+            mastodonService.baseURL = instanceURL // Set baseURL first
+            print("AuthenticationViewModel: baseURL set to: \(instanceURL)")
+            try mastodonService.saveAccessToken(token) // Then save access token
+            print("AuthenticationViewModel: Access token saved successfully.")
         } else {
             throw AppError(message: "Failed to parse token response.")
         }
     }
 
     // MARK: - ASWebAuthenticationPresentationContextProviding
+
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         #if os(iOS)
-        return UIApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? UIWindow()
+        return UIApplication.shared.windows.first { $0.isKeyWindow } ?? UIWindow()
         #else
         return ASPresentationAnchor()
         #endif

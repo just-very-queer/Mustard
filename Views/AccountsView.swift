@@ -11,9 +11,9 @@ struct AccountsView: View {
     @EnvironmentObject var viewModel: AccountsViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
-
+    
     @State private var showingAddAccountSheet = false
-
+    
     var body: some View {
         NavigationStack {
             List {
@@ -58,9 +58,9 @@ struct AccountsView: View {
             }
         }
     }
-
+    
     // MARK: - Helper Methods
-
+    
     /// Determines if the given account is the currently selected account.
     /// - Parameter account: The account to check.
     /// - Returns: A Boolean indicating whether the account is selected.
@@ -70,17 +70,25 @@ struct AccountsView: View {
         }
         return selectedAccount.id == account.id
     }
-
+    
     /// Handles the selection of an account.
     /// - Parameter account: The account that was selected.
     private func handleAccountSelection(_ account: Account) {
         viewModel.selectAccount(account)
-        authViewModel.instanceURL = account.instanceURL
+        if let instanceURL = account.instanceURL {
+            authViewModel.instanceURL = instanceURL // Assign URL directly
+            print("AccountsView: Instance URL set to: \(instanceURL)")
+        } else {
+            authViewModel.alertError = AppError(message: "Selected account has an invalid instance URL.")
+            print("AccountsView: Selected account has an invalid instance URL.")
+            return
+        }
         timelineViewModel.posts = []
         Task {
             await timelineViewModel.fetchTimeline()
         }
     }
+
 }
 
 struct AccountRowView: View {
@@ -133,12 +141,12 @@ struct AccountsView_Previews: PreviewProvider {
     static var previews: some View {
         // Initialize MockMastodonService
         let mockService = MockMastodonService()
-
+        
         // Initialize ViewModels with the mock service
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
         let timelineViewModel = TimelineViewModel(mastodonService: mockService)
         let accountsViewModel = AccountsViewModel(mastodonService: mockService)
-
+        
         // Create sample accounts
         let sampleAccount1 = Account(
             id: "a1",
