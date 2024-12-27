@@ -8,8 +8,9 @@
 import Foundation
 import SwiftData
 
+/// Represents a Mastodon post.
 @Model
-class Post: Identifiable {
+final class Post: Identifiable {
     @Attribute(.unique) var id: String
     var content: String
     var createdAt: Date
@@ -21,18 +22,21 @@ class Post: Identifiable {
     var favouritesCount: Int
     var repliesCount: Int
 
-    init(
-        id: String,
-        content: String,
-        createdAt: Date,
-        account: Account,
-        mediaAttachments: [MediaAttachment],
-        isFavourited: Bool,
-        isReblogged: Bool,
-        reblogsCount: Int,
-        favouritesCount: Int,
-        repliesCount: Int
-    ) {
+    // MARK: - Initializers
+
+    /// Initializes a Post with all properties.
+    /// - Parameters:
+    ///   - id: The unique identifier for the post.
+    ///   - content: The content of the post.
+    ///   - createdAt: The creation date of the post.
+    ///   - account: The account that created the post.
+    ///   - mediaAttachments: An array of media attachments associated with the post.
+    ///   - isFavourited: Indicates if the post is favourited.
+    ///   - isReblogged: Indicates if the post is reblogged.
+    ///   - reblogsCount: The number of reblogs.
+    ///   - favouritesCount: The number of favourites.
+    ///   - repliesCount: The number of replies.
+    init(id: String, content: String, createdAt: Date, account: Account, mediaAttachments: [MediaAttachment], isFavourited: Bool, isReblogged: Bool, reblogsCount: Int, favouritesCount: Int, repliesCount: Int) {
         self.id = id
         self.content = content
         self.createdAt = createdAt

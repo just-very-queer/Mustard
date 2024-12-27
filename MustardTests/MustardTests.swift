@@ -11,6 +11,7 @@ import XCTest
 @MainActor
 class MustardTests: XCTestCase {
 
+    /// Tests that the PostRowView handles errors correctly.
     func testPostRowViewHandlesErrors() async throws {
         let mockService = MockMastodonService(shouldSucceed: false)
         let viewModel = TimelineViewModel(mastodonService: mockService)
@@ -37,29 +38,34 @@ class MustardTests: XCTestCase {
         viewModel.posts.append(samplePost)
 
         // Simulate an error
-        viewModel.alertError = MustardAppError(message: "Failed to handle action.")
+        viewModel.alertError = AppError(message: "Failed to handle action.")
 
         XCTAssertNotNil(viewModel.alertError)
         XCTAssertEqual(viewModel.alertError?.message, "Failed to handle action.")
     }
 
+    /// Tests that the TimelineViewModel successfully loads the timeline.
     func testTimelineViewModelLoadTimelineSuccess() async throws {
         let mockService = MockMastodonService(shouldSucceed: true)
         let viewModel = TimelineViewModel(mastodonService: mockService)
-        viewModel.instanceURL = URL(string: "https://mastodon.social")
+        viewModel.mastodonService.baseURL = URL(string: "https://mastodon.social")
+        mockService.accessToken = "testToken"
 
-        await viewModel.loadTimeline()
+        await viewModel.fetchTimeline()
         
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertEqual(viewModel.posts.count, 1)
+        XCTAssertEqual(viewModel.posts.first?.id, "1")
     }
 
+    /// Tests that the TimelineViewModel handles timeline loading failures.
     func testTimelineViewModelLoadTimelineFailure() async throws {
         let mockService = MockMastodonService(shouldSucceed: false)
         let viewModel = TimelineViewModel(mastodonService: mockService)
-        viewModel.instanceURL = URL(string: "https://mastodon.social")
+        viewModel.mastodonService.baseURL = URL(string: "https://mastodon.social")
+        mockService.accessToken = "testToken"
 
-        await viewModel.loadTimeline()
+        await viewModel.fetchTimeline()
 
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertNotNil(viewModel.alertError)

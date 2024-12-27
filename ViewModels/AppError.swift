@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents a generic application error to be displayed in alerts.
-struct MustardAppError: Identifiable, Error {
+struct AppError: Identifiable, Error {
     var id = UUID()
     let message: String
 }

@@ -13,7 +13,7 @@ struct ServerListView: View {
     let onCancel: () -> Void  // Added onCancel closure
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List(servers) { server in
                 VStack(alignment: .leading) {
                     Text(server.name)
@@ -22,6 +22,7 @@ struct ServerListView: View {
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
+                .contentShape(Rectangle()) // So the entire cell is tappable
                 .onTapGesture {
                     onSelect(server)
                 }

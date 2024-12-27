@@ -6,223 +6,260 @@
 //
 
 import Foundation
-import SwiftUI
 
 /// Service responsible for interacting with the Mastodon API.
-@MainActor
-class MastodonService: MastodonServiceProtocol, ObservableObject {
-    /// Optional shared instance if your code/tests references it
-    static let shared = MastodonService()
-
-    /// The base URL of the Mastodon instance.
+class MastodonService: MastodonServiceProtocol {
     var baseURL: URL?
-
-    /// Securely read an access token from the keychain
-    private var accessToken: String? {
-        guard let baseURL = baseURL else { return nil }
-        let service = "Mustard-\(baseURL.host ?? "")"
-        return KeychainHelper.shared.read(service: service, account: "accessToken")
-    }
-
-    /// Helper to create an authorized URLRequest (if `baseURL` & `accessToken` are available).
-    private func createRequest(endpoint: String, method: String = "GET", body: Data? = nil) -> URLRequest? {
-        guard let baseURL = baseURL else { return nil }
-        let apiVersion = "v1"
-        let url = baseURL.appendingPathComponent("api/\(apiVersion)/\(endpoint)")
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        
-        // If we have a token, attach it
-        if let token = accessToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    
+    var accessToken: String? {
+        get {
+            guard let baseURL = baseURL else { return nil }
+            let service = "Mustard-\(baseURL.host ?? "")"
+            return try? KeychainHelper.shared.read(service: service, account: "accessToken")
         }
-        
-        if let body = body {
-            request.httpBody = body
-            // Content-Type can differ based on endpoint
-            if endpoint == "statuses" {
-                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        set {
+            guard let baseURL = baseURL else { return }
+            let service = "Mustard-\(baseURL.host ?? "")"
+            if let token = newValue {
+                try? KeychainHelper.shared.save(token, service: service, account: "accessToken")
             } else {
-                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                try? KeychainHelper.shared.delete(service: service, account: "accessToken")
             }
         }
-        return request
     }
     
-    // MARK: - Public API
+    // MARK: - Networking Methods
     
-    func fetchHomeTimeline() async throws -> [Post] {
-        guard let request = createRequest(endpoint: "timelines/home") else {
-            throw MustardAppError(message: "Instance URL not set.")
+    func fetchTimeline() async throws -> [Post] {
+        guard let baseURL = baseURL else {
+            throw AppError(message: "Base URL not set.")
         }
+        
+        let timelineURL = baseURL.appendingPathComponent("/api/v1/timelines/home")
+        var request = URLRequest(url: timelineURL)
+        request.httpMethod = "GET"
+        guard let token = accessToken else {
+            throw AppError(message: "Access token not available.")
+        }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateResponse(response)
         
-        // Decode array of MastodonPostData
-        let postsData: [MastodonPostData] = try JSONDecoder().decode([MastodonPostData].self, from: data)
-        return postsData.map { $0.toPost() }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let postData = try decoder.decode([PostData].self, from: data)
+        return postData.map { $0.toPost() }
     }
     
-    func fetchPosts(keyword: String) async throws -> [Post] {
-        let endpoint = "timelines/tag/\(keyword)"
-        guard let request = createRequest(endpoint: endpoint) else {
-            throw MustardAppError(message: "Instance URL not set.")
+    func saveAccessToken(_ token: String) throws {
+        guard let baseURL = baseURL else {
+            throw AppError(message: "Base URL not set.")
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validateResponse(response)
+        let service = "Mustard-\(baseURL.host ?? "")"
+        try KeychainHelper.shared.save(token, service: service, account: "accessToken")
+    }
+    
+    func clearAccessToken() throws {
+        guard let baseURL = baseURL else {
+            throw AppError(message: "Base URL not set.")
+        }
+        let service = "Mustard-\(baseURL.host ?? "")"
+        try KeychainHelper.shared.delete(service: service, account: "accessToken")
+    }
+    
+    func toggleLike(postID: String) async throws {
+        try await toggleAction(for: postID, endpoint: "/favourite")
+    }
+    
+    func toggleRepost(postID: String) async throws {
+        try await toggleAction(for: postID, endpoint: "/reblog")
+    }
+    
+    func comment(postID: String, content: String) async throws {
+        guard let baseURL = baseURL else {
+            throw AppError(message: "Base URL not set.")
+        }
+        guard let accessToken = accessToken else {
+            throw AppError(message: "Access token not available.")
+        }
         
-        let postsData: [MastodonPostData] = try JSONDecoder().decode([MastodonPostData].self, from: data)
-        return postsData.map { $0.toPost() }
-    }
-    
-    func likePost(postID: String) async throws -> Post {
-        let endpoint = "statuses/\(postID)/favourite"
-        guard let request = createRequest(endpoint: endpoint, method: "POST") else {
-            throw MustardAppError(message: "Unable to create request.")
-        }
-        return try await performPostAction(request: request)
-    }
-    
-    func unlikePost(postID: String) async throws -> Post {
-        let endpoint = "statuses/\(postID)/unfavourite"
-        guard let request = createRequest(endpoint: endpoint, method: "POST") else {
-            throw MustardAppError(message: "Unable to create request.")
-        }
-        return try await performPostAction(request: request)
-    }
-    
-    func repost(postID: String) async throws -> Post {
-        let endpoint = "statuses/\(postID)/reblog"
-        guard let request = createRequest(endpoint: endpoint, method: "POST") else {
-            throw MustardAppError(message: "Unable to create request.")
-        }
-        return try await performPostAction(request: request)
-    }
-    
-    func undoRepost(postID: String) async throws -> Post {
-        let endpoint = "statuses/\(postID)/unreblog"
-        guard let request = createRequest(endpoint: endpoint, method: "POST") else {
-            throw MustardAppError(message: "Unable to create request.")
-        }
-        return try await performPostAction(request: request)
-    }
-    
-    func comment(postID: String, content: String) async throws -> Post {
-        let endpoint = "statuses"
-        let parameters: [String: String] = [
+        let commentURL = baseURL.appendingPathComponent("/api/v1/statuses")
+        var request = URLRequest(url: commentURL)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
             "status": content,
             "in_reply_to_id": postID
         ]
-        guard let bodyData = parameters.percentEncoded(),
-              let request = createRequest(endpoint: endpoint, method: "POST", body: bodyData)
-        else {
-            throw MustardAppError(message: "Unable to create request.")
-        }
-        return try await performPostAction(request: request)
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        
+        let (_, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
     }
     
-    // MARK: - Internal Helpers
+    // MARK: - Private Helper Methods
     
-    private func performPostAction(request: URLRequest) async throws -> Post {
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validateResponse(response)
+    private func toggleAction(for postID: String, endpoint: String) async throws {
+        guard let baseURL = baseURL else {
+            throw AppError(message: "Base URL not set.")
+        }
+        guard let accessToken = accessToken else {
+            throw AppError(message: "Access token not available.")
+        }
         
-        let postData = try JSONDecoder().decode(MastodonPostData.self, from: data)
-        return postData.toPost()
+        let actionURL = baseURL.appendingPathComponent("/api/v1/statuses/\(postID)\(endpoint)")
+        var request = URLRequest(url: actionURL)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        
+        let (_, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
     }
     
     private func validateResponse(_ response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw MustardAppError(message: "Invalid response.")
+            throw AppError(message: "Invalid response.")
         }
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw MustardAppError(message: "HTTP Error: \(httpResponse.statusCode)")
+            throw AppError(message: "HTTP Error: \(httpResponse.statusCode)")
         }
     }
-}
-
-// MARK: - JSON Decoding Structs
-//   Ensure these do NOT appear in multiple files, or you'll get "invalid redeclaration" errors.
-
-/// Data structure used for decoding a single Mastodon post from JSON.
-struct MastodonPostData: Decodable {
-    let id: String
-    let content: String
-    let created_at: String
-    let account: MastodonAccountData
-    let media_attachments: [MastodonMediaAttachmentData]
-    let favourited: Bool?
-    let reblogged: Bool?
-    let reblogs_count: Int
-    let favourites_count: Int
-    let replies_count: Int
-
-    func toPost() -> Post {
-        let dateFormatter = ISO8601DateFormatter()
-        let createdDate = dateFormatter.date(from: created_at) ?? Date()
-
-        return Post(
-            id: id,
-            content: content,
-            createdAt: createdDate,
-            account: account.toAccount(),
-            mediaAttachments: media_attachments.map { $0.toMediaAttachment() },
-            isFavourited: favourited ?? false,
-            isReblogged: reblogged ?? false,
-            reblogsCount: reblogs_count,
-            favouritesCount: favourites_count,
-            repliesCount: replies_count
-        )
-    }
-}
-
-struct MastodonAccountData: Decodable {
-    let id: String
-    let username: String
-    let display_name: String
-    let avatar: String
-    let acct: String
     
-    func toAccount() -> Account {
-        // Convert the avatar URL string to a URL
-        let avatarURL = URL(string: avatar) ?? URL(string: "https://example.com")!
-        return Account(
-            id: id,
-            username: username,
-            displayName: display_name,
-            avatar: avatarURL,
-            acct: acct
-        )
-    }
-}
-
-struct MastodonMediaAttachmentData: Decodable {
-    let id: String
-    let type: String
-    let url: String
-    let preview_url: String?
+    // MARK: - MastodonServiceProtocol Methods
     
-    func toMediaAttachment() -> MediaAttachment {
-        MediaAttachment(
-            id: id,
-            type: type,
-            url: URL(string: url) ?? URL(string: "https://example.com")!,
-            previewUrl: preview_url != nil ? URL(string: preview_url!) : nil
-        )
-    }
-}
-
-// MARK: - Dictionary helper for URL-encoding
-extension Dictionary where Key == String, Value == String {
-    func percentEncoded() -> Data? {
-        map { key, value in
-            let escapedKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            let escapedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            return "\(escapedKey)=\(escapedValue)"
+    func fetchAccounts() async throws -> [Account] {
+        guard let baseURL = baseURL else {
+            throw AppError(message: "Base URL not set.")
         }
-        .joined(separator: "&")
-        .data(using: .utf8)
+        guard let token = accessToken else {
+            throw AppError(message: "Access token not available.")
+        }
+        
+        let accountsURL = baseURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
+        var request = URLRequest(url: accountsURL)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let accountData = try decoder.decode(AccountData.self, from: data)
+        return [accountData.toAccount(baseURL: baseURL)]
+    }
+    
+    func registerAccount(username: String, password: String, instanceURL: URL) async throws -> Account {
+        let registerURL = instanceURL.appendingPathComponent("/api/v1/accounts")
+        var request = URLRequest(url: registerURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "username": username,
+            "password": password
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
+        
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let accountData = try decoder.decode(AccountData.self, from: data)
+        return accountData.toAccount(baseURL: instanceURL)
+    }
+    
+    func authenticate(username: String, password: String, instanceURL: URL) async throws -> String {
+        let tokenURL = instanceURL.appendingPathComponent("/oauth/token")
+        var request = URLRequest(url: tokenURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body: [String: Any] = [
+            "grant_type": "password",
+            "username": username,
+            "password": password,
+            "client_id": "YOUR_CLIENT_ID",
+            "client_secret": "YOUR_CLIENT_SECRET",
+            "scope": "read write follow"
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
+        
+        let decoder = JSONDecoder()
+        let tokenData = try decoder.decode(TokenResponse.self, from: data)
+        return tokenData.accessToken
+    }
+    
+    func retrieveAccessToken() throws -> String? {
+        return accessToken
+    }
+    
+    func retrieveInstanceURL() throws -> URL? {
+        return baseURL
+    }
+    
+    // MARK: - Supporting Structures
+    
+    struct TokenResponse: Decodable {
+        let accessToken: String
+        let tokenType: String
+        let scope: String
+        
+        enum CodingKeys: String, CodingKey {
+            case accessToken = "access_token"
+            case tokenType = "token_type"
+            case scope
+        }
+    }
+    
+    struct AccountData: Decodable {
+        let id: String
+        let username: String
+        let displayName: String
+        let avatar: String
+        let acct: String
+        let url: String
+        let createdAt: Date
+        
+        enum CodingKeys: String, CodingKey {
+            case id
+            case username
+            case displayName = "display_name"
+            case avatar
+            case acct
+            case url
+            case createdAt = "created_at"
+        }
+        
+        func toAccount(baseURL: URL?) -> Account {
+            return Account(
+                id: id,
+                username: username,
+                displayName: displayName,
+                avatar: URL(string: avatar) ?? URL(string: "https://example.com/default_avatar.png")!,
+                acct: acct,
+                instanceURL: URL(string: url) ?? baseURL ?? URL(string: "https://mastodon.social")!,
+                accessToken: "defaultAccessToken"
+            )
+        }
+    }
+    
+    struct AppError: LocalizedError {
+        var message: String
+        
+        var errorDescription: String? {
+            return message
+        }
     }
 }
 

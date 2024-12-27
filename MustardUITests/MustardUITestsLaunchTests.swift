@@ -14,20 +14,29 @@ final class MustardUITestsLaunchTests: XCTestCase {
     }
 
     override func setUpWithError() throws {
+        // Continue after failure is set to false.
         continueAfterFailure = false
     }
 
-    @MainActor
-    func testLaunch() throws {
+    /// Tests the launch performance of the application.
+    func testLaunchPerformance() throws {
+        if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
+            measure(metrics: [XCTApplicationLaunchMetric()]) {
+                XCUIApplication().launch()
+            }
+        }
+    }
+
+    /// Tests the launch screen appearance.
+    func testLaunchScreen() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Insert steps here to perform after app launch but before taking a screenshot,
-        // such as logging into a test account or navigating somewhere in the app
-
+        // Capture a screenshot of the launch screen.
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "Launch Screen"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
 }
+

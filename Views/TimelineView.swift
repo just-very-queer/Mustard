@@ -8,25 +8,47 @@
 import SwiftUI
 
 struct TimelineView: View {
+    // Access the TimelineViewModel from the environment
     @EnvironmentObject var viewModel: TimelineViewModel
 
     var body: some View {
         VStack {
+            // Display a loading indicator when fetching data
             if viewModel.isLoading {
                 ProgressView("Loading...")
                     .padding()
             } else {
+                // Display the list of posts
                 List(viewModel.posts) { post in
-                    // Navigate to PostDetailView on tap
+                    // Each post navigates to its detail view
                     NavigationLink(destination: PostDetailView(post: post)) {
+                        // Display the post row
                         PostRowView(post: post)
                             .environmentObject(viewModel)
                     }
                 }
                 .listStyle(PlainListStyle())
+                .refreshable {
+                    // Allow pull-to-refresh to fetch the latest timeline
+                    await viewModel.fetchTimeline()
+                }
             }
         }
         .navigationTitle("Home")
+        .toolbar {
+            // Add a refresh button in the navigation bar
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    Task {
+                        await viewModel.fetchTimeline()
+                    }
+                }) {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .accessibilityLabel("Refresh Timeline")
+            }
+        }
+        // Present an alert if there's an error
         .alert(item: $viewModel.alertError) { error in
             Alert(
                 title: Text("Error"),
@@ -45,8 +67,11 @@ struct TimelineView_Previews: PreviewProvider {
             username: "user1",
             displayName: "User One",
             avatar: URL(string: "https://example.com/avatar1.png")!,
-            acct: "user1"
+            acct: "user1",
+            instanceURL: URL(string: "https://mastodon.social")!,
+            accessToken: "mockAccessToken123"
         )
+        
         // Create a sample post
         let samplePost = Post(
             id: "1",
@@ -61,42 +86,13 @@ struct TimelineView_Previews: PreviewProvider {
             repliesCount: 0
         )
         
-        // A local mock service just for preview
-        class PreviewService: MastodonServiceProtocol {
-            var baseURL: URL?
-            
-            private let previewPost: Post
-            init(samplePost: Post) {
-                self.previewPost = samplePost
-            }
-            
-            func fetchHomeTimeline() async throws -> [Post] {
-                [previewPost]
-            }
-            func fetchPosts(keyword: String) async throws -> [Post] {
-                []
-            }
-            func likePost(postID: String) async throws -> Post {
-                previewPost
-            }
-            func unlikePost(postID: String) async throws -> Post {
-                previewPost
-            }
-            func repost(postID: String) async throws -> Post {
-                previewPost
-            }
-            func undoRepost(postID: String) async throws -> Post {
-                previewPost
-            }
-            func comment(postID: String, content: String) async throws -> Post {
-                previewPost
-            }
-        }
+        // Initialize the MockMastodonService with the sample post and shouldSucceed: true
+        let mockService = MockMastodonService(shouldSucceed: true, mockPosts: [samplePost])
         
-        let service = PreviewService(samplePost: samplePost)
-        let viewModel = TimelineViewModel(mastodonService: service)
+        // Initialize the TimelineViewModel with the mock service
+        let viewModel = TimelineViewModel(mastodonService: mockService)
         viewModel.posts = [samplePost]
-
+        
         return NavigationStack {
             TimelineView()
                 .environmentObject(viewModel)

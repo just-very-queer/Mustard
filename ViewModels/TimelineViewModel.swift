@@ -1,109 +1,151 @@
-//
-//  TimelineViewModel.swift
-//  Mustard
-//
-//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
-//
+// TimelineViewModel.swift
+// Mustard
 
 import Foundation
 import SwiftUI
+import Combine
 
 @MainActor
 class TimelineViewModel: ObservableObject {
+    // MARK: - Published Properties
+    
     @Published var posts: [Post] = []
     @Published var isLoading: Bool = false
-    @Published var alertError: MustardAppError?
-
-    /// This must be set before calling loadTimeline()
-    @Published var instanceURL: URL? {
-        didSet {
-            mastodonService.baseURL = instanceURL
-        }
+    @Published var alertError: AppError?
+    @Published var selectedFilter: TimeFilter = .day // Default filter
+    
+    // MARK: - Enums
+    
+    enum TimeFilter: String, CaseIterable, Identifiable {
+        case hour = "Hour"
+        case day = "Day"
+        case week = "Week"
+        
+        var id: String { self.rawValue }
     }
-
+    
+    // MARK: - Private Properties
+    
     private var mastodonService: MastodonServiceProtocol
-
+    private var cancellables = Set<AnyCancellable>()
+    
+    // MARK: - Initialization
+    
     init(mastodonService: MastodonServiceProtocol) {
         self.mastodonService = mastodonService
+        
+        // Observe authentication changes
+        NotificationCenter.default.publisher(for: .didAuthenticate)
+            .sink { [weak self] _ in
+                Task {
+                    await self?.fetchTimeline()
+                }
+            }
+            .store(in: &cancellables)
+        
+        // Observe filter changes
+        $selectedFilter
+            .sink { [weak self] _ in
+                Task {
+                    await self?.fetchTimeline()
+                }
+            }
+            .store(in: &cancellables)
+        
+        // If already authenticated, fetch timeline
+        if mastodonService.accessToken != nil {
+            Task {
+                await fetchTimeline()
+            }
+        }
     }
-
-    /// Loads the home timeline asynchronously.
-    func loadTimeline() async {
-        guard instanceURL != nil else {
-            alertError = MustardAppError(message: "Instance URL not set.")
+    
+    // MARK: - Public Methods
+    
+    /// Fetches the user's timeline from Mastodon based on the selected filter.
+    func fetchTimeline() async {
+        guard let baseURL = mastodonService.baseURL else {
+            self.alertError = AppError(message: "Base URL not set.")
             return
         }
-        isLoading = true
+        
+        self.isLoading = true // Start loading
+        defer { self.isLoading = false } // Ensure loading stops
+        
         do {
-            let fetchedPosts = try await mastodonService.fetchHomeTimeline()
-            posts = fetchedPosts
+            let fetchedPosts = try await mastodonService.fetchTimeline()
+            let filteredPosts = filterPosts(fetchedPosts, basedOn: selectedFilter)
+            let sortedPosts = filteredPosts.sorted { $0.createdAt > $1.createdAt } // Most recent first
+            self.posts = sortedPosts
         } catch {
-            alertError = MustardAppError(message: error.localizedDescription)
-        }
-        isLoading = false
-    }
-
-    /// Loads posts based on a specific keyword asynchronously.
-    func loadPosts(keyword: String) async {
-        guard instanceURL != nil else {
-            alertError = MustardAppError(message: "Instance URL not set.")
-            return
-        }
-        isLoading = true
-        do {
-            let fetchedPosts = try await mastodonService.fetchPosts(keyword: keyword)
-            posts = fetchedPosts
-        } catch {
-            alertError = MustardAppError(message: error.localizedDescription)
-        }
-        isLoading = false
-    }
-
-    /// Updates a post in the `posts` array.
-    func updatePost(_ updatedPost: Post) {
-        if let index = posts.firstIndex(where: { $0.id == updatedPost.id }) {
-            posts[index] = updatedPost
+            self.alertError = AppError(message: "Failed to fetch timeline: \(error.localizedDescription)")
         }
     }
-
-    // MARK: - Action Handlers
-
+    
+    /// Toggles the like status of a post.
+    /// - Parameter post: The post to like or unlike.
     func toggleLike(post: Post) async {
         do {
-            if post.isFavourited {
-                let updatedPost = try await mastodonService.unlikePost(postID: post.id)
-                updatePost(updatedPost)
-            } else {
-                let updatedPost = try await mastodonService.likePost(postID: post.id)
-                updatePost(updatedPost)
+            try await mastodonService.toggleLike(postID: post.id)
+            // Update the post locally
+            if let index = posts.firstIndex(where: { $0.id == post.id }) {
+                posts[index].isFavourited.toggle()
+                posts[index].favouritesCount += posts[index].isFavourited ? 1 : -1
             }
         } catch {
-            alertError = MustardAppError(message: error.localizedDescription)
+            self.alertError = AppError(message: "Failed to toggle like: \(error.localizedDescription)")
         }
     }
-
+    
+    /// Toggles the repost (reblog) status of a post.
+    /// - Parameter post: The post to repost or unrepost.
     func toggleRepost(post: Post) async {
         do {
-            if post.isReblogged {
-                let updatedPost = try await mastodonService.undoRepost(postID: post.id)
-                updatePost(updatedPost)
-            } else {
-                let updatedPost = try await mastodonService.repost(postID: post.id)
-                updatePost(updatedPost)
+            try await mastodonService.toggleRepost(postID: post.id)
+            // Update the post locally
+            if let index = posts.firstIndex(where: { $0.id == post.id }) {
+                posts[index].isReblogged.toggle()
+                posts[index].reblogsCount += posts[index].isReblogged ? 1 : -1
             }
         } catch {
-            alertError = MustardAppError(message: error.localizedDescription)
+            self.alertError = AppError(message: "Failed to toggle repost: \(error.localizedDescription)")
         }
     }
-
-    func comment(post: Post, content: String) async {
-        do {
-            let comment = try await mastodonService.comment(postID: post.id, content: content)
-            // Optionally insert the new comment at the top
-            posts.insert(comment, at: 0)
-        } catch {
-            alertError = MustardAppError(message: error.localizedDescription)
+    
+    /// Adds a comment to a post.
+    /// - Parameters:
+    ///   - post: The post to comment on.
+    ///   - content: The content of the comment.
+    func comment(post: Post, content: String) async throws {
+        try await mastodonService.comment(postID: post.id, content: content)
+        // Optionally, refresh repliesCount
+        if let index = posts.firstIndex(where: { $0.id == post.id }) {
+            posts[index].repliesCount += 1
         }
+    }
+    
+    // MARK: - Private Methods
+    
+    /// Filters posts based on the selected time frame.
+    /// - Parameters:
+    ///   - posts: The array of posts to filter.
+    ///   - filter: The selected time filter.
+    /// - Returns: An array of filtered posts.
+    private func filterPosts(_ posts: [Post], basedOn filter: TimeFilter) -> [Post] {
+        let calendar = Calendar.current
+        let now = Date()
+        let filteredDate: Date
+        
+        switch filter {
+        case .hour:
+            filteredDate = calendar.date(byAdding: .hour, value: -1, to: now) ?? now
+        case .day:
+            filteredDate = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        case .week:
+            filteredDate = calendar.date(byAdding: .weekOfYear, value: -1, to: now) ?? now
+        }
+        
+        return posts.filter { $0.createdAt >= filteredDate }
     }
 }
 

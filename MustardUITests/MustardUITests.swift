@@ -10,34 +10,64 @@ import XCTest
 final class MustardUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
+        // Stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
     }
 
     override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+        // Teardown code if needed.
     }
 
-    @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    /// Tests the launch of the application.
+    func testLaunch() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        // Verify that the welcome text exists.
+        XCTAssertTrue(app.staticTexts["Welcome to Mustard"].exists)
     }
 
-    @MainActor
-    func testLaunchPerformance() throws {
-        if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
-            // This measures how long it takes to launch your application.
-            measure(metrics: [XCTApplicationLaunchMetric()]) {
-                XCUIApplication().launch()
-            }
-        }
+    /// Tests adding a new account.
+    func testAddingNewAccount() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        // Navigate to Accounts Tab
+        app.tabBars.buttons["Accounts"].tap()
+
+        // Tap Add Account Button
+        app.navigationBars["Accounts"].buttons["plus"].tap()
+
+        // Enter Instance URL
+        let instanceURLField = app.textFields["Enter Mastodon Instance URL (e.g., https://mastodon.social)"]
+        instanceURLField.tap()
+        instanceURLField.typeText("https://mastodon.social")
+
+        // Tap Add Button
+        app.buttons["Add"].tap()
+
+        // Verify Account is Added
+        // Assuming the account display name appears in the list
+        XCTAssertTrue(app.staticTexts["Mastodon Social"].exists)
+    }
+
+    /// Tests authenticating with an instance.
+    func testAuthenticationFlow() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        // Enter Instance URL
+        let instanceURLField = app.textFields["Enter Mastodon Instance URL (e.g., https://mastodon.social)"]
+        instanceURLField.tap()
+        instanceURLField.typeText("https://mastodon.social")
+
+        // Tap Authenticate Button
+        app.buttons["Authenticate"].tap()
+
+        // Since authentication involves external web interactions, UI tests might need to mock this or skip.
+        // Alternatively, verify that the authentication sheet appears.
+        // For example:
+        XCTAssertTrue(app.otherElements["ASWebAuthenticationSession"].exists)
     }
 }
+

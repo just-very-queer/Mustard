@@ -12,64 +12,72 @@ struct PostRowView: View {
     @EnvironmentObject var viewModel: TimelineViewModel
 
     @State private var showingCommentSheet = false
-    @State private var commentText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // User Info
-            HStack {
+            // MARK: - User Info
+            HStack(alignment: .top, spacing: 12) {
                 AsyncImage(url: post.account.avatar) { phase in
                     switch phase {
                     case .empty:
                         ProgressView()
-                            .frame(width: 40, height: 40)
+                            .frame(width: 50, height: 50)
                     case .success(let image):
                         image.resizable()
                             .scaledToFill()
-                            .frame(width: 40, height: 40)
+                            .frame(width: 50, height: 50)
                             .clipShape(Circle())
                     case .failure:
                         Image(systemName: "person.crop.circle.badge.exclamationmark")
                             .resizable()
-                            .frame(width: 40, height: 40)
+                            .frame(width: 50, height: 50)
                             .foregroundColor(.gray)
                     @unknown default:
                         EmptyView()
                     }
                 }
-
-                VStack(alignment: .leading) {
+                .accessibilityLabel("\(post.account.displayName)'s avatar")
+                
+                VStack(alignment: .leading, spacing: 4) {
                     Text(post.account.displayName)
                         .font(.headline)
-                    Text("@\(post.account.username)")
+                        .foregroundColor(.primary)
+
+                    Text("@\(post.account.acct)") // Corrected from post.acct
                         .font(.subheadline)
                         .foregroundColor(.gray)
+
+                    Text(post.createdAt, style: .relative)
+                        .font(.caption)
+                        .foregroundColor(.gray)
                 }
+                Spacer()
             }
 
-            // Post Content
-            if let attributedContent = convertHTMLToAttributedString(html: post.content) {
-                Text(attributedContent)
-            } else {
-                Text(post.content)
-                    .font(.body)
-            }
+            // MARK: - Post Content
+            Text(HTMLUtils.convertHTMLToAttributedString(html: post.content))
+                .font(.body)
+                .foregroundColor(.primary)
 
-            // Media Attachments
+            // MARK: - Media Attachments
             if !post.mediaAttachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(post.mediaAttachments) { media in
-                            AsyncImage(url: media.url) { phase in
+                            AsyncImage(url: media.previewUrl ?? media.url) { phase in
                                 switch phase {
                                 case .empty:
                                     ProgressView()
                                         .frame(width: 200, height: 200)
                                 case .success(let image):
                                     image.resizable()
-                                        .scaledToFit()
+                                        .scaledToFill()
                                         .frame(width: 200, height: 200)
-                                        .cornerRadius(8)
+                                        .cornerRadius(12)
+                                        .clipped()
+                                        .onTapGesture {
+                                            // Implement full-screen image viewing if desired
+                                        }
                                 case .failure:
                                     Image(systemName: "photo")
                                         .resizable()
@@ -79,110 +87,89 @@ struct PostRowView: View {
                                     EmptyView()
                                 }
                             }
+                            .accessibilityLabel("Media attachment")
                         }
                     }
                 }
             }
 
-            // Action Buttons
-            HStack(spacing: 16) {
+            // MARK: - Action Buttons
+            HStack(spacing: 24) {
+                // Like Button
                 Button(action: {
                     Task {
                         await viewModel.toggleLike(post: post)
                     }
                 }) {
-                    Image(systemName: post.isFavourited ? "heart.fill" : "heart")
-                        .foregroundColor(post.isFavourited ? .red : .gray)
+                    HStack(spacing: 4) {
+                        Image(systemName: post.isFavourited ? "heart.fill" : "heart")
+                            .foregroundColor(post.isFavourited ? .red : .gray)
+                        Text("\(post.favouritesCount)")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
                 }
-                Text("\(post.favouritesCount)")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                .accessibilityLabel(post.isFavourited ? "Unlike" : "Like")
 
+                // Repost Button
                 Button(action: {
                     Task {
                         await viewModel.toggleRepost(post: post)
                     }
                 }) {
-                    Image(systemName: post.isReblogged ? "arrow.2.squarepath" : "arrow.2.squarepath")
-                        .foregroundColor(post.isReblogged ? .green : .gray)
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.2.squarepath")
+                            .foregroundColor(post.isReblogged ? .green : .gray)
+                        Text("\(post.reblogsCount)")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
                 }
-                Text("\(post.reblogsCount)")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                .accessibilityLabel(post.isReblogged ? "Undo Repost" : "Repost")
 
-                Button(action: { showingCommentSheet = true }) {
-                    Image(systemName: "bubble.right")
-                        .foregroundColor(.gray)
+                // Comment Button
+                Button(action: {
+                    showingCommentSheet = true
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bubble.right")
+                            .foregroundColor(.gray)
+                        Text("\(post.repliesCount)")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                    }
                 }
-                Text("\(post.repliesCount)")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                .accessibilityLabel("Comment")
             }
             .padding(.top, 8)
         }
-        .padding()
+        .padding(.horizontal)
+        .padding(.vertical, 8)
         .sheet(isPresented: $showingCommentSheet) {
-            commentSheetView
+            CommentSheetView(post: post)
+                .environmentObject(viewModel)
         }
     }
 
-    // MARK: - Comment Sheet
+    struct PostRowView_Previews: PreviewProvider {
+        static var previews: some View {
+            // Initialize PreviewService with default mock posts
+            let previewService = PreviewService()
+            let timelineViewModel = TimelineViewModel(mastodonService: previewService)
+            // Replace 'mockPosts' with 'posts'
+            timelineViewModel.posts = previewService.mockPosts
 
-    private var commentSheetView: some View {
-        NavigationView {
-            VStack {
-                Text("Reply to \(post.account.displayName)")
-                    .font(.headline)
-                    .padding()
-
-                TextEditor(text: $commentText)
-                    .padding()
-                    .frame(minHeight: 100)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray, lineWidth: 1)
-                    )
-                    .padding(.horizontal)
-
-                Spacer()
-
-                HStack {
-                    Button("Cancel") {
-                        showingCommentSheet = false
-                        commentText = ""
-                    }
-                    Spacer()
-                    Button("Post") {
-                        Task {
-                            await viewModel.comment(post: post, content: commentText)
-                            showingCommentSheet = false
-                            commentText = ""
-                        }
-                    }
-                }
-                .padding()
+            // Select a specific post for preview
+            guard let samplePost = previewService.mockPosts.first else {
+                fatalError("No mock posts available for preview.")
             }
-            .navigationBarTitle("Add a Comment", displayMode: .inline)
+
+            return NavigationStack {
+                PostRowView(post: samplePost)
+                    .environmentObject(timelineViewModel)
+            }
         }
     }
 
-    // MARK: - HTML to AttributedString Conversion
-
-    private func convertHTMLToAttributedString(html: String) -> AttributedString? {
-        guard let data = html.data(using: .utf8) else { return nil }
-
-        let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
-            .documentType: NSAttributedString.DocumentType.html,
-            .characterEncoding: String.Encoding.utf8.rawValue
-        ]
-
-        do {
-            let nsAttrStr = try NSAttributedString(data: data, options: options, documentAttributes: nil)
-            return AttributedString(nsAttrStr)
-        } catch {
-            print("Error converting HTML to AttributedString: \(error.localizedDescription)")
-            return nil
-        }
-    }
 }
 

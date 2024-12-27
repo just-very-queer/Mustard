@@ -8,54 +8,95 @@
 import Foundation
 import Security
 
+/// Helper class for interacting with the Keychain.
 class KeychainHelper {
     static let shared = KeychainHelper()
 
     private init() {}
 
-    func save(_ data: String, service: String, account: String) {
-        if let data = data.data(using: .utf8) {
-            let query = [
-                kSecClass: kSecClassGenericPassword,
-                kSecAttrService: service,
-                kSecAttrAccount: account,
-                kSecValueData: data
-            ] as CFDictionary
+    /// Saves data to the Keychain.
+    /// - Parameters:
+    ///   - data: The string data to save.
+    ///   - service: The service identifier.
+    ///   - account: The account identifier.
+    func save(_ data: String, service: String, account: String) throws {
+        guard let data = data.data(using: .utf8) else {
+            throw KeychainError.encodingError
+        }
 
-            SecItemDelete(query) // Delete old item if exists
-            let status = SecItemAdd(query, nil)
-            if status != errSecSuccess {
-                print("Error saving to Keychain: \(status)")
-            }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+
+        // Delete any existing item
+        SecItemDelete(query as CFDictionary)
+
+        // Add new item
+        var newItem = query
+        newItem[kSecValueData as String] = data
+
+        let status = SecItemAdd(newItem as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw KeychainError.unhandledError(status: status)
         }
     }
 
-    func read(service: String, account: String) -> String? {
-        let query = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne
-        ] as CFDictionary
+    /// Reads data from the Keychain.
+    /// - Parameters:
+    ///   - service: The service identifier.
+    ///   - account: The account identifier.
+    /// - Returns: The retrieved string data, if any.
+    func read(service: String, account: String) throws -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
 
         var dataTypeRef: AnyObject?
-        let status = SecItemCopyMatching(query, &dataTypeRef)
+        let status = SecItemCopyMatching(query as CFDictionary, &dataTypeRef)
 
-        if status == errSecSuccess, let data = dataTypeRef as? Data {
-            return String(data: data, encoding: .utf8)
+        switch status {
+        case errSecSuccess:
+            if let data = dataTypeRef as? Data,
+               let string = String(data: data, encoding: .utf8) {
+                return string
+            } else {
+                throw KeychainError.dataConversionError
+            }
+        case errSecItemNotFound:
+            return nil
+        default:
+            throw KeychainError.unhandledError(status: status)
         }
-        return nil
     }
 
-    func delete(service: String, account: String) {
-        let query = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: account
-        ] as CFDictionary
+    /// Deletes data from the Keychain.
+    /// - Parameters:
+    ///   - service: The service identifier.
+    ///   - account: The account identifier.
+    func delete(service: String, account: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
 
-        SecItemDelete(query)
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.unhandledError(status: status)
+        }
+    }
+
+    /// Represents possible Keychain errors.
+    enum KeychainError: Error {
+        case encodingError
+        case dataConversionError
+        case unhandledError(status: OSStatus)
     }
 }
 

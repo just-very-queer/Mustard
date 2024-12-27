@@ -64,8 +64,11 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				DTOs/PostData.swift,
+				HTMLUtils.swift,
 				MastodonService.swift,
 				MastodonServiceProtocol.swift,
+				Notifications.swift,
+				PreviewService.swift,
 			);
 			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
 		};
@@ -73,18 +76,22 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				DTOs/PostData.swift,
+				HTMLUtils.swift,
 				MastodonService.swift,
 				MastodonServiceProtocol.swift,
+				Notifications.swift,
+				PreviewService.swift,
 			);
 			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
 		};
 		6687C3AC2C95B583000ECC5D /* Exceptions for "ViewModels" folder in "MustardTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AccountsViewModel.swift,
+				AddAccountView.swift,
 				AppError.swift,
 				AuthenticationViewModel.swift,
 				KeychainHelper.swift,
-				TimelineView.swift,
 				TimelineViewModel.swift,
 			);
 			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
@@ -92,10 +99,11 @@
 		6687C3AD2C95B583000ECC5D /* Exceptions for "ViewModels" folder in "MustardUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AccountsViewModel.swift,
+				AddAccountView.swift,
 				AppError.swift,
 				AuthenticationViewModel.swift,
 				KeychainHelper.swift,
-				TimelineView.swift,
 				TimelineViewModel.swift,
 			);
 			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
@@ -103,14 +111,24 @@
 		6687C3B32C95B5F5000ECC5D /* Exceptions for "Views" folder in "MustardTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AccountsView.swift,
+				AuthenticationView.swift,
+				CommentSheetView.swift,
+				PostDetailView.swift,
 				PostRowView.swift,
+				TimelineView.swift,
 			);
 			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
 		};
 		6687C3B42C95B5F5000ECC5D /* Exceptions for "Views" folder in "MustardUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AccountsView.swift,
+				AuthenticationView.swift,
+				CommentSheetView.swift,
+				PostDetailView.swift,
 				PostRowView.swift,
+				TimelineView.swift,
 			);
 			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
 		};
@@ -333,7 +351,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 1620;
 				TargetAttributes = {
 					6687C34C2C95AE87000ECC5D = {
 						CreatedOnToolsVersion = 16.0;
@@ -480,6 +498,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -541,6 +560,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -568,6 +588,7 @@
 				CODE_SIGN_ENTITLEMENTS = Mustard/Mustard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Mustard/Preview Content\"";
 				DEVELOPMENT_TEAM = DSG47QF9P9;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -608,6 +629,7 @@
 				CODE_SIGN_ENTITLEMENTS = Mustard/Mustard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"Mustard/Preview Content\"";
 				DEVELOPMENT_TEAM = DSG47QF9P9;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -646,6 +668,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = DSG47QF9P9;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -669,6 +692,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = DSG47QF9P9;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -691,6 +715,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = DSG47QF9P9;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -713,6 +738,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = DSG47QF9P9;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;

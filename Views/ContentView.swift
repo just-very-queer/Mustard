@@ -6,95 +6,111 @@
 //
 
 import SwiftUI
+import Foundation
 
 struct ContentView: View {
-    // Use the shared environment objects from MustardApp
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
-    
-    @State private var showingServerList = false
+
+    // Removed the redundant @State property for selectedFilter
+    // @State private var selectedFilter: TimelineViewModel.TimeFilter = .day
 
     var body: some View {
-        NavigationView {
-            if authViewModel.isAuthenticated {
-                // Already authenticated, show timeline
-                TimelineView()
+        TabView {
+            NavigationStack {
+                if authViewModel.isAuthenticated {
+                    // Home Feed with Filters
+                    VStack {
+                        // Filter Picker bound directly to TimelineViewModel's selectedFilter
+                        Picker("Filter", selection: $timelineViewModel.selectedFilter) {
+                            ForEach(TimelineViewModel.TimeFilter.allCases) { filter in
+                                Text(filter.rawValue).tag(filter)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .padding()
+
+                        // Timeline View without passing selectedFilter as a parameter
+                        TimelineView()
+                    }
                     .navigationTitle("Home")
                     .toolbar {
                         ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Logout") {
-                                authViewModel.logout()
-                                // Clear timeline, etc., if desired
-                                timelineViewModel.posts.removeAll()
+                            Button(action: {
+                                Task {
+                                    await timelineViewModel.fetchTimeline()
+                                }
+                            }) {
+                                Image(systemName: "arrow.clockwise")
                             }
+                            .accessibilityLabel("Refresh Timeline")
                         }
                     }
-                    .onAppear {
-                        // Make sure TimelineViewModel has the same instanceURL
-                        timelineViewModel.instanceURL = authViewModel.instanceURL
-                        
-                        Task {
-                            await timelineViewModel.loadTimeline()
-                        }
-                    }
-            } else {
-                // Not authenticated, show "Welcome" screen
-                VStack(spacing: 20) {
-                    Text("Welcome to Mustard")
-                        .font(.largeTitle)
-                        .padding()
-
-                    Button(action: {
-                        showingServerList = true
-                    }) {
-                        Text("Select Server")
-                            .font(.headline)
-                            .padding()
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                    }
-                }
-                .sheet(isPresented: $showingServerList) {
-                    ServerListView(
-                        servers: SampleServers.servers,
-                        onSelect: { selectedServer in
-                            // IMPORTANT: set instanceURL for auth (and maybe timeline)
-                            authViewModel.instanceURL = selectedServer.url
-                            timelineViewModel.instanceURL = selectedServer.url
-                            
-                            Task {
-                                await authViewModel.authenticate()
-                            }
-                            showingServerList = false
-                        },
-                        onCancel: {
-                            showingServerList = false
-                        }
-                    )
-                }
-                .alert(item: $authViewModel.alertError) { error in
-                    Alert(
-                        title: Text("Error"),
-                        message: Text(error.message),
-                        dismissButton: .default(Text("OK"))
-                    )
+                } else {
+                    // Show the authentication screen
+                    AuthenticationView()
                 }
             }
+            .tabItem {
+                Label("Home", systemImage: "house")
+            }
+
+            // Accounts Management Tab
+            NavigationStack {
+                AccountsView()
+            }
+            .tabItem {
+                Label("Accounts", systemImage: "person.2")
+            }
+        }
+        .onAppear {
+            // Fetch timeline if authenticated
+            if authViewModel.isAuthenticated {
+                Task {
+                    await timelineViewModel.fetchTimeline()
+                }
+            }
+        }
+        // Specify the type for the alert error so Swift can infer
+        .alert(item: $timelineViewModel.alertError) { (error: AppError) in
+            Alert(
+                title: Text("Error"),
+                message: Text(error.message),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 }
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        // For preview, we can set up mock view models
-        let mockService = MastodonService()
-        let authVM = AuthenticationViewModel(mastodonService: mockService)
-        let timelineVM = TimelineViewModel(mastodonService: mockService)
-        
+        // Initialize PreviewService with default mock posts
+        let previewService = PreviewService()
+        let authViewModel = AuthenticationViewModel(mastodonService: previewService)
+        let timelineViewModel = TimelineViewModel(mastodonService: previewService)
+        let accountsViewModel = AccountsViewModel(mastodonService: previewService)
+
+        // Create a sample account
+        let sampleAccount = Account(
+            id: "a1",
+            username: "user1",
+            displayName: "User One",
+            avatar: URL(string: "https://example.com/avatar1.png")!,
+            acct: "user1",
+            instanceURL: URL(string: "https://mastodon.social")!,
+            accessToken: "testToken"
+        )
+        accountsViewModel.accounts = [sampleAccount]
+        accountsViewModel.selectedAccount = sampleAccount
+
+        // Simulate authenticated state
+        authViewModel.isAuthenticated = true
+        authViewModel.instanceURL = previewService.baseURL
+
         return ContentView()
-            .environmentObject(authVM)
-            .environmentObject(timelineVM)
+            .environmentObject(authViewModel)
+            .environmentObject(timelineViewModel)
+            .environmentObject(accountsViewModel)
     }
 }
 

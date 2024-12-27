@@ -2,14 +2,14 @@
 //  AuthenticationViewModel.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
+//  Created by VAIBHAV SRIVASTAVA on 26/04/25.
 //
 
 import Foundation
 import SwiftUI
 import AuthenticationServices
 
-/// A view model responsible for handling authentication with the Mastodon API.
+/// ViewModel responsible for handling authentication with the Mastodon API.
 @MainActor
 class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
     
@@ -22,7 +22,13 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     @Published var instanceURL: URL?
     
     /// An optional error to display alerts.
-    @Published var alertError: MustardAppError?
+    @Published var alertError: AppError?
+    
+    /// Indicates whether an authentication session is in progress.
+    @Published var isAuthenticating: Bool = false
+    
+    /// The custom instance URL entered by the user.
+    @Published var customInstanceURL: String = ""
     
     // MARK: - Private Properties
     
@@ -33,12 +39,13 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     
     private var session: ASWebAuthenticationSession?
     
-    /// Make this `var` so we can modify `baseURL`.
-    private var mastodonService: MastodonServiceProtocol
+    /// The Mastodon service handling API interactions.
+    private var mastodonService: MastodonServiceProtocol // Changed from 'let' to 'var'
     
     // MARK: - Nested Structures
     
-    struct AppCredentials: Codable {
+    /// Represents the app credentials received after registration.
+    private struct AppCredentials: Codable {
         let id: String
         let client_id: String
         let client_secret: String
@@ -46,7 +53,8 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         let vapid_key: String?
     }
     
-    struct TokenResponse: Codable {
+    /// Represents the token response after successful authentication.
+    private struct TokenResponse: Codable {
         let access_token: String
         let token_type: String
         let scope: String
@@ -55,71 +63,90 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     
     // MARK: - Initialization
     
+    /// Initializes the AuthenticationViewModel with a Mastodon service.
+    /// - Parameter mastodonService: The service to interact with Mastodon APIs.
     init(mastodonService: MastodonServiceProtocol) {
         self.mastodonService = mastodonService
         super.init()
         
-        // If there's already an access token in the Keychain, we consider ourselves authenticated.
-        if accessToken != nil {
-            isAuthenticated = true
-            // Attempt to set the baseURL from instanceURL if we have it
-            self.mastodonService.baseURL = instanceURL
+        // If there's already an access token in the Mastodon service, consider the user authenticated.
+        if mastodonService.accessToken != nil && mastodonService.baseURL != nil {
+            self.isAuthenticated = true
+            self.instanceURL = mastodonService.baseURL
         }
+        
+        // Listen for OAuth callback notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOAuthCallback(notification:)),
+            name: .didReceiveOAuthCallback,
+            object: nil
+        )
+        
+        // Listen for Account Selection notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAccountSelection(notification:)),
+            name: .didSelectAccount,
+            object: nil
+        )
     }
     
-    // MARK: - Computed Properties
-    
-    /// Reads/writes the access token from Keychain.
-    private var accessToken: String? {
-        get {
-            guard let instanceURL = instanceURL else { return nil }
-            let service = "Mustard-\(instanceURL.host ?? "")"
-            return KeychainHelper.shared.read(service: service, account: "accessToken")
-        }
-        set {
-            guard let instanceURL = instanceURL else { return }
-            let service = "Mustard-\(instanceURL.host ?? "")"
-            if let token = newValue {
-                KeychainHelper.shared.save(token, service: service, account: "accessToken")
-            } else {
-                KeychainHelper.shared.delete(service: service, account: "accessToken")
-            }
-        }
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - Public Methods
     
-    /// Starts the authentication flow by registering our app with the Mastodon instance.
+    /// Starts the authentication flow by registering the app and initiating OAuth.
     func authenticate() async {
-        guard instanceURL != nil else {
-            print("Instance URL not set.")
-            self.alertError = MustardAppError(message: "Instance URL is not set.")
+        guard !customInstanceURL.isEmpty else {
+            self.alertError = AppError(message: "Instance URL is empty.")
             return
         }
         
+        guard let url = URL(string: customInstanceURL) else {
+            self.alertError = AppError(message: "Invalid instance URL format.")
+            return
+        }
+        
+        // If the user selects a new instance, log out from the previous session.
+        if isAuthenticated {
+            logout()
+        }
+        
+        self.instanceURL = url
+        
         do {
+            isAuthenticating = true
             try await registerApp()
             try await startAuthentication()
         } catch {
             print("Authentication process failed: \(error.localizedDescription)")
-            self.alertError = MustardAppError(message: "Authentication process failed. Please try again.")
+            self.alertError = AppError(message: "Authentication failed. Please try again.")
         }
+        
+        isAuthenticating = false
     }
     
     /// Logs out the user, clearing credentials and resetting flags.
     func logout() {
-        accessToken = nil
+        // Clear access token and baseURL from the service
+        mastodonService.baseURL = nil
+        mastodonService.accessToken = nil
+        
         isAuthenticated = false
         clientID = nil
         clientSecret = nil
-        mastodonService.baseURL = nil
+        instanceURL = nil
     }
     
     // MARK: - Private Methods
     
+    /// Registers the app with the Mastodon instance.
     private func registerApp() async throws {
         guard let instanceURL = instanceURL else {
-            throw MustardAppError(message: "Instance URL not set.")
+            throw AppError(message: "Instance URL not set.")
         }
         
         let appsURL = instanceURL.appendingPathComponent("/api/v1/apps")
@@ -130,7 +157,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             "client_name": "Mustard",
             "redirect_uris": redirectURI,
             "scopes": scopes,
-            "website": "https://yourappwebsite.com"
+            "website": "https://yourappwebsite.com" // Replace with your app's website
         ]
         
         request.httpBody = parameters
@@ -148,13 +175,14 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         self.clientSecret = appCredentials.client_secret
     }
     
+    /// Initiates the OAuth authentication process using ASWebAuthenticationSession.
     private func startAuthentication() async throws {
         guard let instanceURL = instanceURL,
               let clientID = clientID else {
-            throw MustardAppError(message: "Instance URL or client ID not set.")
+            throw AppError(message: "Instance URL or client ID not set.")
         }
         
-        // Build the authorize URL
+        // Build the authorization URL
         let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
         var components = URLComponents(url: authURL, resolvingAgainstBaseURL: true)!
         components.queryItems = [
@@ -165,25 +193,63 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         ]
         
         guard let url = components.url else {
-            throw MustardAppError(message: "Failed to construct authentication URL.")
+            throw AppError(message: "Failed to construct authentication URL.")
         }
         
-        let callbackURL = try await authenticateWithWeb(url: url)
-        
-        // Parse the "code" out of the callback URL
-        guard let queryItems = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?.queryItems,
-              let code = queryItems.first(where: { $0.name == "code" })?.value else {
-            throw MustardAppError(message: "No authorization code found.")
-        }
-        
-        try await fetchAccessToken(code: code)
+        try await authenticateWithWeb(url: url)
     }
     
+    /// Launches ASWebAuthenticationSession to perform OAuth authentication.
+    /// - Parameter url: The authorization URL.
+    private func authenticateWithWeb(url: URL) async throws {
+        isAuthenticating = true
+        
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            session = ASWebAuthenticationSession(
+                url: url,
+                callbackURLScheme: "mustard"
+            ) { [weak self] callbackURL, error in
+                guard let self = self else {
+                    continuation.resume(throwing: AppError(message: "Self is nil."))
+                    return
+                }
+                
+                if let error = error {
+                    // Check if the error is due to user cancellation
+                    if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                        continuation.resume(throwing: AppError(message: "Authentication was canceled by the user."))
+                    } else {
+                        continuation.resume(throwing: AppError(message: "Authentication failed: \(error.localizedDescription)"))
+                    }
+                    return
+                }
+                
+                guard let callbackURL = callbackURL else {
+                    continuation.resume(throwing: AppError(message: "Invalid callback URL."))
+                    return
+                }
+                
+                // Handle the callback URL
+                NotificationCenter.default.post(name: .didReceiveOAuthCallback, object: nil, userInfo: ["url": callbackURL])
+                
+                continuation.resume()
+            }
+            
+            #if os(iOS)
+            session?.presentationContextProvider = self
+            session?.prefersEphemeralWebBrowserSession = true
+            #endif
+            session?.start()
+        }
+    }
+    
+    /// Fetches the access token using the authorization code.
+    /// - Parameter code: The authorization code received from the OAuth callback.
     private func fetchAccessToken(code: String) async throws {
         guard let instanceURL = instanceURL,
               let clientID = clientID,
               let clientSecret = clientSecret else {
-            throw MustardAppError(message: "Instance URL or client credentials not set.")
+            throw AppError(message: "Instance URL or client credentials not set.")
         }
         
         let tokenURL = instanceURL.appendingPathComponent("/oauth/token")
@@ -211,58 +277,29 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         
         let tokenResponse = try JSONDecoder().decode(TokenResponse.self, from: data)
         
-        // Store the access token
-        self.accessToken = tokenResponse.access_token
-        // Mark ourselves as authenticated
-        self.isAuthenticated = true
-        
-        // Finally, set the Mastodon service baseURL
+        // Store the access token securely via MastodonServiceProtocol
+        try mastodonService.saveAccessToken(tokenResponse.access_token)
         mastodonService.baseURL = instanceURL
+        
+        self.isAuthenticated = true
     }
     
-    /// Launch an ASWebAuthenticationSession to open the login page and capture the callback.
-    private func authenticateWithWeb(url: URL) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            session = ASWebAuthenticationSession(
-                url: url,
-                callbackURLScheme: "mustard"
-            ) { callbackURL, error in
-                if let error = error {
-                    continuation.resume(
-                        throwing: MustardAppError(message: "Authentication failed: \(error.localizedDescription)")
-                    )
-                    return
-                }
-                
-                guard let callbackURL = callbackURL else {
-                    continuation.resume(
-                        throwing: MustardAppError(message: "No callback URL received.")
-                    )
-                    return
-                }
-                
-                continuation.resume(returning: callbackURL)
-            }
-            
-            #if os(iOS)
-            session?.presentationContextProvider = self
-            session?.prefersEphemeralWebBrowserSession = true
-            #endif
-            session?.start()
-        }
-    }
-    
+    /// Validates the HTTP response.
+    /// - Parameter response: The URL response to validate.
     private func validateResponse(_ response: URLResponse) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw MustardAppError(message: "Invalid response.")
+            throw AppError(message: "Invalid response.")
         }
         guard (200...299).contains(httpResponse.statusCode) else {
-            throw MustardAppError(message: "HTTP Error: \(httpResponse.statusCode)")
+            throw AppError(message: "HTTP Error: \(httpResponse.statusCode)")
         }
     }
     
     // MARK: - ASWebAuthenticationPresentationContextProviding
     
+    /// Provides the presentation anchor for ASWebAuthenticationSession.
+    /// - Parameter session: The authentication session requesting the anchor.
+    /// - Returns: The presentation anchor.
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         #if os(iOS)
         // iOS-specific code
@@ -275,8 +312,57 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         #elseif os(macOS)
         return NSApplication.shared.windows.first ?? NSWindow()
         #else
-        return UIWindow()
+        return ASPresentationAnchor()
         #endif
+    }
+    
+    // MARK: - OAuth Callback Handling via Notification
+    
+    /// Handles the OAuth callback by extracting the authorization code.
+    /// - Parameter notification: The notification containing the callback URL.
+    @objc private func handleOAuthCallback(notification: Notification) {
+        guard let url = notification.userInfo?["url"] as? URL else { return }
+        Task {
+            await handleCallback(url: url)
+        }
+    }
+    
+    /// Processes the OAuth callback URL to retrieve the authorization code and fetch the access token.
+    /// - Parameter url: The callback URL containing the authorization code.
+    private func handleCallback(url: URL) async {
+        // Extract the "code" from the callback URL
+        guard let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let code = queryItems.first(where: { $0.name == "code" })?.value else {
+            self.alertError = AppError(message: "No authorization code found.")
+            return
+        }
+        
+        do {
+            try await fetchAccessToken(code: code)
+            // Notify that authentication succeeded
+            NotificationCenter.default.post(name: .didAuthenticate, object: nil)
+        } catch {
+            self.alertError = AppError(message: "Authentication failed. Please try again.")
+        }
+    }
+    
+    /// Handles account selection by updating the instance URL and access token.
+    /// - Parameter notification: The notification containing the selected account.
+    @objc private func handleAccountSelection(notification: Notification) {
+        guard let account = notification.userInfo?["account"] as? Account else { return }
+        self.instanceURL = account.instanceURL
+        
+        // Set directly since accessToken is get and set
+        mastodonService.baseURL = account.instanceURL
+        mastodonService.accessToken = account.accessToken
+        
+        self.isAuthenticated = true
+        
+        // Fetch the timeline for the selected account
+        Task {
+            // Post a didAuthenticate notification to trigger TimelineViewModel's fetch
+            NotificationCenter.default.post(name: .didAuthenticate, object: nil)
+        }
     }
 }
 
