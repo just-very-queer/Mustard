@@ -15,25 +15,23 @@ struct AddAccountView: View {
     @Environment(\.presentationMode) var presentationMode
 
     @State private var instanceURL: String = ""
+    // Removed username and password fields
     @State private var isLoading: Bool = false
-    @State private var errorMessage: String? = nil
+    @State private var error: AppError? = nil
 
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
+                // Instance URL Input
                 TextField("Enter Mastodon Instance URL (e.g., https://mastodon.social)", text: $instanceURL)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .keyboardType(.URL)
                     .autocapitalization(.none)
                     .padding()
 
+                // Loading Indicator
                 if isLoading {
                     ProgressView("Adding Account...")
-                }
-
-                if let error = errorMessage {
-                    Text(error)
-                        .foregroundColor(.red)
                         .padding()
                 }
 
@@ -41,51 +39,64 @@ struct AddAccountView: View {
             }
             .navigationTitle("Add Account")
             .toolbar {
+                // Cancel Button
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
                         presentationMode.wrappedValue.dismiss()
                     }
                 }
+                // Add Button
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Add") {
                         addAccount()
                     }
-                    .disabled(instanceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                    .disabled(
+                        instanceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        isLoading
+                    )
                 }
+            }
+            .alert(item: $error) { error in
+                Alert(
+                    title: Text("Error"),
+                    message: Text(error.message),
+                    dismissButton: .default(Text("OK"))
+                )
             }
         }
     }
 
+    /// Handles the account addition process.
     private func addAccount() {
+        // Validate Instance URL
         guard let url = URL(string: instanceURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            errorMessage = "Please enter a valid URL."
+            error = AppError(message: "Please enter a valid URL.")
             return
         }
 
+        // Indicate Loading State
         isLoading = true
-        errorMessage = nil
+        error = nil
 
-        // Here, implement the actual authentication logic.
-        // For demonstration, we'll mock the successful addition after a delay.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            // Mock successful authentication and access token retrieval
-            let newAccount = Account(
-                id: UUID().uuidString,
-                username: "newuser",
-                displayName: "New User",
-                avatar: URL(string: "https://example.com/avatar_new.png")!,
-                acct: "newuser",
-                instanceURL: url,
-                accessToken: "newAccessToken123"
-            )
+        // Create Server object
+        let server = Server(name: url.host ?? "Unknown", url: url, description: "Mastodon Instance")
 
-            viewModel.accounts.append(newAccount)
-            viewModel.selectedAccount = newAccount
-            authViewModel.instanceURL = url
-            timelineViewModel.posts = []
+        // Perform Authentication Asynchronously
+        Task {
+            do {
+                try await authViewModel.authenticate(with: server)
+                
+                // Clear the timeline
+                timelineViewModel.posts = []
 
-            isLoading = false
-            presentationMode.wrappedValue.dismiss()
+                // Reset Loading State and Dismiss View
+                isLoading = false
+                presentationMode.wrappedValue.dismiss()
+            } catch {
+                // Handle Errors
+                isLoading = false
+                self.error = AppError(message: "Failed to add account: \(error.localizedDescription)")
+            }
         }
     }
 }
@@ -93,39 +104,35 @@ struct AddAccountView: View {
 // MARK: - Preview
 struct AddAccountView_Previews: PreviewProvider {
     static var previews: some View {
-        // 1) Create a mock MastodonService (PreviewService)
-        let previewService = PreviewService()
+        // Initialize Mock Service for Preview
+        let mockService = MockMastodonService(shouldSucceed: true)
         
-        // 2) Create a ModelContainer for SwiftData (with your @Model types)
+        // Initialize Model Container with Required Models
         let container: ModelContainer
         do {
             container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
-        
-        // 3) Obtain the modelContext
+
         let modelContext = container.mainContext
-        
-        // 4) Initialize your ViewModels with the previewService and modelContext
-        let accountsViewModel = AccountsViewModel(mastodonService: previewService,
-                                                  modelContext: modelContext)
-        let authViewModel = AuthenticationViewModel(mastodonService: previewService)
-        let timelineViewModel = TimelineViewModel(mastodonService: previewService)
-        
-        // 5) Optionally add some mock data
-        accountsViewModel.accounts = [previewService.sampleAccount1, previewService.sampleAccount2]
-        accountsViewModel.selectedAccount = previewService.sampleAccount1
-        timelineViewModel.posts = previewService.mockPosts
-        
-        // 6) Present AddAccountView with environment objects
-        return NavigationStack {
+
+        // Initialize ViewModels with Mock Service and Context
+        let accountsViewModel = AccountsViewModel(mastodonService: mockService, modelContext: modelContext)
+        let authViewModel = AuthenticationViewModel(mastodonService: mockService)
+        let timelineViewModel = TimelineViewModel(mastodonService: mockService)
+
+        // Populate ViewModels with Mock Data
+        accountsViewModel.accounts = mockService.mockAccounts
+        accountsViewModel.selectedAccount = mockService.mockAccounts.first
+        timelineViewModel.posts = mockService.mockPosts
+
+        return NavigationView {
             AddAccountView()
                 .environmentObject(accountsViewModel)
                 .environmentObject(authViewModel)
                 .environmentObject(timelineViewModel)
         }
-        // 7) Attach the model container for SwiftData
         .modelContainer(container)
     }
 }

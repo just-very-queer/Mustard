@@ -12,20 +12,19 @@ struct AccountsView: View {
     @EnvironmentObject var viewModel: AccountsViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
-    
+
     @State private var showingAddAccountSheet = false
-    
+    @State private var isAuthenticating = false
+
     var body: some View {
         NavigationStack {
             List {
                 ForEach(viewModel.accounts) { account in
-                    // Determine if the current account is selected
-                    let isSelected = isAccountSelected(account)
-                    
-                    // Render the AccountRowView with the determined selection state
+                    let isSelected = viewModel.selectedAccount?.id == account.id
                     AccountRowView(account: account, isSelected: isSelected)
+                        .contentShape(Rectangle()) // Makes entire row tappable
                         .onTapGesture {
-                            handleAccountSelection(account)
+                            viewModel.selectAccount(account)
                         }
                 }
                 .onDelete(perform: viewModel.deleteAccounts)
@@ -35,7 +34,7 @@ struct AccountsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        showingAddAccountSheet = true
+                        initiateOAuthFlow()
                     }) {
                         Image(systemName: "plus")
                     }
@@ -45,11 +44,6 @@ struct AccountsView: View {
                     EditButton()
                 }
             }
-            .sheet(isPresented: $showingAddAccountSheet) {
-                AddAccountView()
-                    .environmentObject(viewModel)
-                    .environmentObject(authViewModel)
-            }
             .alert(item: $viewModel.errorMessage) { error in
                 Alert(
                     title: Text("Error"),
@@ -57,37 +51,45 @@ struct AccountsView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
+            .overlay(
+                Group {
+                    if isAuthenticating {
+                        Color.black.opacity(0.4)
+                            .edgesIgnoringSafeArea(.all)
+                        ProgressView("Authenticating...")
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(10)
+                    }
+                }
+            )
+            .onAppear {
+                Task {
+                    await viewModel.fetchAccounts()
+                }
+            }
         }
     }
     
-    // MARK: - Helper Methods
-    
-    /// Determines if the given account is the currently selected account.
-    private func isAccountSelected(_ account: Account) -> Bool {
-        guard let selectedAccount = viewModel.selectedAccount else {
-            return false
-        }
-        return selectedAccount.id == account.id
+    /// Initiates the OAuth authentication flow to add a new account.
+    private func initiateOAuthFlow() {
+        // Presenting an authentication sheet to handle OAuth
+        showingAddAccountSheet = true
     }
     
-    /// Handles the selection of an account.
-    private func handleAccountSelection(_ account: Account) {
-        viewModel.selectAccount(account)
-        if let instanceURL = account.instanceURL {
-            authViewModel.instanceURL = instanceURL // Assign URL directly
-            print("AccountsView: Instance URL set to: \(instanceURL)")
-        } else {
-            authViewModel.alertError = AppError(message: "Selected account has an invalid instance URL.")
-            print("AccountsView: Selected account has an invalid instance URL.")
-            return
-        }
-        timelineViewModel.posts = []
-        Task {
-            await timelineViewModel.fetchTimeline()
+    /// Handles the OAuth authentication result.
+    private func handleOAuthResult() {
+        // Observe for account addition via NotificationCenter
+        NotificationCenter.default.addObserver(forName: .didAddAccount, object: nil, queue: .main) { _ in
+            showingAddAccountSheet = false
+            Task {
+                await viewModel.fetchAccounts()
+            }
         }
     }
 }
 
+// MARK: - AccountRowView
 struct AccountRowView: View {
     let account: Account
     let isSelected: Bool
@@ -100,7 +102,8 @@ struct AccountRowView: View {
                     ProgressView()
                         .frame(width: 50, height: 50)
                 case .success(let image):
-                    image.resizable()
+                    image
+                        .resizable()
                         .scaledToFill()
                         .frame(width: 50, height: 50)
                         .clipShape(Circle())
@@ -130,71 +133,38 @@ struct AccountRowView: View {
                     .foregroundColor(.blue)
             }
         }
-        .contentShape(Rectangle())
+        .padding(.vertical, 8)
     }
 }
 
 // MARK: - Preview
-
 struct AccountsView_Previews: PreviewProvider {
     static var previews: some View {
-        // 1) Initialize a mock MastodonService
         let mockService = MockMastodonService()
         
-        // 2) Create a SwiftData ModelContainer (or mock context)
-        //    For real usage, add all your @Model types here (e.g., Account, MediaAttachment, Post, etc.)
         let container: ModelContainer
         do {
             container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
         } catch {
-            fatalError("Failed to create ModelContainer for preview: \(error)")
+            fatalError("Failed to initialize ModelContainer: \(error)")
         }
         
-        // 3) Grab the modelContext
         let modelContext = container.mainContext
         
-        // 4) Initialize your ViewModels
+        let accountsViewModel = AccountsViewModel(mastodonService: mockService, modelContext: modelContext)
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
         let timelineViewModel = TimelineViewModel(mastodonService: mockService)
-        let accountsViewModel = AccountsViewModel(mastodonService: mockService,
-                                                  modelContext: modelContext)
         
-        // 5) Create sample accounts
-        let sampleAccount1 = Account(
-            id: "a1",
-            username: "user1",
-            displayName: "User One",
-            avatar: URL(string: "https://example.com/avatar1.png")!,
-            acct: "user1",
-            instanceURL: URL(string: "https://mastodon.social")!,
-            accessToken: "testToken1"
-        )
-        let sampleAccount2 = Account(
-            id: "a2",
-            username: "user2",
-            displayName: "User Two",
-            avatar: URL(string: "https://example.com/avatar2.png")!,
-            acct: "user2",
-            instanceURL: URL(string: "https://mastodon.social")!,
-            accessToken: "testToken2"
-        )
+        // Pre-populate with mock accounts
+        accountsViewModel.accounts = mockService.mockAccounts
+        accountsViewModel.selectedAccount = mockService.mockAccounts.first
+        timelineViewModel.posts = mockService.mockPosts
         
-        // 6) Populate the AccountsViewModel
-        accountsViewModel.accounts = [sampleAccount1, sampleAccount2]
-        accountsViewModel.selectedAccount = sampleAccount1
-        
-        // 7) Simulate an authenticated state
-        authViewModel.isAuthenticated = true
-        authViewModel.instanceURL = mockService.baseURL
-        
-        return NavigationStack {
-            AccountsView()
-                // 8) Provide environment objects
-                .environmentObject(accountsViewModel)
-                .environmentObject(authViewModel)
-                .environmentObject(timelineViewModel)
-        }
-        .modelContainer(container) // Attach ModelContainer for SwiftData usage
+        return AccountsView()
+            .environmentObject(accountsViewModel)
+            .environmentObject(authViewModel)
+            .environmentObject(timelineViewModel)
+            .modelContainer(container)
     }
 }
 

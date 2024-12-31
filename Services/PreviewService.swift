@@ -2,214 +2,266 @@
 //  PreviewService.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
+//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
 //
 
 import Foundation
 
-/// A mock service conforming to `MastodonServiceProtocol` for SwiftUI previews.
+/// A mock implementation of `MastodonServiceProtocol` for previews and testing.
 class PreviewService: MastodonServiceProtocol {
-    
     // MARK: - Properties
-    
-    var baseURL: URL?
-    var accessToken: String?
-    
-    // MARK: - Mock Data
-    
-    /// Sample accounts for preview.
-    public lazy var sampleAccount1: Account = Account(
-        id: "a1",
-        username: "user1",
-        displayName: "User One",
-        avatar: URL(string: "https://example.com/avatar1.png")!,
-        acct: "user1",
-        instanceURL: URL(string: "https://mastodon.social")!,
-        accessToken: "mockAccessToken123"
-    )
-    
-    public lazy var sampleAccount2: Account = Account(
-        id: "a2",
-        username: "user2",
-        displayName: "User Two",
-        avatar: URL(string: "https://example.com/avatar2.png")!,
-        acct: "user2",
-        instanceURL: URL(string: "https://mastodon.social")!,
-        accessToken: "mockAccessToken456"
-    )
-    
-    /// Sample posts for preview.
-    public lazy var samplePost1: Post = Post(
-        id: "1",
-        content: "<p>Hello, this is a sample post!</p>",
-        createdAt: Date(),
-        account: sampleAccount1,
-        mediaAttachments: [],
-        isFavourited: false,
-        isReblogged: false,
-        reblogsCount: 0,
-        favouritesCount: 0,
-        repliesCount: 0
-    )
-    
-    public lazy var samplePost2: Post = Post(
-        id: "2",
-        content: "<p>Another example post with some <strong>bold</strong> text.</p>",
-        createdAt: Date().addingTimeInterval(-3600), // 1 hour ago
-        account: sampleAccount2,
-        mediaAttachments: [],
-        isFavourited: true,
-        isReblogged: false,
-        reblogsCount: 1,
-        favouritesCount: 5,
-        repliesCount: 2
-    )
-    
-    /// Mutable mock posts to allow state changes in previews.
+
+    var baseURL: URL? = URL(string: "https://example.com")
+    var accessToken: String? = "mockAccessToken123"
+
+    /// Mock data for posts and accounts
     var mockPosts: [Post] = []
-    
-    /// Mock accounts list.
     var mockAccounts: [Account] = []
-    
-    // MARK: - Initializer
-    
-    /// Designated initializer
-    init() {
-        // Initialize with mock data
-        self.baseURL = URL(string: "https://mastodon.social")
-        self.accessToken = "mockAccessToken123"
+    var shouldSucceed: Bool
+
+    // MARK: - Initialization
+
+    init(shouldSucceed: Bool = true, mockPosts: [Post]? = nil, mockAccounts: [Account]? = nil) {
+        self.shouldSucceed = shouldSucceed
+        self.mockAccounts = mockAccounts ?? []
         
-        // By default, we add sample posts + accounts
-        self.mockPosts = [samplePost1, samplePost2]
-        self.mockAccounts = [sampleAccount1, sampleAccount2]
-    }
-    
-    /// Convenience initializer to allow custom mockPosts and mockAccounts
-    convenience init(mockPosts: [Post]? = nil, mockAccounts: [Account]? = nil) {
-        self.init()
-        if let mockPosts = mockPosts {
-            self.mockPosts = mockPosts
+        if self.mockAccounts.isEmpty {
+            let sampleAccount1 = Account(
+                id: "mockAccount1",
+                username: "testuser1",
+                displayName: "Test User 1",
+                avatar: URL(string: "https://example.com/avatar1.png")!,
+                acct: "testuser1",
+                instanceURL: baseURL!,
+                accessToken: "mockAccessToken123"
+            )
+            
+            let sampleAccount2 = Account(
+                id: "mockAccount2",
+                username: "testuser2",
+                displayName: "Test User 2",
+                avatar: URL(string: "https://example.com/avatar2.png")!,
+                acct: "testuser2",
+                instanceURL: baseURL!,
+                accessToken: "mockAccessToken456"
+            )
+            
+            self.mockAccounts = [sampleAccount1, sampleAccount2]
         }
-        if let mockAccounts = mockAccounts {
-            self.mockAccounts = mockAccounts
+        
+        self.mockPosts = mockPosts ?? []
+        
+        if self.mockPosts.isEmpty, !self.mockAccounts.isEmpty {
+            self.mockPosts = self.mockAccounts.enumerated().map { index, account in
+                Post(
+                    id: UUID().uuidString,
+                    content: "<p>Mock post #\(index + 1) for preview.</p>",
+                    createdAt: Date().addingTimeInterval(Double(-index * 3600)),
+                    account: account,
+                    mediaAttachments: [],
+                    isFavourited: Bool.random(),
+                    isReblogged: Bool.random(),
+                    reblogsCount: Int.random(in: 0...10),
+                    favouritesCount: Int.random(in: 0...20),
+                    repliesCount: Int.random(in: 0...5)
+                )
+            }
         }
     }
     
     // MARK: - MastodonServiceProtocol Methods
     
-    /// Fetch timeline; `useCache` is ignored in this mock; we always return `mockPosts`.
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
-        return mockPosts
+        if shouldSucceed {
+            return mockPosts
+        } else {
+            throw MockError.failedToFetchTimeline
+        }
     }
     
-    /// Clears timeline by removing all mock posts.
     func clearTimelineCache() {
         mockPosts.removeAll()
     }
     
-    /// Saves the access token in the mock. No real Keychain used here.
+    func loadTimelineFromDisk() -> [Post] {
+        return mockPosts
+    }
+    
+    func saveTimelineToDisk(_ posts: [Post]) {
+        self.mockPosts = posts
+    }
+    
+    func backgroundRefreshTimeline() async {
+        if shouldSucceed {
+            // Simulate adding new posts
+            mockPosts.append(contentsOf: generateMockPosts(count: 2))
+        }
+    }
+    
+    func validateToken() async throws {
+        if shouldSucceed, let token = accessToken, !token.isEmpty {
+            // Simulate successful token validation
+        } else {
+            throw MockError.invalidToken
+        }
+    }
+    
     func saveAccessToken(_ token: String) throws {
-        self.accessToken = token
+        if shouldSucceed {
+            self.accessToken = token
+        } else {
+            throw MockError.failedToSaveAccessToken
+        }
     }
     
-    /// Clears the stored access token in the mock.
     func clearAccessToken() throws {
-        self.accessToken = nil
+        if shouldSucceed {
+            self.accessToken = nil
+        } else {
+            throw MockError.failedToClearAccessToken
+        }
     }
     
-    /// Retrieves the stored access token (mock).
     func retrieveAccessToken() throws -> String? {
-        return accessToken
+        if shouldSucceed {
+            return accessToken
+        } else {
+            throw MockError.failedToRetrieveAccessToken
+        }
     }
     
-    /// Retrieves the stored instance URL (mock).
     func retrieveInstanceURL() throws -> URL? {
-        return baseURL
+        if shouldSucceed {
+            return baseURL
+        } else {
+            throw MockError.failedToRetrieveInstanceURL
+        }
     }
     
-    /// Toggles like/favourite on a post.
     func toggleLike(postID: String) async throws {
-        if let index = mockPosts.firstIndex(where: { $0.id == postID }) {
+        if shouldSucceed {
+            guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
+                throw MockError.postNotFound
+            }
             mockPosts[index].isFavourited.toggle()
             mockPosts[index].favouritesCount += mockPosts[index].isFavourited ? 1 : -1
+        } else {
+            throw MockError.failedToToggleLike
         }
     }
     
-    /// Toggles repost/reblog on a post.
     func toggleRepost(postID: String) async throws {
-        if let index = mockPosts.firstIndex(where: { $0.id == postID }) {
+        if shouldSucceed {
+            guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
+                throw MockError.postNotFound
+            }
             mockPosts[index].isReblogged.toggle()
             mockPosts[index].reblogsCount += mockPosts[index].isReblogged ? 1 : -1
+        } else {
+            throw MockError.failedToToggleRepost
         }
     }
     
-    /// Increments the replies count to simulate a comment.
     func comment(postID: String, content: String) async throws {
-        if let index = mockPosts.firstIndex(where: { $0.id == postID }) {
+        if shouldSucceed {
+            guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
+                throw MockError.postNotFound
+            }
             mockPosts[index].repliesCount += 1
+        } else {
+            throw MockError.failedToAddComment
         }
     }
     
-    /// Registers a new account (mock).
-    func registerAccount(username: String,
-                         password: String,
-                         instanceURL: URL) async throws -> Account {
-        // Simulate half-second delay
-        try await Task.sleep(nanoseconds: 500_000_000)
-        
-        // If username already taken, throw error
-        if mockAccounts.contains(where: { $0.username.lowercased() == username.lowercased() }) {
-            throw MockError.usernameAlreadyExists
+    func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
+        if shouldSucceed {
+            // Return a mock OAuthConfig
+            let config = OAuthConfig(
+                clientID: "mockClientID",
+                clientSecret: "mockClientSecret",
+                redirectURI: "yourapp://oauth-callback",
+                scope: "read write follow"
+            )
+            return config
+        } else {
+            throw MockError.failedToRegisterOAuthApp
         }
-        
-        // Create a new mock account
-        let newAccount = Account(
-            id: UUID().uuidString,
-            username: username,
-            displayName: username.capitalized,
-            avatar: URL(string: "https://example.com/avatar_new.png")!,
-            acct: username,
-            instanceURL: instanceURL,
-            accessToken: "newMockAccessToken123"
-        )
-        
-        mockAccounts.append(newAccount)
-        
-        // Add a welcome post for the new user
-        mockPosts.append(Post(
-            id: UUID().uuidString,
-            content: "<p>Welcome, \(username)!</p>",
-            createdAt: Date(),
-            account: newAccount,
-            mediaAttachments: [],
-            isFavourited: false,
-            isReblogged: false,
-            reblogsCount: 0,
-            favouritesCount: 0,
-            repliesCount: 0
-        ))
-        
-        return newAccount
+    }
+    
+    func authenticateOAuth(instanceURL: URL, config: OAuthConfig) async throws -> String {
+        if shouldSucceed {
+            // Return a mock authorization code
+            return "mockAuthorizationCode123"
+        } else {
+            throw MockError.failedToAuthenticateOAuth
+        }
+    }
+    
+    func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
+        if shouldSucceed {
+            // Simulate exchanging code for access token
+            self.accessToken = "mockAccessTokenAfterExchange"
+        } else {
+            throw MockError.failedToExchangeCode
+        }
+    }
+    
+    // MARK: - Private Mock Data Methods
+    
+    private func generateMockPosts(count: Int) -> [Post] {
+        guard !mockAccounts.isEmpty else { return [] }
+        let accountsToUse = mockAccounts
+        return (1...count).map { index in
+            let randomAccount = accountsToUse[index % accountsToUse.count]
+            return Post(
+                id: "mockPost\(mockPosts.count + index)",
+                content: "<p>Mock post content #\(mockPosts.count + index) with <strong>HTML</strong> support.</p>",
+                createdAt: Date().addingTimeInterval(Double(-index * 3600)),
+                account: randomAccount,
+                mediaAttachments: [],
+                isFavourited: Bool.random(),
+                isReblogged: Bool.random(),
+                reblogsCount: Int.random(in: 0...20),
+                favouritesCount: Int.random(in: 0...50),
+                repliesCount: Int.random(in: 0...10)
+            )
+        }
     }
     
     // MARK: - Mock Errors
     
     enum MockError: LocalizedError {
-        case usernameAlreadyExists
-        case invalidCredentials
+        case failedToFetchTimeline
+        case failedToSaveAccessToken
+        case failedToClearAccessToken
+        case failedToRetrieveAccessToken
+        case failedToRetrieveInstanceURL
+        case failedToToggleLike
+        case failedToToggleRepost
+        case failedToAddComment
+        case failedToRegisterOAuthApp
+        case failedToAuthenticateOAuth
+        case failedToExchangeCode
+        case invalidToken
+        case postNotFound
         
         var errorDescription: String? {
             switch self {
-            case .usernameAlreadyExists:
-                return "The username is already taken."
-            case .invalidCredentials:
-                return "Invalid username or password."
+            case .failedToFetchTimeline: return "Failed to fetch timeline."
+            case .failedToSaveAccessToken: return "Failed to save access token."
+            case .failedToClearAccessToken: return "Failed to clear access token."
+            case .failedToRetrieveAccessToken: return "Failed to retrieve access token."
+            case .failedToRetrieveInstanceURL: return "Failed to retrieve instance URL."
+            case .failedToToggleLike: return "Failed to toggle like."
+            case .failedToToggleRepost: return "Failed to toggle repost."
+            case .failedToAddComment: return "Failed to add comment."
+            case .failedToRegisterOAuthApp: return "Failed to register OAuth application."
+            case .failedToAuthenticateOAuth: return "Failed to authenticate via OAuth."
+            case .failedToExchangeCode: return "Failed to exchange authorization code for access token."
+            case .invalidToken: return "Invalid token."
+            case .postNotFound: return "Post not found."
             }
         }
     }
-    
-    // MARK: - Additional (Optional) Methods
-    
-    /// If you have extra preview logic for accounts, keep them, or remove them if not used.
-    /// For instance, a mock `authenticate(...)`, etc.
 }
+

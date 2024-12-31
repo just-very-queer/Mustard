@@ -21,8 +21,10 @@ struct PostData: Codable {
     let replies_count: Int
 
     /// Converts `PostData` to the app's `Post` model.
-    func toPost() -> Post {
-        let acc = account.toAccount()
+    /// - Parameter instanceURL: The Mastodon instance URL associated with this post.
+    /// - Returns: A `Post` instance.
+    func toPost(instanceURL: URL) -> Post {
+        let acc = account.toAccount(instanceURL: instanceURL)
         let attachments = media_attachments.map { $0.toMediaAttachment() }
 
         return Post(
@@ -50,16 +52,17 @@ struct AccountData: Codable {
     let url: String
 
     /// Converts `AccountData` to the app's `Account` model.
-    /// - Returns: An `Account` instance.
-    func toAccount() -> Account {
+    /// - Parameter instanceURL: The Mastodon instance URL associated with this account.
+    /// - Returns: An `Account` instance without an access token.
+    func toAccount(instanceURL: URL) -> Account {
         return Account(
             id: id,
             username: username,
             displayName: display_name,
             avatar: URL(string: avatar) ?? URL(string: "https://example.com/default_avatar.png")!,
             acct: acct,
-            instanceURL: URL(string: url) ?? URL(string: "https://mastodon.social")!,
-            accessToken: "defaultAccessToken" // Assign appropriately
+            instanceURL: instanceURL,
+            accessToken: nil // Access token is not part of post data
         )
     }
 }

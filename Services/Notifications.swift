@@ -17,6 +17,8 @@ extension Notification.Name {
     
     /// New Notification If account is slected or not.
     static let didSelectAccount = Notification.Name("didSelectAccount") // New Notification
+    
+    static let didAddAccount = Notification.Name("didAddAccount")
 }
 
 

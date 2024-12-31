@@ -27,6 +27,7 @@ struct ServerListView: View {
                     onSelect(server)
                 }
             }
+            .listStyle(InsetGroupedListStyle())
             .navigationTitle("Select Server")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -62,3 +63,4 @@ struct ServerListView_Previews: PreviewProvider {
         )
     }
 }
+

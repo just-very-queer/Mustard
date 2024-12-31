@@ -12,28 +12,30 @@ import SwiftData
 @MainActor
 class AccountsViewModel: ObservableObject {
     // MARK: - Published Properties
-    
     @Published var accounts: [Account] = []
     @Published var selectedAccount: Account?
     @Published var errorMessage: AppError?
     
     // MARK: - Private Properties
-    
     private var mastodonService: MastodonServiceProtocol
     private var modelContext: ModelContext
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
-    
-    init(mastodonService: MastodonServiceProtocol,
-         modelContext: ModelContext) {
+    init(mastodonService: MastodonServiceProtocol, modelContext: ModelContext) {
         self.mastodonService = mastodonService
         self.modelContext = modelContext
         
-        // We call fetchAccounts() (which is synchronous) in a Task if we want concurrency
         Task {
-            fetchAccounts()
+            await fetchAccounts()
         }
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAccountAdded(notification:)),
+            name: .didAddAccount,
+            object: nil
+        )
         
         NotificationCenter.default.addObserver(
             self,
@@ -49,32 +51,35 @@ class AccountsViewModel: ObservableObject {
     
     // MARK: - Public Methods
     
-    /// Fetches accounts from SwiftData synchronously. No 'await' needed.
-    func fetchAccounts() {
+    /// Fetches accounts from SwiftData asynchronously.
+    func fetchAccounts() async {
         do {
             let fetchRequest = FetchDescriptor<Account>()
             let fetchedAccounts = try modelContext.fetch(fetchRequest)
-            accounts = fetchedAccounts
-            
-            if let firstAccount = fetchedAccounts.first, selectedAccount == nil {
-                selectAccount(firstAccount)
+            DispatchQueue.main.async {
+                self.accounts = fetchedAccounts
+                // Automatically select the first account if none is selected
+                if self.selectedAccount == nil, let first = fetchedAccounts.first {
+                    self.selectAccount(first)
+                }
             }
         } catch {
-            errorMessage = AppError(message: "Failed to fetch accounts: \(error.localizedDescription)")
-            print("[AccountsViewModel] Error: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self.errorMessage = AppError(message: "Failed to fetch accounts: \(error.localizedDescription)")
+            }
         }
     }
     
-    /// Select an account, updating the Mastodon service with baseURL & token
+    /// Selects an account for use, setting up the Mastodon service with its credentials.
+    /// - Parameter account: The `Account` to select.
     func selectAccount(_ account: Account) {
         selectedAccount = account
         mastodonService.baseURL = account.instanceURL
         mastodonService.accessToken = account.accessToken
         
-        modelContext.insert(account)
+        // Persist the selected account if needed
         do {
             try modelContext.save()
-            print("[AccountsViewModel] Selected account saved: \(account.id)")
         } catch {
             errorMessage = AppError(message: "Failed to persist selected account: \(error.localizedDescription)")
         }
@@ -82,7 +87,8 @@ class AccountsViewModel: ObservableObject {
         NotificationCenter.default.post(name: .didSelectAccount, object: nil)
     }
     
-    /// Deletes accounts from SwiftData and from the local array.
+    /// Deletes accounts from SwiftData and the local array.
+    /// - Parameter offsets: The indices of the accounts to delete.
     func deleteAccounts(at offsets: IndexSet) {
         let accountsToDelete = offsets.map { accounts[$0] }
         
@@ -99,40 +105,31 @@ class AccountsViewModel: ObservableObject {
         
         do {
             try modelContext.save()
-            print("[AccountsViewModel] Accounts removed & saved.")
         } catch {
             errorMessage = AppError(message: "Failed to delete accounts: \(error.localizedDescription)")
         }
     }
     
-    /// Registers a new account by calling an async method in MastodonService.
-    /// We use `try await` to handle concurrency.
-    func registerAccount(username: String,
-                         password: String,
-                         instanceURL: URL) async {
-        do {
-            // Because MastodonService.registerAccount(...) is async throws,
-            // we do 'try await' here.
-            let newAccount = try await mastodonService.registerAccount(
-                username: username,
-                password: password,
-                instanceURL: instanceURL
-            )
-            
-            // Once returned, we add & select it
-            accounts.append(newAccount)
-            selectAccount(newAccount)
-            print("[AccountsViewModel] Registered + selected new account: \(newAccount.id)")
-        } catch {
-            errorMessage = AppError(message: "Failed to register account: \(error.localizedDescription)")
-            print("[AccountsViewModel] Registration error: \(error.localizedDescription)")
+    // MARK: - Private Methods
+    
+    @objc private func handleAccountAdded(notification: Notification) {
+        Task {
+            await fetchAccounts()
         }
     }
     
-    // MARK: - Private Methods
-    
     @objc private func handleAccountSelection(notification: Notification) {
-        // Possibly do more actions upon selection
+        // Handle additional logic upon selection if needed
+    }
+    
+    /// Checks if the account is authenticated based on the presence of a valid access token.
+    /// - Parameter account: The `Account` to check.
+    /// - Returns: `true` if authenticated, else `false`.
+    private func isAuthenticated(account: Account) -> Bool {
+        guard let token = account.accessToken, !token.isEmpty else { return false }
+        // Optionally, add more checks to verify token validity
+        return true
     }
 }
+
 

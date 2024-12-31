@@ -29,5 +29,26 @@ struct HTMLUtils {
             return AttributedString("")
         }
     }
+
+    /// Converts an HTML string to plain text.
+    /// - Parameter html: The HTML string to convert.
+    /// - Returns: A plain text `String` without HTML tags.
+    static func convertHTMLToPlainText(html: String) -> String {
+        guard let data = html.data(using: .utf8) else { return "" }
+
+        let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
+            .documentType: NSAttributedString.DocumentType.html,
+            .characterEncoding: String.Encoding.utf8.rawValue
+        ]
+
+        do {
+            let nsAttrStr = try NSAttributedString(data: data, options: options, documentAttributes: nil)
+            return nsAttrStr.string
+        } catch {
+            print("Error converting HTML to plain text: \(error.localizedDescription)")
+            return ""
+        }
+    }
 }
+
 

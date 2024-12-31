@@ -63,6 +63,7 @@
 		6687C39F2C95B503000ECC5D /* Exceptions for "Services" folder in "MustardTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AppError.swift,
 				DTOs/PostData.swift,
 				HTMLUtils.swift,
 				MastodonService.swift,
@@ -75,6 +76,7 @@
 		6687C3A02C95B503000ECC5D /* Exceptions for "Services" folder in "MustardUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				AppError.swift,
 				DTOs/PostData.swift,
 				HTMLUtils.swift,
 				MastodonService.swift,
@@ -88,8 +90,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AccountsViewModel.swift,
-				AddAccountView.swift,
-				AppError.swift,
 				AuthenticationViewModel.swift,
 				KeychainHelper.swift,
 				TimelineViewModel.swift,
@@ -100,8 +100,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AccountsViewModel.swift,
-				AddAccountView.swift,
-				AppError.swift,
 				AuthenticationViewModel.swift,
 				KeychainHelper.swift,
 				TimelineViewModel.swift,
@@ -112,6 +110,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AccountsView.swift,
+				AddAccountView.swift,
 				AuthenticationView.swift,
 				CommentSheetView.swift,
 				PostDetailView.swift,
@@ -124,6 +123,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AccountsView.swift,
+				AddAccountView.swift,
 				AuthenticationView.swift,
 				CommentSheetView.swift,
 				PostDetailView.swift,

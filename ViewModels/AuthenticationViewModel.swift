@@ -2,7 +2,7 @@
 //  AuthenticationViewModel.swift
 //  Mustard
 //
-//  Created by Your Name on [Date].
+//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
 //
 
 import SwiftUI
@@ -14,24 +14,12 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     
     // MARK: - Published Properties
     
-    /// If `true`, the user is considered logged in.
     @Published var isAuthenticated: Bool = false
-    
-    /// The currently selected instance URL.
-    @Published var instanceURL: URL? = nil
-    
-    /// Used to display error messages in the UI.
     @Published var alertError: AppError?
-    
-    /// Indicates whether we are currently in the process of authenticating (showing a spinner).
     @Published var isAuthenticating: Bool = false
-    
-    /// The user-provided custom instance URL string (e.g., "https://mastodon.social").
-    @Published var customInstanceURL: String = ""
     
     // MARK: - Private Properties
     
-    /// We use `var` instead of `let` so we can assign `mastodonService.baseURL = ...`.
     private var mastodonService: MastodonServiceProtocol
     private var cancellables = Set<AnyCancellable>()
     
@@ -40,96 +28,90 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     init(mastodonService: MastodonServiceProtocol) {
         self.mastodonService = mastodonService
         super.init()
-        
-        // Observe changes to instanceURL; auto-load token from Keychain if present.
-        $instanceURL
-            .sink { [weak self] url in
-                guard let self = self, let url = url else { return }
-                do {
-                    self.mastodonService.baseURL = url
-                    
-                    // Attempt to retrieve an existing token from Keychain.
-                    if let token = try self.mastodonService.retrieveAccessToken(),
-                       !token.isEmpty {
-                        self.isAuthenticated = true
-                        print("[AuthenticationViewModel] Found stored token for \(url). User is authenticated.")
-                    } else {
-                        self.isAuthenticated = false
-                        print("[AuthenticationViewModel] No token found for \(url).")
-                    }
-                } catch {
-                    self.alertError = AppError(message: "Failed to retrieve token: \(error.localizedDescription)")
-                    print("[AuthenticationViewModel] Error retrieving token: \(error)")
-                }
-            }
-            .store(in: &cancellables)
-        
-        // If the user had a previously set baseURL (e.g., from last session), load it.
-        if let existingURL = try? mastodonService.retrieveInstanceURL() {
-            self.instanceURL = existingURL
-        }
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - Public Methods
     
-    /// Called to authenticate with a user-input custom URL (or default).
-    /// You might do an OAuth flow or a direct token exchange here.
-    func authenticate() async {
-        guard let url = URL(string: customInstanceURL.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            self.alertError = AppError(message: "Invalid URL. Please try again.")
-            return
-        }
-        
-        // Update the instance URL (this will trigger the sink above).
-        self.instanceURL = url
-        
+    /// Initiates OAuth authentication with the selected server.
+    /// - Parameter server: The selected Mastodon server.
+    func authenticate(with server: Server) async throws {
         isAuthenticating = true
-        defer { isAuthenticating = false }
-        
-        // Simulate success by storing a mock token in Keychain.
+        alertError = nil
+
         do {
-            try mastodonService.saveAccessToken("mockAccessToken1234")
-            print("[AuthenticationViewModel] Access token saved. Marking user as authenticated.")
+            // 1. Register OAuth App
+            let config = try await mastodonService.registerOAuthApp(instanceURL: server.url)
+            
+            // 2. Set BaseURL and save to Keychain **before** exchanging the code
+            if let service = mastodonService as? MastodonService {
+                service.baseURL = server.url
+                try KeychainHelper.shared.save(server.url.absoluteString, service: "Mustard-baseURL", account: "baseURL")
+                print("[AuthenticationViewModel] baseURL set to: \(server.url.absoluteString)")
+            }
+            
+            // 3. Authenticate OAuth and get authorization code
+            let authorizationCode = try await mastodonService.authenticateOAuth(instanceURL: server.url, config: config)
+            
+            // 4. Exchange authorization code for access token
+            try await mastodonService.exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
+            
+            // 5. Update authentication status
             self.isAuthenticated = true
+            print("[AuthenticationViewModel] Authentication successful.")
         } catch {
-            self.alertError = AppError(message: "Failed to save token: \(error.localizedDescription)")
+            self.alertError = AppError(message: "Authentication failed: \(error.localizedDescription)")
             self.isAuthenticated = false
+            print("[AuthenticationViewModel] Authentication failed with error: \(error.localizedDescription)")
+            throw error
         }
+
+        isAuthenticating = false
     }
+
     
-    /// Logs out the user by clearing the Keychain token, flipping isAuthenticated to false.
+    /// Logs out the user by clearing the access token.
     func logout() {
         do {
             try mastodonService.clearAccessToken()
             isAuthenticated = false
-            print("[AuthenticationViewModel] User logged out.")
+            print("[AuthenticationViewModel] Logged out successfully.")
         } catch {
-            alertError = AppError(message: "Failed to clear access token: \(error.localizedDescription)")
-            print("[AuthenticationViewModel] Failed to clear access token: \(error)")
+            alertError = AppError(message: "Failed to log out: \(error.localizedDescription)")
+            print("[AuthenticationViewModel] Logout failed with error: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Validates existing authentication by checking the stored access token.
+    func validateAuthentication() async {
+        do {
+            if let token = try mastodonService.retrieveAccessToken(),
+               let baseURL = try mastodonService.retrieveInstanceURL(),
+               !token.isEmpty {
+                mastodonService.baseURL = baseURL
+                print("[AuthenticationViewModel] Retrieved baseURL and token from MastodonService.")
+                try await mastodonService.validateToken()
+                self.isAuthenticated = true
+                print("[AuthenticationViewModel] Token validated successfully.")
+            } else {
+                self.isAuthenticated = false
+                print("[AuthenticationViewModel] No valid token or baseURL found.")
+            }
+        } catch {
+            self.isAuthenticated = false
+            self.alertError = AppError(message: "Authentication validation failed: \(error.localizedDescription)")
+            print("[AuthenticationViewModel] Authentication validation failed with error: \(error.localizedDescription)")
         }
     }
     
     // MARK: - ASWebAuthenticationPresentationContextProviding
     
-    /// Returns the presentation anchor (UIWindow) for ASWebAuthenticationSession.
-    /// `UIApplication.shared.windows` is deprecated on iOS 15; prefer UIWindowScene.
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        #if os(iOS)
-        // iOS 15+ approach:
+        // Provide the current window as the presentation anchor
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = scene.windows.first(where: { $0.isKeyWindow })
-        else {
-            // Fallback if no main window found
+              let window = scene.windows.first(where: { $0.isKeyWindow }) else {
             return UIWindow()
         }
         return window
-        #else
-        return ASPresentationAnchor()
-        #endif
     }
 }
 

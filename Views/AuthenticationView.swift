@@ -2,15 +2,16 @@
 //  AuthenticationView.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on [Date].
+//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
 //
 
 import SwiftUI
+import SwiftData
 
 struct AuthenticationView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @State private var showingServerList = false
-    @State private var selectedServer: Server? = SampleServers.servers.first
+    @State private var selectedServer: Server? = nil
 
     var body: some View {
         VStack(spacing: 20) {
@@ -22,13 +23,12 @@ struct AuthenticationView: View {
                 .multilineTextAlignment(.center)
                 .padding()
 
-            // Show the selected server or allow the user to choose one
             Button(action: {
                 showingServerList = true
             }) {
                 HStack {
                     Text(selectedServer?.name ?? "Select a Mastodon Instance")
-                        .foregroundColor(.blue)
+                        .foregroundColor(selectedServer != nil ? .black : .blue)
                     Spacer()
                     Image(systemName: "chevron.down")
                         .foregroundColor(.gray)
@@ -44,8 +44,8 @@ struct AuthenticationView: View {
                     servers: SampleServers.servers,
                     onSelect: { server in
                         selectedServer = server
-                        authViewModel.customInstanceURL = server.url.absoluteString
                         showingServerList = false
+                        initiateAuthentication(with: server)
                     },
                     onCancel: {
                         showingServerList = false
@@ -53,57 +53,72 @@ struct AuthenticationView: View {
                 )
             }
 
-            Button(action: {
-                Task {
-                    await authViewModel.authenticate()
-                }
-            }) {
-                if authViewModel.isAuthenticating {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .cornerRadius(8)
-                } else {
-                    Text("Sign In")
-                        .foregroundColor(.white)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.blue)
-                        .cornerRadius(8)
-                }
-            }
-            .disabled(authViewModel.isAuthenticating || selectedServer == nil)
-            .padding(.horizontal)
-
             Spacer()
         }
         .padding()
-        .alert(item: $authViewModel.alertError) { (error: AppError) in
+        .overlay(
+            Group {
+                if authViewModel.isAuthenticating {
+                    Color.black.opacity(0.4)
+                        .edgesIgnoringSafeArea(.all)
+                    ProgressView("Authenticating...")
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(10)
+                }
+            }
+        )
+        .alert(item: $authViewModel.alertError) { error in
             Alert(
-                title: Text("Error"),
+                title: Text("Authentication Error"),
                 message: Text(error.message),
                 dismissButton: .default(Text("OK"))
             )
         }
     }
-}
 
-struct AuthenticationView_Previews: PreviewProvider {
-    static var previews: some View {
-        // Initialize PreviewService
-        let previewService = PreviewService()
+    // MARK: - Private Methods
 
-        // Initialize AuthenticationViewModel with PreviewService
-        let authViewModel = AuthenticationViewModel(mastodonService: previewService)
+    private func initiateAuthentication(with server: Server) {
+        Task {
+            do {
+                try await authViewModel.authenticate(with: server)
+                print("[AuthenticationView] Authentication successful for server: \(server.name)")
+            } catch {
+                authViewModel.alertError = AppError(message: "Authentication failed: \(error.localizedDescription)")
+                print("[AuthenticationView] Authentication failed: \(error.localizedDescription)")
+            }
+        }
+    }
 
-        // Simulate unauthenticated state
-        authViewModel.isAuthenticated = false
-        authViewModel.instanceURL = previewService.baseURL
+    // MARK: - Preview
+    struct AuthenticationView_Previews: PreviewProvider {
+        static var previews: some View {
+            let previewService = MockMastodonService()
 
-        return AuthenticationView()
-            .environmentObject(authViewModel)
+            let container: ModelContainer
+            do {
+                container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
+            } catch {
+                fatalError("Failed to create ModelContainer: \(error)")
+            }
+
+            let modelContext = container.mainContext
+
+            let accountsViewModel = AccountsViewModel(mastodonService: previewService, modelContext: modelContext)
+            let authViewModel = AuthenticationViewModel(mastodonService: previewService)
+            let timelineViewModel = TimelineViewModel(mastodonService: previewService)
+
+            accountsViewModel.accounts = previewService.mockAccounts
+            accountsViewModel.selectedAccount = previewService.mockAccounts.first
+            timelineViewModel.posts = previewService.mockPosts
+
+            return AuthenticationView()
+                .environmentObject(authViewModel)
+                .environmentObject(timelineViewModel)
+                .environmentObject(accountsViewModel)
+                .modelContainer(container)
+        }
     }
 }
 

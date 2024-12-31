@@ -20,21 +20,37 @@ struct MustardApp: App {
     // MARK: - SwiftData container
     let container: ModelContainer
 
+    // MARK: - Singleton MastodonService Instance
+    let mastodonService = MastodonService() // Using existing instance, not shared
+
+    // MARK: - Sample Servers (Use your actual server list)
+    let servers: [Server] = SampleServers.servers
+
     init() {
         // 1) Initialize the ModelContainer with your @Model types
         do {
             container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
+            print("[MustardApp] ModelContainer initialized successfully.")
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // 2) Initialize the MastodonService (or real service)
-        let mastodonService = MastodonService()
+        // 2) Retrieve baseURL from Keychain if available and set it on MastodonService
+        do {
+            if let baseURLString = try KeychainHelper.shared.read(service: "Mustard-baseURL", account: "baseURL"),
+               let baseURL = URL(string: baseURLString) {
+                mastodonService.baseURL = baseURL
+                print("[MustardApp] Retrieved baseURL from Keychain: \(baseURL.absoluteString)")
+            } else {
+                print("[MustardApp] No baseURL found in Keychain.")
+            }
+        } catch {
+            print("Failed to retrieve baseURL from Keychain: \(error.localizedDescription)")
+        }
 
-        // 3) Create local instances of the view models
+        // 3) Create local instances of the view models with the shared MastodonService
         let localAuthVM = AuthenticationViewModel(mastodonService: mastodonService)
         let localTimelineVM = TimelineViewModel(mastodonService: mastodonService)
-        // -- Provide the container's mainContext to AccountsViewModel
         let localAccountsVM = AccountsViewModel(
             mastodonService: mastodonService,
             modelContext: container.mainContext
@@ -48,86 +64,86 @@ struct MustardApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if authViewModel.isAuthenticated {
-                // Show the main app (Tabs)
-                TabView {
-                    // Home Tab
-                    NavigationStack {
-                        TimelineView()
-                            .environmentObject(authViewModel)
-                            .environmentObject(timelineViewModel)
-                            // Attach model container for SwiftData usage
-                            .modelContainer(container)
-                    }
-                    .tabItem {
-                        Label("Home", systemImage: "house")
-                    }
+            Group {
+                if authViewModel.isAuthenticated {
+                    // Main App with Tabs
+                    TabView {
+                        // Home Tab
+                        NavigationStack {
+                            TimelineView()
+                                .environmentObject(authViewModel)
+                                .environmentObject(timelineViewModel)
+                                .environmentObject(accountsViewModel)
+                                .modelContainer(container)
+                        }
+                        .tabItem {
+                            Label("Home", systemImage: "house")
+                        }
 
-                    // Accounts Management Tab
-                    NavigationStack {
-                        AccountsView()
-                            .environmentObject(accountsViewModel)
-                            .environmentObject(authViewModel)
-                            .environmentObject(timelineViewModel)
+                        // Accounts Management Tab (Retained for future use)
+                        NavigationStack {
+                            AccountsView()
+                                .environmentObject(accountsViewModel)
+                                .environmentObject(authViewModel)
+                                .environmentObject(timelineViewModel)
+                                .modelContainer(container)
+                        }
+                        .tabItem {
+                            Label("Accounts", systemImage: "person.2")
+                        }
                     }
-                    .tabItem {
-                        Label("Accounts", systemImage: "person.2")
+                    .onOpenURL { url in
+                        NotificationCenter.default.post(
+                            name: .didReceiveOAuthCallback,
+                            object: nil,
+                            userInfo: ["url": url]
+                        )
+                        print("[MustardApp] Received URL via onOpenURL: \(url.absoluteString)")
                     }
-                }
-                .onOpenURL { url in
-                    // Post a notification to handle OAuth callback
-                    NotificationCenter.default.post(
-                        name: .didReceiveOAuthCallback,
-                        object: nil,
-                        userInfo: ["url": url]
-                    )
-                }
-                // Show timeline errors in an alert
-                .alert(item: $timelineViewModel.alertError) { error in
-                    Alert(
-                        title: Text("Error"),
-                        message: Text(error.message),
-                        dismissButton: .default(Text("OK"))
-                    )
-                }
-            } else {
-                // Show the Authentication flow if not authenticated
-                NavigationStack {
+                    .alert(item: $timelineViewModel.alertError) { error in
+                        Alert(
+                            title: Text("Error"),
+                            message: Text(error.message),
+                            dismissButton: .default(Text("OK"))
+                        )
+                    }
+                } else {
+                    // Authentication Flow: Authentication View
                     AuthenticationView()
                         .environmentObject(authViewModel)
                         .environmentObject(timelineViewModel)
                         .environmentObject(accountsViewModel)
-                        // SwiftData container for SwiftData usage
                         .modelContainer(container)
-                        .navigationTitle("Sign In")
+                        .navigationTitle("Authentication")
+                        .alert(item: $authViewModel.alertError) { error in
+                            Alert(
+                                title: Text("Authentication Error"),
+                                message: Text(error.message),
+                                dismissButton: .default(Text("OK"))
+                            )
+                        }
                 }
-                .onOpenURL { url in
-                    NotificationCenter.default.post(
-                        name: .didReceiveOAuthCallback,
-                        object: nil,
-                        userInfo: ["url": url]
-                    )
+            }
+            .onAppear {
+                Task {
+                    await authViewModel.validateAuthentication()
                 }
-                .alert(item: $authViewModel.alertError) { error in
-                    Alert(
-                        title: Text("Error"),
-                        message: Text(error.message),
-                        dismissButton: .default(Text("OK"))
-                    )
-                }
+                print("[MustardApp] App appeared. Validating authentication.")
             }
         }
     }
 }
 
-/// Minimal AppDelegate, mostly for handling any universal links or OAuth callbacks.
-class AppDelegate: UIResponder, UIApplicationDelegate {
+/// AppDelegate class to handle application-level events, such as OAuth callbacks.
+class AppDelegate: NSObject, UIApplicationDelegate {
+    /// Handles incoming URLs (e.g., OAuth callback URLs).
     func application(
         _ app: UIApplication,
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey : Any] = [:]
     ) -> Bool {
-        // Notify the AuthenticationViewModel (or other) about the received URL.
+        print("Received OAuth callback URL: \(url.absoluteString)")
+        // Notify about received URL for OAuth callback
         NotificationCenter.default.post(
             name: .didReceiveOAuthCallback,
             object: nil,
@@ -136,3 +152,4 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 }
+

@@ -1,10 +1,3 @@
-//
-//  PostDetailView.swift
-//  Mustard
-//
-//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
-//
-
 import SwiftUI
 
 struct PostDetailView: View {
@@ -22,26 +15,9 @@ struct PostDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 // MARK: - User Header
                 HStack(spacing: 16) {
-                    AsyncImage(url: post.account.avatar) { phase in
-                        switch phase {
-                        case .empty:
-                            ProgressView()
-                                .frame(width: 50, height: 50)
-                        case .success(let image):
-                            image.resizable()
-                                .scaledToFill()
-                                .frame(width: 50, height: 50)
-                                .clipShape(Circle())
-                        case .failure:
-                            Image(systemName: "person.crop.circle.badge.exclamationmark")
-                                .resizable()
-                                .frame(width: 50, height: 50)
-                                .foregroundColor(.gray)
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
-                    .accessibilityLabel("\(post.account.displayName)'s avatar")
+                    avatarView(for: post.account.avatar)
+                        .frame(width: 50, height: 50)
+                        .accessibilityLabel("\(post.account.displayName)'s avatar")
 
                     VStack(alignment: .leading) {
                         Text(post.account.displayName)
@@ -57,8 +33,7 @@ struct PostDetailView: View {
                 .padding(.top)
 
                 // MARK: - Post Content
-                let attributedContent = HTMLUtils.convertHTMLToAttributedString(html: post.content)
-                Text(attributedContent)
+                Text(HTMLUtils.convertHTMLToPlainText(html: post.content))
                     .font(.body)
                     .foregroundColor(.primary)
 
@@ -66,32 +41,12 @@ struct PostDetailView: View {
                 if !post.mediaAttachments.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(post.mediaAttachments) { media in
-                                AsyncImage(url: media.url) { phase in
-                                    switch phase {
-                                    case .empty:
-                                        ProgressView()
-                                            .frame(width: 250, height: 250)
-                                    case .success(let image):
-                                        image.resizable()
-                                            .scaledToFill()
-                                            .frame(width: 250, height: 250)
-                                            .cornerRadius(12)
-                                            .clipped()
-                                            .onTapGesture {
-                                                selectedImageURL = media.url
-                                                isImageFullScreen = true
-                                            }
-                                    case .failure:
-                                        Image(systemName: "photo")
-                                            .resizable()
-                                            .frame(width: 250, height: 250)
-                                            .foregroundColor(.gray)
-                                    @unknown default:
-                                        EmptyView()
+                            ForEach(post.mediaAttachments, id: \.id) { media in
+                                mediaAttachmentView(for: media)
+                                    .onTapGesture {
+                                        selectedImageURL = media.url
+                                        isImageFullScreen = true
                                     }
-                                }
-                                .accessibilityLabel("Media attachment")
                             }
                         }
                     }
@@ -152,11 +107,9 @@ struct PostDetailView: View {
         .navigationTitle("Post Detail")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingCommentSheet) {
-            // Present the external CommentSheetView which handles its own state and errors
             CommentSheetView(post: post)
                 .environmentObject(viewModel)
         }
-        // Full-screen image viewer
         .fullScreenCover(isPresented: $isImageFullScreen) {
             if let imageURL = selectedImageURL {
                 FullScreenImageView(imageURL: imageURL, isPresented: $isImageFullScreen)
@@ -164,7 +117,7 @@ struct PostDetailView: View {
         }
     }
 
-    // MARK: - Action Methods
+    // MARK: - Helper Methods
 
     private func toggleLike() async {
         await viewModel.toggleLike(post: post)
@@ -174,21 +127,63 @@ struct PostDetailView: View {
         await viewModel.toggleRepost(post: post)
     }
 
+    private func avatarView(for url: URL?) -> some View {
+        AsyncImage(url: url) { phase in
+            switch phase {
+            case .empty:
+                ProgressView()
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFill()
+                    .clipShape(Circle())
+            case .failure:
+                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                    .resizable()
+                    .foregroundColor(.gray)
+            @unknown default:
+                EmptyView()
+            }
+        }
+    }
+
+    private func mediaAttachmentView(for media: MediaAttachment) -> some View {
+        AsyncImage(url: media.url) { phase in
+            switch phase {
+            case .empty:
+                ProgressView()
+                    .frame(width: 250, height: 250)
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 250, height: 250)
+                    .cornerRadius(12)
+                    .clipped()
+            case .failure:
+                Image(systemName: "photo")
+                    .resizable()
+                    .frame(width: 250, height: 250)
+                    .foregroundColor(.gray)
+            @unknown default:
+                EmptyView()
+            }
+        }
+    }
+
     // MARK: - Full-Screen Image Viewer
     struct FullScreenImageView: View {
         let imageURL: URL
         @Binding var isPresented: Bool
 
         var body: some View {
-            ZStack(alignment: .topTrailing) {
-                Color.black
-                    .edgesIgnoringSafeArea(.all)
-
+            VStack {
                 AsyncImage(url: imageURL) { phase in
                     switch phase {
                     case .empty:
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .progressViewStyle(CircularProgressViewStyle())
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     case .success(let image):
                         image
                             .resizable()
@@ -198,29 +193,29 @@ struct PostDetailView: View {
                         Image(systemName: "photo")
                             .resizable()
                             .scaledToFit()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .foregroundColor(.gray)
                     @unknown default:
                         EmptyView()
                     }
                 }
+                .edgesIgnoringSafeArea(.all)
 
-                Button(action: {
+                Button("Done") {
                     isPresented = false
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(.white)
-                        .padding()
                 }
-                .accessibilityLabel("Close Image")
+                .padding()
+                .background(Color.white)
+                .cornerRadius(8)
             }
+            .background(Color.black)
         }
     }
 }
 
+// MARK: - Preview
 struct PostDetailView_Previews: PreviewProvider {
     static var previews: some View {
-        // Create a sample account
         let sampleAccount = Account(
             id: "a1",
             username: "user1",
@@ -230,8 +225,7 @@ struct PostDetailView_Previews: PreviewProvider {
             instanceURL: URL(string: "https://mastodon.social")!,
             accessToken: "mockAccessToken123"
         )
-        
-        // Create a sample post
+
         let samplePost = Post(
             id: "1",
             content: "<p>Hello, world!</p>",
@@ -244,23 +238,15 @@ struct PostDetailView_Previews: PreviewProvider {
             favouritesCount: 0,
             repliesCount: 0
         )
-        
-        // Initialize the MockMastodonService (updated to match its actual initializer)
-        let mockService = MockMastodonService(shouldSucceed: true) // Adjust as necessary
 
-        // Add the sample post to the service's mockPosts if applicable
-        mockService.mockPosts = [samplePost]
-
-        // Initialize the TimelineViewModel with the mock service
+        let mockService = MockMastodonService(shouldSucceed: true, mockPosts: [samplePost])
         let viewModel = TimelineViewModel(mastodonService: mockService)
         viewModel.posts = [samplePost]
-        
+
         return NavigationStack {
             PostDetailView(post: samplePost)
                 .environmentObject(viewModel)
         }
     }
 }
-
-
 
