@@ -6,12 +6,15 @@
 //
 
 import SwiftUI
+import OSLog
 import SwiftData
 
 struct ContentView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
-    @EnvironmentObject var accountsViewModel: AccountsViewModel
+    @EnvironmentObject var topPostsViewModel: TopPostsViewModel
+    @EnvironmentObject var weatherViewModel: WeatherViewModel
+    @EnvironmentObject var locationManager: LocationManager
 
     var body: some View {
         Group {
@@ -19,24 +22,27 @@ struct ContentView: View {
                 TabView {
                     // Home Tab
                     NavigationStack {
-                        TimelineView()
-                            .environmentObject(authViewModel)
+                        HomeView()
                             .environmentObject(timelineViewModel)
-                            // Removed .modelContainer(accountsViewModel.modelContainer)
+                            .environmentObject(topPostsViewModel)
+                            .environmentObject(weatherViewModel)
+                            .environmentObject(locationManager)
                     }
                     .tabItem {
                         Label("Home", systemImage: "house")
                     }
 
-                    // Accounts Management Tab
+                    // Settings Tab
                     NavigationStack {
-                        AccountsView()
-                            .environmentObject(accountsViewModel)
+                        SettingsView()
                             .environmentObject(authViewModel)
                             .environmentObject(timelineViewModel)
+                            .environmentObject(topPostsViewModel)
+                            .environmentObject(weatherViewModel)
+                            .environmentObject(locationManager)
                     }
                     .tabItem {
-                        Label("Accounts", systemImage: "person.2")
+                        Label("Settings", systemImage: "gearshape")
                     }
                 }
                 .onOpenURL { url in
@@ -57,7 +63,6 @@ struct ContentView: View {
                 NavigationStack {
                     AuthenticationView()
                         .environmentObject(authViewModel)
-                        .environmentObject(accountsViewModel)
                         .navigationTitle("Sign In")
                 }
                 .onOpenURL { url in
@@ -84,12 +89,32 @@ struct ContentView: View {
     }
 }
 
+// Example SettingsView, since AccountsView is removed.
+struct SettingsView: View {
+    @EnvironmentObject var authViewModel: AuthenticationViewModel
+
+    var body: some View {
+        Form {
+            Section(header: Text("Account")) {
+                Button("Logout") {
+                    Task {
+                        await authViewModel.logout()
+                    }
+                }
+                .foregroundColor(.red)
+                .accessibilityLabel("Logout")
+            }
+        }
+        .navigationTitle("Settings")
+    }
+}
+
 // MARK: - Preview
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         // Initialize Mock Service for Preview
         let mockService = MockMastodonService(shouldSucceed: true)
-        
+
         // Initialize Model Container with Required Models
         let container: ModelContainer
         do {
@@ -98,23 +123,23 @@ struct ContentView_Previews: PreviewProvider {
             fatalError("Failed to create ModelContainer: \(error)")
         }
 
-        let modelContext = container.mainContext
-
         // Initialize ViewModels with Mock Service and Context
-        let accountsViewModel = AccountsViewModel(mastodonService: mockService, modelContext: modelContext)
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
         let timelineViewModel = TimelineViewModel(mastodonService: mockService)
+        let topPostsViewModel = TopPostsViewModel(service: mockService)
+        let weatherViewModel = WeatherViewModel()
+        let locationManager = LocationManager()
 
         // Populate ViewModels with Mock Data
-        accountsViewModel.accounts = mockService.mockAccounts
-        accountsViewModel.selectedAccount = mockService.mockAccounts.first
         timelineViewModel.posts = mockService.mockPosts
+        topPostsViewModel.topPosts = mockService.mockTrendingPosts
 
         return ContentView()
             .environmentObject(authViewModel)
             .environmentObject(timelineViewModel)
-            .environmentObject(accountsViewModel)
+            .environmentObject(topPostsViewModel)
+            .environmentObject(weatherViewModel)
+            .environmentObject(locationManager)
             .modelContainer(container)
     }
 }
-

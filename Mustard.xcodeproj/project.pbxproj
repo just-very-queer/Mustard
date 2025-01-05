@@ -66,6 +66,7 @@
 				AppError.swift,
 				DTOs/PostData.swift,
 				HTMLUtils.swift,
+				LocationManager.swift,
 				MastodonService.swift,
 				MastodonServiceProtocol.swift,
 				Notifications.swift,
@@ -79,6 +80,7 @@
 				AppError.swift,
 				DTOs/PostData.swift,
 				HTMLUtils.swift,
+				LocationManager.swift,
 				MastodonService.swift,
 				MastodonServiceProtocol.swift,
 				Notifications.swift,
@@ -89,46 +91,48 @@
 		6687C3AC2C95B583000ECC5D /* Exceptions for "ViewModels" folder in "MustardTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				AccountsViewModel.swift,
 				AuthenticationViewModel.swift,
 				KeychainHelper.swift,
 				TimelineViewModel.swift,
+				TopPostsViewModel.swift,
 			);
 			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
 		};
 		6687C3AD2C95B583000ECC5D /* Exceptions for "ViewModels" folder in "MustardUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				AccountsViewModel.swift,
 				AuthenticationViewModel.swift,
 				KeychainHelper.swift,
 				TimelineViewModel.swift,
+				TopPostsViewModel.swift,
 			);
 			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
 		};
 		6687C3B32C95B5F5000ECC5D /* Exceptions for "Views" folder in "MustardTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				AccountsView.swift,
-				AddAccountView.swift,
 				AuthenticationView.swift,
 				CommentSheetView.swift,
+				FullScreenImageView.swift,
+				HomeView.swift,
 				PostDetailView.swift,
 				PostRowView.swift,
-				TimelineView.swift,
+				TopPostCardView.swift,
+				WeatherBarView.swift,
 			);
 			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
 		};
 		6687C3B42C95B5F5000ECC5D /* Exceptions for "Views" folder in "MustardUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				AccountsView.swift,
-				AddAccountView.swift,
 				AuthenticationView.swift,
 				CommentSheetView.swift,
+				FullScreenImageView.swift,
+				HomeView.swift,
 				PostDetailView.swift,
 				PostRowView.swift,
-				TimelineView.swift,
+				TopPostCardView.swift,
+				WeatherBarView.swift,
 			);
 			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
 		};

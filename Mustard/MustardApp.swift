@@ -13,43 +13,24 @@ struct MustardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     // MARK: - ViewModels
-    @StateObject private var authViewModel: AuthenticationViewModel
-    @StateObject private var timelineViewModel: TimelineViewModel
-    @StateObject private var accountsViewModel: AccountsViewModel
+    @StateObject private var authViewModel = AuthenticationViewModel(mastodonService: MastodonService.shared)
+    @StateObject private var timelineViewModel = TimelineViewModel(mastodonService: MastodonService.shared)
+    @StateObject private var topPostsViewModel = TopPostsViewModel(service: MastodonService.shared)
+    @StateObject private var weatherViewModel = WeatherViewModel()
+    @StateObject private var locationManager = LocationManager()
 
     // MARK: - SwiftData container
     let container: ModelContainer
 
-    // MARK: - Singleton MastodonService Instance
-    let mastodonService = MastodonService.shared // Use the shared instance
-
-    // MARK: - Sample Servers (Use your actual server list)
-    let servers: [Server] = SampleServers.servers
-
+    // MARK: - Initialization
     init() {
-        // 1) Initialize the ModelContainer with your @Model types
+        // Initialize the ModelContainer with your @Model types
         do {
             container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
             print("[MustardApp] ModelContainer initialized successfully.")
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
-
-        // 2) Remove manual Keychain retrieval and setting of baseURL
-        // MastodonService.shared handles loading credentials internally
-
-        // 3) Create local instances of the view models with the shared MastodonService
-        let localAuthVM = AuthenticationViewModel(mastodonService: mastodonService)
-        let localTimelineVM = TimelineViewModel(mastodonService: mastodonService)
-        let localAccountsVM = AccountsViewModel(
-            mastodonService: mastodonService,
-            modelContext: container.mainContext
-        )
-
-        // 4) Wrap them in StateObjects
-        _authViewModel = StateObject(wrappedValue: localAuthVM)
-        _timelineViewModel = StateObject(wrappedValue: localTimelineVM)
-        _accountsViewModel = StateObject(wrappedValue: localAccountsVM)
     }
 
     var body: some Scene {
@@ -60,27 +41,19 @@ struct MustardApp: App {
                     TabView {
                         // Home Tab
                         NavigationStack {
-                            TimelineView()
+                            HomeView()
                                 .environmentObject(authViewModel)
                                 .environmentObject(timelineViewModel)
-                                .environmentObject(accountsViewModel)
+                                .environmentObject(topPostsViewModel)
+                                .environmentObject(weatherViewModel)
+                                .environmentObject(locationManager)
                                 .modelContainer(container)
                         }
                         .tabItem {
                             Label("Home", systemImage: "house")
                         }
 
-                        // Accounts Management Tab (Retained for future use)
-                        NavigationStack {
-                            AccountsView()
-                                .environmentObject(accountsViewModel)
-                                .environmentObject(authViewModel)
-                                .environmentObject(timelineViewModel)
-                                .modelContainer(container)
-                        }
-                        .tabItem {
-                            Label("Accounts", systemImage: "person.2")
-                        }
+                        // Additional Tabs (if any) can be added here
                     }
                     .onOpenURL { url in
                         NotificationCenter.default.post(
@@ -102,7 +75,9 @@ struct MustardApp: App {
                     AuthenticationView()
                         .environmentObject(authViewModel)
                         .environmentObject(timelineViewModel)
-                        .environmentObject(accountsViewModel)
+                        .environmentObject(topPostsViewModel)
+                        .environmentObject(weatherViewModel)
+                        .environmentObject(locationManager)
                         .modelContainer(container)
                         .navigationTitle("Authentication")
                         .alert(item: $authViewModel.alertError) { error in
@@ -142,4 +117,3 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 }
-

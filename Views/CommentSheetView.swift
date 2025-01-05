@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct CommentSheetView: View {
     let post: Post
@@ -19,50 +20,82 @@ struct CommentSheetView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
-                Text("Reply to \(post.account.displayName)")
+                // Header indicating to whom you're replying
+                Text("Replying to \(post.account.displayName)")
                     .font(.headline)
-                    .padding()
+                    .padding(.top, 20)
 
+                // Comment Text Editor
                 TextEditor(text: $commentText)
                     .padding()
-                    .frame(minHeight: 100)
+                    .frame(minHeight: 150)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray, lineWidth: 1)
+                            .stroke(Color.gray.opacity(0.5), lineWidth: 1)
                     )
                     .padding(.horizontal)
 
-                if isSubmitting {
-                    ProgressView("Posting Comment...")
-                        .padding()
-                }
-
+                // Error Message
                 if let error = errorMessage {
                     Text(error)
                         .foregroundColor(.red)
-                        .padding()
+                        .padding(.horizontal)
+                        .multilineTextAlignment(.center)
                 }
 
                 Spacer()
-
-                HStack {
+            }
+            .navigationTitle("Add a Comment")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Cancel Button
+                ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
                         presentationMode.wrappedValue.dismiss()
                     }
-                    Spacer()
+                    .accessibilityLabel("Cancel Comment")
+                }
+                // Post Button
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Post") {
                         submitComment()
                     }
-                    .disabled(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+                    .disabled(
+                        commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                        isSubmitting
+                    )
+                    .accessibilityLabel("Post Comment")
                 }
-                .padding()
             }
-            .navigationBarTitle("Add a Comment", displayMode: .inline)
+            .overlay(
+                Group {
+                    if isSubmitting {
+                        Color.black.opacity(0.4)
+                            .edgesIgnoringSafeArea(.all)
+                        ProgressView("Posting Comment...")
+                            .padding()
+                            .background(Color.white)
+                            .cornerRadius(10)
+                    }
+                }
+            )
+            .alert(isPresented: Binding<Bool>(
+                get: { errorMessage != nil },
+                set: { _ in errorMessage = nil }
+            )) {
+                Alert(
+                    title: Text("Error"),
+                    message: Text(errorMessage ?? "An unknown error occurred."),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
         }
     }
 
+    /// Handles the comment submission process.
     private func submitComment() {
-        guard !commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let trimmedComment = commentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedComment.isEmpty else {
             errorMessage = "Comment cannot be empty."
             return
         }
@@ -72,14 +105,51 @@ struct CommentSheetView: View {
 
         Task {
             do {
-                try await viewModel.comment(post: post, content: commentText)
+                try await viewModel.comment(post: post, content: trimmedComment)
                 isSubmitting = false
                 presentationMode.wrappedValue.dismiss()
+                os_log("Successfully posted comment for post ID: %{public}@", log: OSLog.default, type: .info, post.id)
             } catch {
                 isSubmitting = false
-                errorMessage = "Failed to post comment: \(error.localizedDescription)"
+                self.errorMessage = "Failed to post comment: \(error.localizedDescription)"
+                os_log("Failed to post comment for post ID: %{public}@. Error: %{public}@", log: OSLog.default, type: .error, post.id, error.localizedDescription)
             }
         }
     }
 }
 
+struct CommentSheetView_Previews: PreviewProvider {
+    static var previews: some View {
+        let sampleAccount = Account(
+            id: "a1",
+            username: "user1",
+            displayName: "User One",
+            avatar: URL(string: "https://example.com/avatar1.png")!,
+            acct: "user1",
+            instanceURL: URL(string: "https://mastodon.social")!,
+            accessToken: "mockAccessToken123"
+        )
+
+        let samplePost = Post(
+            id: "1",
+            content: "<p>Hello, world!</p>",
+            createdAt: Date(),
+            account: sampleAccount,
+            mediaAttachments: [],
+            isFavourited: false,
+            isReblogged: false,
+            reblogsCount: 0,
+            favouritesCount: 0,
+            repliesCount: 0
+        )
+
+        let mockService = MockMastodonService(shouldSucceed: true, mockPosts: [samplePost])
+        let viewModel = TimelineViewModel(mastodonService: mockService)
+        viewModel.posts = [samplePost]
+
+        return NavigationStack {
+            CommentSheetView(post: samplePost)
+                .environmentObject(viewModel)
+        }
+    }
+}

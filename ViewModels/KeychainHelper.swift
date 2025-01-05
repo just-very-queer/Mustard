@@ -10,10 +10,13 @@ import Security
 import OSLog
 
 /// A helper class for interacting with the iOS Keychain, providing secure storage for sensitive data.
-final class KeychainHelper {
-    /// Shared singleton instance of `KeychainHelper`.
+final class KeychainHelper: @unchecked Sendable {
+    
+    // MARK: - Singleton
     static let shared = KeychainHelper()
     
+    // MARK: - Private Properties
+
     /// A dedicated serial dispatch queue for Keychain operations to ensure thread safety.
     private let keychainQueue = DispatchQueue(label: "com.yourcompany.Mustard.KeychainQueue")
     
@@ -23,30 +26,30 @@ final class KeychainHelper {
     /// Private initializer to enforce the singleton pattern.
     private init() {}
     
-    // MARK: - Public Methods
-    
+    // MARK: - Public API
+
     /// Saves a `String` value to the Keychain.
     ///
     /// - Parameters:
     ///   - value: The `String` value to save.
     ///   - service: The service identifier.
     ///   - account: The account identifier.
-    /// - Throws: `KeychainError` if the operation fails.
+    /// - Throws: `AppError` if the operation fails.
     func save(_ value: String, service: String, account: String) async throws {
         guard let data = value.data(using: .utf8) else {
             os_log("Failed to encode value to data.", log: logger, type: .error)
-            throw KeychainError.encodingError
+            throw AppError(message: "[KeychainHelper] Encoding string to Data failed.")
         }
         try await save(data, service: service, account: account)
     }
     
-    /// Saves `Data` to the Keychain.
+    /// Saves raw `Data` to the Keychain.
     ///
     /// - Parameters:
     ///   - data: The `Data` to save.
     ///   - service: The service identifier.
     ///   - account: The account identifier.
-    /// - Throws: `KeychainError` if the operation fails.
+    /// - Throws: `AppError` if the operation fails.
     func save(_ data: Data, service: String, account: String) async throws {
         try await saveData(data, service: service, account: account)
     }
@@ -57,7 +60,7 @@ final class KeychainHelper {
     ///   - service: The service identifier.
     ///   - account: The account identifier.
     /// - Returns: The retrieved `String` value, or `nil` if not found.
-    /// - Throws: `KeychainError` if the operation fails.
+    /// - Throws: `AppError` if the operation fails.
     func read(service: String, account: String) async throws -> String? {
         guard let data = try await readData(service: service, account: account) else {
             os_log("No data found for service: %{public}@, account: %{public}@.", log: logger, type: .info, service, account)
@@ -65,19 +68,20 @@ final class KeychainHelper {
         }
         guard let string = String(data: data, encoding: .utf8) else {
             os_log("Failed to decode data to string for service: %{public}@, account: %{public}@.", log: logger, type: .error, service, account)
-            throw KeychainError.dataConversionError
+            throw AppError(message: "[KeychainHelper] Failed to decode data to String.")
         }
+        
         os_log("Successfully read data for service: %{public}@, account: %{public}@.", log: logger, type: .debug, service, account)
         return string
     }
     
-    /// Reads `Data` from the Keychain.
+    /// Reads raw `Data` from the Keychain.
     ///
     /// - Parameters:
     ///   - service: The service identifier.
     ///   - account: The account identifier.
     /// - Returns: The retrieved `Data`, or `nil` if not found.
-    /// - Throws: `KeychainError` if the operation fails.
+    /// - Throws: `AppError` if the operation fails.
     func readData(service: String, account: String) async throws -> Data? {
         try await withCheckedThrowingContinuation { continuation in
             keychainQueue.async {
@@ -95,19 +99,24 @@ final class KeychainHelper {
                 switch status {
                 case errSecSuccess:
                     if let data = item as? Data {
-                        os_log("Data retrieved successfully for service: %{public}@, account: %{public}@.", log: self.logger, type: .debug, service, account)
+                        os_log("Data retrieved successfully for service: %{public}@, account: %{public}@.",
+                               log: self.logger, type: .debug, service, account)
                         continuation.resume(returning: data)
                     } else {
-                        os_log("Data conversion error for service: %{public}@, account: %{public}@.", log: self.logger, type: .error, service, account)
-                        continuation.resume(throwing: KeychainError.dataConversionError)
+                        os_log("Data conversion error for service: %{public}@, account: %{public}@.",
+                               log: self.logger, type: .error, service, account)
+                        continuation.resume(throwing: AppError(message: "[KeychainHelper] Failed to convert Keychain result to Data."))
                     }
                 case errSecItemNotFound:
-                    os_log("No item found in Keychain for service: %{public}@, account: %{public}@.", log: self.logger, type: .info, service, account)
+                    os_log("No item found in Keychain for service: %{public}@, account: %{public}@.",
+                           log: self.logger, type: .info, service, account)
                     continuation.resume(returning: nil)
                 default:
-                    let message = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown Keychain error."
-                    os_log("Unhandled Keychain error for service: %{public}@, account: %{public}@. Status: %{public}@", log: self.logger, type: .error, service, account, message)
-                    continuation.resume(throwing: KeychainError.unhandledError(status: status, message: message))
+                    // Convert OSStatus to a readable error message
+                    let message = (SecCopyErrorMessageString(status, nil) as String?) ?? "Unknown Keychain error."
+                    let errorMsg = "[KeychainHelper] Keychain error (\(status)): \(message)"
+                    os_log("%{public}@", log: self.logger, type: .error, errorMsg)
+                    continuation.resume(throwing: AppError(message: errorMsg))
                 }
             }
         }
@@ -118,7 +127,7 @@ final class KeychainHelper {
     /// - Parameters:
     ///   - service: The service identifier.
     ///   - account: The account identifier.
-    /// - Throws: `KeychainError` if the operation fails.
+    /// - Throws: `AppError` if the operation fails.
     func delete(service: String, account: String) async throws {
         try await withCheckedThrowingContinuation { continuation in
             keychainQueue.async {
@@ -132,26 +141,22 @@ final class KeychainHelper {
                 
                 switch status {
                 case errSecSuccess, errSecItemNotFound:
-                    os_log("Successfully deleted item for service: %{public}@, account: %{public}@.", log: self.logger, type: .info, service, account)
+                    os_log("Successfully deleted item for service: %{public}@, account: %{public}@.",
+                           log: self.logger, type: .info, service, account)
                     continuation.resume()
                 default:
-                    let message = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown Keychain error."
-                    os_log("Failed to delete item for service: %{public}@, account: %{public}@. Status: %{public}@", log: self.logger, type: .error, service, account, message)
-                    continuation.resume(throwing: KeychainError.unhandledError(status: status, message: message))
+                    let message = (SecCopyErrorMessageString(status, nil) as String?) ?? "Unknown Keychain error."
+                    let errorMsg = "[KeychainHelper] Failed to delete item (\(status)): \(message)"
+                    os_log("%{public}@", log: self.logger, type: .error, errorMsg)
+                    continuation.resume(throwing: AppError(message: errorMsg))
                 }
             }
         }
     }
     
-    // MARK: - Private Methods
-    
+    // MARK: - Private
+
     /// Saves `Data` to the Keychain.
-    ///
-    /// - Parameters:
-    ///   - data: The `Data` to save.
-    ///   - service: The service identifier.
-    ///   - account: The account identifier.
-    /// - Throws: `KeychainError` if the operation fails.
     private func saveData(_ data: Data, service: String, account: String) async throws {
         try await withCheckedThrowingContinuation { continuation in
             keychainQueue.async {
@@ -161,43 +166,24 @@ final class KeychainHelper {
                     kSecAttrAccount as String : account
                 ]
                 
-                // Delete any existing items
+                // Delete any existing items with same service/account (override).
                 SecItemDelete(query as CFDictionary)
                 
                 // Add the new item
                 query[kSecValueData as String] = data
                 
                 let status = SecItemAdd(query as CFDictionary, nil)
-                
                 switch status {
                 case errSecSuccess:
-                    os_log("Data saved successfully for service: %{public}@, account: %{public}@.", log: self.logger, type: .info, service, account)
+                    os_log("Data saved successfully for service: %{public}@, account: %{public}@.",
+                           log: self.logger, type: .info, service, account)
                     continuation.resume()
                 default:
-                    let message = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown Keychain error."
-                    os_log("Failed to save data for service: %{public}@, account: %{public}@. Status: %{public}@", log: self.logger, type: .error, service, account, message)
-                    continuation.resume(throwing: KeychainError.unhandledError(status: status, message: message))
+                    let message = (SecCopyErrorMessageString(status, nil) as String?) ?? "Unknown Keychain error."
+                    let errorMsg = "[KeychainHelper] Failed to save data (\(status)): \(message)"
+                    os_log("%{public}@", log: self.logger, type: .error, errorMsg)
+                    continuation.resume(throwing: AppError(message: errorMsg))
                 }
-            }
-        }
-    }
-    
-    // MARK: - Keychain Errors
-    
-    /// Represents errors that can occur during Keychain operations.
-    enum KeychainError: Error, LocalizedError {
-        case encodingError
-        case dataConversionError
-        case unhandledError(status: OSStatus, message: String)
-        
-        var errorDescription: String? {
-            switch self {
-            case .encodingError:
-                return "[KeychainHelper] Failed to encode data."
-            case .dataConversionError:
-                return "[KeychainHelper] Failed to decode data."
-            case .unhandledError(let status, let message):
-                return "[KeychainHelper] \(message) (OSStatus: \(status))"
             }
         }
     }

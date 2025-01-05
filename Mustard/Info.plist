@@ -50,18 +50,39 @@
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>mustard</string>
+                <string>mustard-social</string>
+                <string>mustard-cloud</string>
             </array>
         </dict>
     </array>
 
-    <!-- Permissions for Web Authentication Session -->
+    <!-- Permissions for Web Authentication Session & Networking -->
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>
         <true/>
         <key>NSExceptionDomains</key>
         <dict>
+            <!-- Allow various Mastodon instances -->
             <key>mastodon.social</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSRequiresCertificateTransparency</key>
+                <false/>
+            </dict>
+            <key>mastodon.cloud</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSRequiresCertificateTransparency</key>
+                <false/>
+            </dict>
+            <key>mstdn.social</key>
             <dict>
                 <key>NSIncludesSubdomains</key>
                 <true/>
@@ -73,18 +94,28 @@
         </dict>
     </dict>
 
-    <!-- Privacy Descriptions -->
+    <!-- Privacy Descriptions for Required Permissions -->
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>This app requires access to your photo library to upload images.</string>
+    <string>This app requires access to your photo library to upload images to Mastodon.</string>
     <key>NSCameraUsageDescription</key>
-    <string>This app requires access to your camera to take photos.</string>
+    <string>This app requires access to your camera to take photos for Mastodon posts.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>This app requires access to your microphone to record audio.</string>
+    <string>This app requires access to your microphone to record audio for posts.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>This app uses your location to display localized trending posts and weather updates.</string>
 
-    <!-- Associated Domains for Universal Links (Optional) -->
+    <!-- Universal Links for Deep Linking & OAuth Authentication -->
     <key>com.apple.developer.associated-domains</key>
     <array>
         <string>applinks:mastodon.social</string>
+        <string>applinks:mastodon.cloud</string>
+        <string>applinks:mstdn.social</string>
+    </array>
+
+    <!-- Enable Keychain Access for Secure Token Storage -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)com.yourcompany.Mustard</string>
     </array>
 </dict>
 </plist>

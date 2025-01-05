@@ -18,11 +18,17 @@ class MockMastodonService: MastodonServiceProtocol {
     
     var mockAccounts: [Account] = []
     var mockPosts: [Post] = []
+    var mockTrendingPosts: [Post] = []
     var shouldSucceed: Bool
     
     // MARK: - Initializer
     
-    init(shouldSucceed: Bool = true, mockPosts: [Post]? = nil, mockAccounts: [Account]? = nil) {
+    init(
+        shouldSucceed: Bool = true,
+        mockPosts: [Post]? = nil,
+        mockAccounts: [Account]? = nil,
+        mockTrendingPosts: [Post]? = nil
+    ) {
         self.shouldSucceed = shouldSucceed
         self.mockAccounts = mockAccounts ?? []
         
@@ -68,6 +74,9 @@ class MockMastodonService: MastodonServiceProtocol {
                 )
             }
         }
+        
+        // Initialize mockTrendingPosts
+        self.mockTrendingPosts = mockTrendingPosts ?? generateMockTrendingPosts(count: 3)
     }
     
     // MARK: - MastodonServiceProtocol Methods
@@ -123,6 +132,16 @@ class MockMastodonService: MastodonServiceProtocol {
         if shouldSucceed {
             // Simulate a refresh by adding new mock posts
             mockPosts.append(contentsOf: generateMockPosts(count: 2))
+        }
+    }
+    
+    // MARK: - Trending Posts Method
+    
+    func fetchTrendingPosts() async throws -> [Post] {
+        if shouldSucceed {
+            return mockTrendingPosts
+        } else {
+            throw MockError.failedToFetchTrendingPosts
         }
     }
     
@@ -200,6 +219,7 @@ class MockMastodonService: MastodonServiceProtocol {
                 throw MockError.postNotFound
             }
             mockPosts[index].repliesCount += 1
+            // Optionally, add the comment to a comments array if your model supports it
         } else {
             throw MockError.failedToAddComment
         }
@@ -278,6 +298,26 @@ class MockMastodonService: MastodonServiceProtocol {
         }
     }
     
+    private func generateMockTrendingPosts(count: Int) -> [Post] {
+        guard !mockAccounts.isEmpty else { return [] }
+        let accountsToUse = mockAccounts
+        return (1...count).map { index in
+            let randomAccount = accountsToUse[index % accountsToUse.count]
+            return Post(
+                id: "mockTrendingPost\(index)",
+                content: "<p>Trending post content #\(index) with <em>HTML</em> support.</p>",
+                createdAt: Date().addingTimeInterval(Double(-index * 7200)),
+                account: randomAccount,
+                mediaAttachments: [],
+                isFavourited: Bool.random(),
+                isReblogged: Bool.random(),
+                reblogsCount: Int.random(in: 0...30),
+                favouritesCount: Int.random(in: 0...60),
+                repliesCount: Int.random(in: 0...15)
+            )
+        }
+    }
+    
     // MARK: - Mock Errors
     
     enum MockError: LocalizedError {
@@ -286,6 +326,7 @@ class MockMastodonService: MastodonServiceProtocol {
         case failedToClearTimelineCache
         case failedToLoadTimelineFromDisk
         case failedToSaveTimelineToDisk
+        case failedToFetchTrendingPosts
         case failedToSaveAccessToken
         case failedToClearAccessToken
         case failedToRetrieveAccessToken
@@ -307,6 +348,7 @@ class MockMastodonService: MastodonServiceProtocol {
             case .failedToClearTimelineCache: return "Failed to clear timeline cache."
             case .failedToLoadTimelineFromDisk: return "Failed to load timeline from disk."
             case .failedToSaveTimelineToDisk: return "Failed to save timeline to disk."
+            case .failedToFetchTrendingPosts: return "Failed to fetch trending posts."
             case .failedToSaveAccessToken: return "Failed to save access token."
             case .failedToClearAccessToken: return "Failed to clear access token."
             case .failedToRetrieveAccessToken: return "Failed to retrieve access token."
@@ -324,4 +366,3 @@ class MockMastodonService: MastodonServiceProtocol {
         }
     }
 }
-

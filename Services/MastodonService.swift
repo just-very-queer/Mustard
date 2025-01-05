@@ -2,274 +2,158 @@
 //  MastodonService.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
+//  Created by Your Name on 30/12/24.
 //
 
 import Foundation
 import AuthenticationServices
+import SwiftUI
 import CryptoKit
 import OSLog
-import SwiftUI
 
-@MainActor
-// MARK: - Supporting Types
-
-/// Represents a cached timeline with a timestamp.
+/// A simple struct for caching timeline data with timestamp.
 struct CachedTimeline {
     let posts: [Post]
     let timestamp: Date
 }
 
-// MARK: - Logger
-
-/// Logger for structured and categorized logging.
-struct AppLogger {
-    static let mastodonService = OSLog(subsystem: "com.yourcompany.Mustard", category: "MastodonService")
-}
-
-// MARK: - MastodonService Implementation
-
-enum MastodonServiceError: LocalizedError {
-    case missingCredentials
-    case invalidResponse
-    case badRequest
-    case unauthorized
-    case forbidden
-    case notFound
-    case serverError(statusCode: Int)
-    case decodingError
-    case encodingError
-    case networkError(underlying: Error)
-    case oauthError(message: String)
-    case unknown(statusCode: Int)
-    
-    var errorDescription: String? {
-        switch self {
-        case .missingCredentials:
-            return "Missing base URL or access token."
-        case .invalidResponse:
-            return "Received an invalid response from the server."
-        case .badRequest:
-            return "Bad request."
-        case .unauthorized:
-            return "Unauthorized access."
-        case .forbidden:
-            return "Forbidden resource."
-        case .notFound:
-            return "Resource not found."
-        case .serverError(let statusCode):
-            return "Server returned an error with status code \(statusCode)."
-        case .decodingError:
-            return "Failed to decode the response."
-        case .encodingError:
-            return "Failed to encode the request."
-        case .networkError(let underlying):
-            return "Network error occurred: \(underlying.localizedDescription)"
-        case .oauthError(let message):
-            return "OAuth error: \(message)"
-        case .unknown(let statusCode):
-            return "Unknown error with status code \(statusCode)."
-        }
-    }
-}
-
 @MainActor
 class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPresentationContextProviding {
-    // MARK: - Singleton Instance
-    
+
+    // MARK: - Singleton
     static let shared = MastodonService()
-    
-    // MARK: - Properties
 
-    private let baseURLService = "Mustard-baseURL"
-    private let baseURLAccount = "baseURL"
-    private let accessTokenAccount = "accessToken"
-    private var codeVerifier: String?
-    private var state: String?
-    
-    private let logger = AppLogger.mastodonService
-    private var isAuthenticatingSession: Bool = false
-    private var cachedTimeline: CachedTimeline?
-    private var cacheFileURL: URL? {
-        let fileManager = FileManager.default
-        return fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("mustard_timeline.json")
-    }
+    // MARK: - Private Keychain Identifiers
+    private let baseURLKeychainService    = "Mustard-baseURL"
+    private let baseURLKeychainAccount    = "baseURL"
+    private let accessTokenKeychainAccount = "accessToken"
 
-    // MARK: - Protocol Properties
-    
-    var baseURL: URL? {
-        get {
-            os_log("Accessing baseURL: %{public}@", log: logger, type: .debug, _baseURL?.absoluteString ?? "nil")
-            return _baseURL
-        }
-        set {
-            _baseURL = newValue
-            Task {
-                if let url = newValue {
-                    do {
-                        try await KeychainHelper.shared.save(url.absoluteString, service: baseURLService, account: baseURLAccount)
-                        os_log("Base URL saved: %{public}@", log: logger, type: .info, url.absoluteString)
-                    } catch {
-                        os_log("Failed to save baseURL: %{public}@", log: logger, type: .error, error.localizedDescription)
-                    }
-                } else {
-                    do {
-                        try await KeychainHelper.shared.delete(service: baseURLService, account: baseURLAccount)
-                        os_log("Base URL deleted.", log: logger, type: .info)
-                    } catch {
-                        os_log("Failed to delete baseURL: %{public}@", log: logger, type: .error, error.localizedDescription)
-                    }
-                }
-            }
-        }
-    }
-    
-    var accessToken: String? {
-        get {
-            os_log("Accessing accessToken: %{public}@", log: logger, type: .debug, _accessToken ?? "nil")
-            return _accessToken
-        }
-        set {
-            _accessToken = newValue
-            Task {
-                if let token = newValue, let baseURL = self.baseURL {
-                    let service = "Mustard-\(baseURL.host ?? "unknown")-accessToken"
-                    do {
-                        try await KeychainHelper.shared.save(token, service: service, account: accessTokenAccount)
-                        os_log("Access token saved for service: %{public}@", log: logger, type: .info, service)
-                    } catch {
-                        os_log("Failed to save accessToken: %{public}@", log: logger, type: .error, error.localizedDescription)
-                    }
-                } else if let baseURL = self.baseURL {
-                    let service = "Mustard-\(baseURL.host ?? "unknown")-accessToken"
-                    do {
-                        try await KeychainHelper.shared.delete(service: service, account: accessTokenAccount)
-                        os_log("Access token deleted for service: %{public}@", log: logger, type: .info, service)
-                    } catch {
-                        os_log("Failed to delete accessToken: %{public}@", log: logger, type: .error, error.localizedDescription)
-                    }
-                }
-            }
-        }
-    }
-    
+    // MARK: - Private Properties
     private var _baseURL: URL?
     private var _accessToken: String?
     
-    // MARK: - Initialization
+    private var cachedTimeline: CachedTimeline?
+    private var cacheFileURL: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("mustard_timeline.json")
+    }
 
-    private override init() {
-        super.init()
-        Task {
-            do {
-                self._baseURL = try await loadBaseURL()
-                self._accessToken = try await loadAccessToken()
-                os_log("MastodonService initialized with baseURL: %{public}@ and accessToken: %{public}@", log: logger, type: .info, self._baseURL?.absoluteString ?? "nil", self._accessToken ?? "nil")
-            } catch {
-                os_log("Failed to load credentials during initialization: %{public}@", log: logger, type: .error, error.localizedDescription)
-            }
+    // If needed for PKCE, keep these. Otherwise remove them.
+    private var codeVerifier: String?
+    private var state: String?
+    private var isAuthenticatingSession = false
+
+    // Logger for debugging
+    private let logger = OSLog(subsystem: "com.yourcompany.Mustard", category: "MastodonService")
+    
+    // MARK: - MastodonServiceProtocol
+
+    /// The Mastodon instance URL (e.g., "https://mastodon.social").
+    var baseURL: URL? {
+        get { _baseURL }
+        set {
+            _baseURL = newValue
+            Task { await storeBaseURL(newValue) }
         }
     }
 
-    // MARK: - MastodonServiceProtocol Methods
+    /// The current OAuth access token, if available.
+    var accessToken: String? {
+        get { _accessToken }
+        set {
+            _accessToken = newValue
+            Task { await storeAccessToken(newValue) }
+        }
+    }
+
+    // MARK: - Initialization
+       func ensureInitialized() async {
+           if _baseURL == nil || _accessToken == nil {
+               await initializeService()
+           }
+       }
+
+       /// Initializes the service by loading the base URL and access token.
+       private func initializeService() async {
+           do {
+               _baseURL = await loadBaseURL()
+               _accessToken = await loadAccessToken()
+
+               if _baseURL == nil || _accessToken == nil {
+                   os_log("Service initialization: Missing base URL or access token.", log: logger, type: .error)
+               } else {
+                   os_log("Service initialized with base URL: %{public}@ and access token.", log: logger, type: .info, _baseURL?.absoluteString ?? "nil")
+               }
+           }
+       }
+
+    // MARK: - Timeline Methods
 
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
-        if useCache, let cache = cachedTimeline, Date().timeIntervalSince(cache.timestamp) < 300 {
-            Task.detached { [weak self] in
-                await self?.backgroundRefreshTimeline()
-            }
+        // 1) Ensure we have credentials
+        guard try isAuthenticated() else {
+            throw AppError(mastodon: .missingCredentials)
+        }
+
+        // 2) If asked, return cached data if fresh
+        if useCache, let cache = cachedTimeline,
+           Date().timeIntervalSince(cache.timestamp) < 300 {
+            Task { await backgroundRefreshTimeline() }
             return cache.posts
         }
 
-        guard let baseURL = self.baseURL,
-              let token = self.accessToken else {
-            os_log("Missing baseURL or accessToken.", log: logger, type: .error)
-            throw MastodonServiceError.missingCredentials
-        }
+        // 3) Build request
+        let timelineURL = try timelineEndpoint("home")
+        let request     = try buildRequest(url: timelineURL, method: "GET")
 
-        let url = baseURL.appendingPathComponent("/api/v1/timelines/home")
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        // 4) Perform network call
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
 
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            try validateResponse(response)
+        // 5) Parse
+        let postDataArray = try JSONDecoder().decode([PostData].self, from: data)
+        let posts = postDataArray.map { $0.toPost(instanceURL: baseURL!) }
 
-            let postDataArray = try JSONDecoder().decode([PostData].self, from: data)
-            let posts = postDataArray.map { $0.toPost(instanceURL: baseURL) }
-            cachedTimeline = CachedTimeline(posts: posts, timestamp: Date())
-            try await saveTimelineToDisk(posts)
-            os_log("Fetched timeline with %{public}d posts.", log: logger, type: .info, posts.count)
-            return posts
-        } catch {
-            if let serviceError = error as? MastodonServiceError {
-                os_log("Failed to fetch timeline: %{public}@", log: logger, type: .error, serviceError.localizedDescription)
-                throw serviceError
-            } else {
-                os_log("Network error: %{public}@", log: logger, type: .error, error.localizedDescription)
-                throw MastodonServiceError.networkError(underlying: error)
-            }
-        }
+        // 6) Cache & save
+        cachedTimeline = CachedTimeline(posts: posts, timestamp: Date())
+        try await saveTimelineToDisk(posts)
+        return posts
     }
-    
+
     func fetchTimeline(page: Int, useCache: Bool) async throws -> [Post] {
-        guard let baseURL = self.baseURL,
-              let token = self.accessToken else {
-            os_log("Missing baseURL or accessToken.", log: logger, type: .error)
-            throw MastodonServiceError.missingCredentials
+        guard try isAuthenticated() else {
+            throw AppError(mastodon: .missingCredentials)
         }
 
-        let url = baseURL.appendingPathComponent("/api/v1/timelines/home")
-        
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-        var queryItems = [
-            URLQueryItem(name: "limit", value: "20")
-        ]
-        
-        if page > 1, let lastPost = cachedTimeline?.posts.last {
-            queryItems.append(URLQueryItem(name: "max_id", value: lastPost.id))
+        let timelineURL = try timelineEndpoint("home")
+        var comps       = URLComponents(url: timelineURL, resolvingAgainstBaseURL: false)!
+        var queryItems  = [URLQueryItem(name: "limit", value: "20")]
+
+        // If user wants page>1, we can use "max_id" to fetch older posts
+        if page > 1, let lastPostID = cachedTimeline?.posts.last?.id {
+            queryItems.append(URLQueryItem(name: "max_id", value: lastPostID))
         }
-        
-        components.queryItems = queryItems
-        
-        guard let finalURL = components.url else {
-            throw MastodonServiceError.encodingError
+        comps.queryItems = queryItems
+
+        guard let finalURL = comps.url else {
+            throw AppError(mastodon: .encodingError)
         }
-        
-        var request = URLRequest(url: finalURL)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            try validateResponse(response)
-            
-            let postDataArray = try JSONDecoder().decode([PostData].self, from: data)
-            let posts = postDataArray.map { $0.toPost(instanceURL: baseURL) }
-            return posts
-        } catch {
-            if let serviceError = error as? MastodonServiceError {
-                os_log("Failed to fetch timeline page %{public}d: %{public}@", log: logger, type: .error, page, serviceError.localizedDescription)
-                throw serviceError
-            } else {
-                os_log("Network error while fetching timeline page %{public}d: %{public}@", log: logger, type: .error, page, error.localizedDescription)
-                throw MastodonServiceError.networkError(underlying: error)
-            }
-        }
+
+        let request = try buildRequest(url: finalURL, method: "GET")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
+
+        let postDataArray = try JSONDecoder().decode([PostData].self, from: data)
+        return postDataArray.map { $0.toPost(instanceURL: baseURL!) }
     }
 
     func clearTimelineCache() async throws {
         cachedTimeline = nil
-        guard let cacheFileURL = cacheFileURL else { return }
+        guard let fileURL = cacheFileURL else { return }
         do {
-            try FileManager.default.removeItem(at: cacheFileURL)
-            os_log("Timeline cache cleared.", log: logger, type: .info)
+            try FileManager.default.removeItem(at: fileURL)
         } catch {
-            os_log("Failed to clear timeline cache: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
+            throw AppError(mastodon: .networkError(underlying: error))
         }
     }
 
@@ -277,12 +161,9 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         guard let fileURL = cacheFileURL else { return [] }
         do {
             let data = try Data(contentsOf: fileURL)
-            let posts = try JSONDecoder().decode([Post].self, from: data)
-            os_log("Loaded timeline from disk with %{public}d posts.", log: logger, type: .info, posts.count)
-            return posts
+            return try JSONDecoder().decode([Post].self, from: data)
         } catch {
-            os_log("Failed to load timeline from disk: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
+            throw AppError(mastodon: .networkError(underlying: error))
         }
     }
 
@@ -291,425 +172,353 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         do {
             let data = try JSONEncoder().encode(posts)
             try data.write(to: fileURL)
-            os_log("Timeline saved to disk with %{public}d posts.", log: logger, type: .info, posts.count)
         } catch {
-            os_log("Failed to save timeline to disk: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.encodingError
+            throw AppError(mastodon: .encodingError)
         }
     }
 
     func backgroundRefreshTimeline() async {
+        // Optional background refresh logic
         do {
-            let freshPosts = try await fetchTimeline(useCache: false)
-            os_log("Background timeline refresh successful with %{public}d posts.", log: logger, type: .info, freshPosts.count)
+            _ = try await fetchTimeline(useCache: false)
         } catch {
-            os_log("Background timeline refresh failed: %{public}@", log: logger, type: .error, error.localizedDescription)
+            // Log or handle quietly
+            os_log("Background refresh failed: %{public}@", log: logger, type: .error, error.localizedDescription)
         }
     }
 
+    // MARK: - Authentication Methods
+
     func validateToken() async throws {
-        guard let baseURL = self.baseURL,
-              let token = self.accessToken else {
-            throw MastodonServiceError.missingCredentials
+        guard try isAuthenticated() else {
+            throw AppError(mastodon: .missingCredentials)
+        }
+        guard let base = baseURL,
+              let token = accessToken else {
+            throw AppError(mastodon: .missingCredentials)
         }
 
-        let url = baseURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let url = base.appendingPathComponent("/api/v1/accounts/verify_credentials")
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            try validateResponse(response)
-            os_log("Token validated successfully.", log: logger, type: .info)
-        } catch {
-            os_log("Token validation failed: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
-        }
+        let (_, response) = try await URLSession.shared.data(for: req)
+        try validateResponse(response)
     }
 
     func saveAccessToken(_ token: String) async throws {
-        guard let baseURL = self.baseURL else {
-            throw MastodonServiceError.missingCredentials
+        // If there's no baseURL, we can't store contextfully
+        guard baseURL != nil else {
+            throw AppError(mastodon: .missingCredentials)
         }
-        let service = "Mustard-\(baseURL.host ?? "unknown")-accessToken"
-        do {
-            try await KeychainHelper.shared.save(token, service: service, account: accessTokenAccount)
-            os_log("Access token saved for service: %{public}@", log: logger, type: .info, service)
-        } catch {
-            os_log("Failed to save access token: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
-        }
+        accessToken = token
     }
 
     func clearAccessToken() async throws {
-        guard let baseURL = self.baseURL else {
-            throw MastodonServiceError.missingCredentials
+        guard baseURL != nil else {
+            throw AppError(mastodon: .missingCredentials)
         }
-        let service = "Mustard-\(baseURL.host ?? "unknown")-accessToken"
-        do {
-            try await KeychainHelper.shared.delete(service: service, account: accessTokenAccount)
-            os_log("Access token deleted for service: %{public}@", log: logger, type: .info, service)
-        } catch {
-            os_log("Failed to delete access token: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
-        }
+        accessToken = nil
     }
 
     func retrieveAccessToken() async throws -> String? {
-        guard let baseURL = self.baseURL else { return nil }
-        let service = "Mustard-\(baseURL.host ?? "unknown")-accessToken"
-        do {
-            let token = try await KeychainHelper.shared.read(service: service, account: accessTokenAccount)
-            os_log("Access token retrieved: %{public}@", log: logger, type: .debug, token ?? "nil")
-            return token
-        } catch {
-            os_log("Failed to read access token: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
-        }
+        accessToken
     }
 
     func retrieveInstanceURL() async throws -> URL? {
-        do {
-            let urlString = try await KeychainHelper.shared.read(service: baseURLService, account: baseURLAccount)
-            if let urlString = urlString, let url = URL(string: urlString) {
-                os_log("Instance URL retrieved: %{public}@", log: logger, type: .debug, urlString)
-                return url
-            }
-            os_log("Instance URL not found.", log: logger, type: .info)
-            return nil
-        } catch {
-            os_log("Failed to read BaseURL from Keychain: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
-        }
+        baseURL
     }
 
+    // MARK: - Post Actions
+
     func toggleLike(postID: String) async throws {
-        try await toggleAction(for: postID, endpoint: "/favourite")
+        try await toggleAction(for: postID, path: "/favourite")
     }
 
     func toggleRepost(postID: String) async throws {
-        try await toggleAction(for: postID, endpoint: "/reblog")
+        try await toggleAction(for: postID, path: "/reblog")
     }
 
     func comment(postID: String, content: String) async throws {
-        guard let baseURL = self.baseURL,
-              let token = self.accessToken else {
-            throw MastodonServiceError.missingCredentials
+        guard try isAuthenticated() else {
+            throw AppError(mastodon: .missingCredentials)
         }
-
-        let url = baseURL.appendingPathComponent("/api/v1/statuses")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
+        let url = try endpoint("/api/v1/statuses")
+        var req = try buildRequest(url: url, method: "POST")
         let body: [String: Any] = [
             "status": content,
             "in_reply_to_id": postID
         ]
-
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
-        } catch {
-            throw MastodonServiceError.encodingError
-        }
-
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            try validateResponse(response)
-            os_log("Comment posted successfully for postID: %{public}@", log: logger, type: .info, postID)
-        } catch {
-            os_log("Failed to post comment: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
-        }
+        req.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+        let (_, response) = try await URLSession.shared.data(for: req)
+        try validateResponse(response)
     }
 
+    // MARK: - OAuth Methods
+
     func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
-        let url = instanceURL.appendingPathComponent("/api/v1/apps")
-        var request = URLRequest(url: url)
+        let registerURL = instanceURL.appendingPathComponent("/api/v1/apps")
+        var request     = URLRequest(url: registerURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let parameters: [String: Any] = [
+        let bodyParams: [String: Any] = [
             "client_name": "Mustard",
             "redirect_uris": "mustard://oauth-callback",
             "scopes": "read write follow",
-            "website": "https://yourapp.com" // Optional
+            "website": "https://yourapp.com"
         ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: bodyParams)
 
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: parameters, options: [])
-        } catch {
-            throw MastodonServiceError.encodingError
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
+
+        let decoded = try JSONDecoder().decode(RegisterResponse.self, from: data)
+        return OAuthConfig(
+            clientID:     decoded.client_id,
+            clientSecret: decoded.client_secret,
+            redirectURI:  "mustard://oauth-callback",
+            scope:        "read write follow"
+        )
+    }
+
+    func exchangeAuthorizationCode(
+        _ code: String,
+        config: OAuthConfig,
+        instanceURL: URL
+    ) async throws {
+        // Example token endpoint
+        let tokenURL = instanceURL.appendingPathComponent("/oauth/token")
+        var req      = URLRequest(url: tokenURL)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "grant_type":    "authorization_code",
+            "code":          code,
+            "redirect_uri":  config.redirectURI,
+            "client_id":     config.clientID,
+            "client_secret": config.clientSecret
+            // If needed: "code_verifier": codeVerifier ?? ""
+        ]
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        try validateResponse(response)
+
+        let tokenResp = try JSONDecoder().decode(TokenResponse.self, from: data)
+        accessToken = tokenResp.accessToken
+    }
+
+    // MARK: - Streaming Methods
+
+    func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {
+        guard try isAuthenticated(), let localBaseURL = baseURL else {
+            throw AppError(mastodon: .missingCredentials)
         }
 
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            try validateResponse(response)
-            let registerResponse = try JSONDecoder().decode(RegisterResponse.self, from: data)
-            let config = OAuthConfig(
-                clientID: registerResponse.client_id,
-                clientSecret: registerResponse.client_secret,
-                redirectURI: "mustard://oauth-callback",
-                scope: "read write follow"
-            )
-            os_log("OAuth App Registered with clientID: %{public}@", log: logger, type: .info, config.clientID)
-            return config
-        } catch {
-            os_log("Failed to register OAuth App: %{public}@", log: logger, type: .error, error.localizedDescription)
-            throw MastodonServiceError.networkError(underlying: error)
+        // Example public streaming endpoint
+        let url     = localBaseURL.appendingPathComponent("/api/v1/streaming/public")
+        let request = try buildRequest(url: url, method: "GET")
+
+        return AsyncThrowingStream { continuation in
+            let task = URLSession.shared.dataTask(with: request) { data, _, err in
+                if let e = err {
+                    continuation.finish(throwing: AppError(mastodon: .networkError(underlying: e)))
+                    return
+                }
+                guard let data = data else {
+                    continuation.finish(throwing: AppError(mastodon: .invalidResponse))
+                    return
+                }
+                do {
+                    let postData = try JSONDecoder().decode(PostData.self, from: data)
+                    let post     = postData.toPost(instanceURL: localBaseURL)
+                    continuation.yield(post)
+                } catch {
+                    continuation.finish(throwing: AppError(mastodon: .decodingError))
+                }
+            }
+            task.resume()
+
+            continuation.onTermination = { _ in
+                task.cancel()
+            }
         }
     }
 
-    func authenticateOAuth(instanceURL: URL, config: OAuthConfig) async throws -> String {
-        guard !isAuthenticatingSession else {
-            throw MastodonServiceError.oauthError(message: "Authentication session already in progress.")
+    // MARK: - Top Posts Methods
+
+    func fetchTrendingPosts() async throws -> [Post] {
+        guard try isAuthenticated() else {
+            throw AppError(mastodon: .missingCredentials)
         }
-
-        isAuthenticatingSession = true
-        defer { isAuthenticatingSession = false }
-            
-        let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
-        var components = URLComponents(url: authURL, resolvingAgainstBaseURL: false)!
-        let state = UUID().uuidString
-        self.state = state
-        self.codeVerifier = generateCodeVerifier()
-        let codeChallenge = generateCodeChallenge(from: codeVerifier!)
-
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: config.clientID),
-            URLQueryItem(name: "redirect_uri", value: config.redirectURI),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: config.scope),
-            URLQueryItem(name: "state", value: state),
-            URLQueryItem(name: "code_challenge", value: codeChallenge),
-            URLQueryItem(name: "code_challenge_method", value: "S256")
-        ]
-
-        guard let authorizationURL = components.url else {
-            throw MastodonServiceError.oauthError(message: "Failed to construct authorization URL.")
-        }
-
-        os_log("Starting OAuth session with URL: %{public}@", log: logger, type: .info, authorizationURL.absoluteString)
-
-        let code = try await performOAuthSession(authURL: authorizationURL, redirectURI: config.redirectURI)
+        let trendingURL = try endpoint("/api/v1/trends/statuses")
+        let request     = try buildRequest(url: trendingURL, method: "GET")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response)
         
-        // After obtaining the authorization code, exchange it for an access token
-        try await exchangeAuthorizationCode(code, config: config, instanceURL: instanceURL)
-        
-        // Set the baseURL and accessToken
-        self.baseURL = instanceURL
-        self.accessToken = try await retrieveAccessToken() // Ensure it's set
-        
-        // Post the authentication notification
-        NotificationCenter.default.post(name: .didAuthenticate, object: nil)
-        
-        os_log("OAuth authentication flow completed successfully.", log: logger, type: .info)
-        
-        return code
+        let postDataArray = try JSONDecoder().decode([PostData].self, from: data)
+        return postDataArray.map { $0.toPost(instanceURL: baseURL!) }
     }
 
     // MARK: - Private Helpers
 
-    private func toggleAction(for postID: String, endpoint: String) async throws {
-        guard let baseURL = self.baseURL,
-              let token = self.accessToken else {
-            os_log("Missing baseURL or accessToken.", log: logger, type: .error)
-            throw MastodonServiceError.missingCredentials
-        }
+    /// Helper for toggling like/reblog via POST
+    private func toggleAction(for postID: String, path: String) async throws {
+        guard try isAuthenticated() else { return }
+        let url = try endpoint("/api/v1/statuses/\(postID)\(path)")
+        let req = try buildRequest(url: url, method: "POST")
+        let (_, response) = try await URLSession.shared.data(for: req)
+        try validateResponse(response)
+    }
 
-        let url = baseURL.appendingPathComponent("/api/v1/statuses/\(postID)\(endpoint)")
+    private func timelineEndpoint(_ slug: String) throws -> URL {
+        guard let base = baseURL else {
+            throw AppError(mastodon: .missingCredentials)
+        }
+        return base.appendingPathComponent("/api/v1/timelines/\(slug)")
+    }
+
+    private func endpoint(_ path: String) throws -> URL {
+        guard let base = baseURL else {
+            throw AppError(mastodon: .missingCredentials)
+        }
+        return base.appendingPathComponent(path)
+    }
+
+    private func buildRequest(url: URL, method: String) throws -> URLRequest {
+        guard let token = accessToken, !token.isEmpty else {
+            throw AppError(mastodon: .missingCredentials)
+        }
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        return request
+    }
 
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            try validateResponse(response)
-            os_log("Toggled %{public}@ for postID: %{public}@", log: logger, type: .info, String(endpoint.dropFirst()), postID)
-        } catch {
-            if let serviceError = error as? MastodonServiceError {
-                os_log("Failed to toggle %{public}@ : %{public}@", log: logger, type: .error, String(endpoint.dropFirst()), serviceError.localizedDescription)
-                throw serviceError
-            } else {
-                os_log("Network error: %{public}@", log: logger, type: .error, error.localizedDescription)
-                throw MastodonServiceError.networkError(underlying: error)
-            }
+    /// Minimal check that baseURL/token exist & are non-empty
+    private func isAuthenticated() throws -> Bool {
+        guard let base = baseURL,
+              let token = accessToken,
+              !base.absoluteString.isEmpty,
+              !token.isEmpty else {
+            throw AppError(mastodon: .missingCredentials)
         }
+        return true
     }
 
     private func validateResponse(_ response: URLResponse) throws {
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw MastodonServiceError.invalidResponse
+        guard let http = response as? HTTPURLResponse else {
+            throw AppError(mastodon: .invalidResponse)
         }
-        
-        switch httpResponse.statusCode {
-        case 200...299:
-            // Success
-            break
+        switch http.statusCode {
+        case 200..<300:
+            return
         case 400:
-            throw MastodonServiceError.badRequest
+            throw AppError(mastodon: .badRequest)
         case 401:
-            throw MastodonServiceError.unauthorized
+            throw AppError(mastodon: .unauthorized)
         case 403:
-            throw MastodonServiceError.forbidden
+            throw AppError(mastodon: .forbidden)
         case 404:
-            throw MastodonServiceError.notFound
-        case 500...599:
-            throw MastodonServiceError.serverError(statusCode: httpResponse.statusCode)
+            throw AppError(mastodon: .notFound)
+        case 500..<600:
+            throw AppError(mastodon: .serverError(status: http.statusCode))
         default:
-            throw MastodonServiceError.unknown(statusCode: httpResponse.statusCode)
+            throw AppError(mastodon: .unknown(status: http.statusCode))
         }
     }
 
-    // MARK: - OAuth Session
+    // MARK: - Keychain/Local Storage
 
-    private func performOAuthSession(authURL: URL, redirectURI: String) async throws -> String {
-        return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: authURL, callbackURLScheme: URL(string: redirectURI)?.scheme) { callbackURL, error in
-                if let error = error {
-                    os_log("OAuth session error: %{public}@", log: self.logger, type: .error, error.localizedDescription)
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                guard let callbackURL = callbackURL else {
-                    let error = MastodonServiceError.oauthError(message: "Invalid callback URL.")
-                    os_log("OAuth session failed: Invalid callback URL.", log: self.logger, type: .error)
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                // Verify state
-                guard let receivedState = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
-                        .queryItems?
-                        .first(where: { $0.name == "state" })?.value,
-                      receivedState == self.state else {
-                    let error = MastodonServiceError.oauthError(message: "State mismatch.")
-                    os_log("OAuth session failed: State mismatch.", log: self.logger, type: .error)
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                // Parse the authorization code from the callback URL
-                guard let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
-                        .queryItems?
-                        .first(where: { $0.name == "code" })?.value else {
-                    let error = MastodonServiceError.oauthError(message: "Authorization code not found.")
-                    os_log("OAuth session failed: Authorization code not found.", log: self.logger, type: .error)
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                os_log("OAuth session successful. Authorization code: %{public}@", log: self.logger, type: .info, code)
-                continuation.resume(returning: code)
+    private func storeBaseURL(_ value: URL?) async {
+        do {
+            if let url = value {
+                try await KeychainHelper.shared.save(
+                    url.absoluteString,
+                    service: baseURLKeychainService,
+                    account: baseURLKeychainAccount
+                )
+            } else {
+                try await KeychainHelper.shared.delete(
+                    service: baseURLKeychainService,
+                    account: baseURLKeychainAccount
+                )
             }
-
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = true
-            if !session.start() {
-                let error = MastodonServiceError.oauthError(message: "Failed to start authentication session.")
-                os_log("OAuth session failed to start.", log: self.logger, type: .error)
-                continuation.resume(throwing: error)
-            }
+        } catch {
+            os_log("Failed to store baseURL: %{public}@", log: logger, type: .error, error.localizedDescription)
+            // Possibly log or handle error
         }
     }
 
-    // MARK: - PKCE Helpers
-
-    private func generateCodeVerifier() -> String {
-        let characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
-        return String((0..<128).map { _ in characters.randomElement()! })
+    private func loadBaseURL() async -> URL? {
+        do {
+            if let urlString = try await KeychainHelper.shared.read(service: baseURLKeychainService,
+                                                                    account: baseURLKeychainAccount),
+               let url = URL(string: urlString) {
+                return url
+            } else {
+                os_log("loadBaseURL: No base URL found in Keychain.", log: logger, type: .error)
+            }
+        } catch {
+            os_log("loadBaseURL: Failed to load base URL: %{public}@", log: logger, type: .error, error.localizedDescription)
+        }
+        return nil
     }
 
-    private func generateCodeChallenge(from verifier: String) -> String {
-        guard let data = verifier.data(using: .utf8) else { return "" }
-        let hash = SHA256.hash(data: data)
-        
-        // Encode to Base64
-        var base64 = Data(hash).base64EncodedString()
-        
-        // Convert to Base64 URL encoding by replacing '+' with '-', '/' with '_', and removing padding '='
-        base64 = base64
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-        
-        return base64
+    private func storeAccessToken(_ token: String?) async {
+        guard let base = _baseURL else { return }
+        let service = "Mustard-\(base.host ?? "unknown")-accessToken"
+        do {
+            if let token = token, !token.isEmpty {
+                try await KeychainHelper.shared.save(
+                    token,
+                    service: service,
+                    account: accessTokenKeychainAccount
+                )
+            } else {
+                try await KeychainHelper.shared.delete(
+                    service: service,
+                    account: accessTokenKeychainAccount
+                )
+            }
+        } catch {
+            os_log("Failed to store accessToken: %{public}@", log: logger, type: .error, error.localizedDescription)
+            // Possibly log or handle error
+        }
     }
 
-    // MARK: - Streaming
-
-    func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {
-        guard let baseURL = self.baseURL,
-              let token = self.accessToken else {
-            throw MastodonServiceError.missingCredentials
+    private func loadAccessToken() async -> String? {
+        guard let base = _baseURL else {
+            os_log("loadAccessToken: Base URL is nil.", log: logger, type: .error)
+            return nil
         }
 
-        let url = baseURL.appendingPathComponent("/api/v1/streaming/public")
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-
-        return AsyncThrowingStream { continuation in
-            let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                if let error = error {
-                    os_log("Streaming error: %{public}@", log: self.logger, type: .error, error.localizedDescription)
-                    continuation.finish(throwing: MastodonServiceError.networkError(underlying: error))
-                    return
-                }
-
-                guard let data = data else {
-                    os_log("Streaming error: No data received.", log: self.logger, type: .error)
-                    continuation.finish(throwing: MastodonServiceError.invalidResponse)
-                    return
-                }
-
-                do {
-                    let postData = try JSONDecoder().decode(PostData.self, from: data)
-                    let post = postData.toPost(instanceURL: baseURL)
-                    continuation.yield(post)
-                } catch {
-                    os_log("Streaming decoding error: %{public}@", log: self.logger, type: .error, error.localizedDescription)
-                    continuation.finish(throwing: MastodonServiceError.decodingError)
-                }
-            }
-
-            task.resume()
-
-            continuation.onTermination = { @Sendable _ in
-                task.cancel()
-            }
+        let service = "Mustard-\(base.host ?? "unknown")-accessToken"
+        do {
+            return try await KeychainHelper.shared.read(service: service, account: accessTokenKeychainAccount)
+        } catch {
+            os_log("loadAccessToken: Failed to load access token: %{public}@", log: logger, type: .error, error.localizedDescription)
+            return nil
         }
     }
 
     // MARK: - ASWebAuthenticationPresentationContextProviding
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        // Provide the current window as the presentation anchor
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = scene.windows.first(where: { $0.isKeyWindow }) else {
-            os_log("Failed to retrieve presentation anchor. Returning a new UIWindow.", log: logger, type: .error)
-            return UIWindow()
+        // Iterate through connected scenes to find the active window scene
+        for scene in UIApplication.shared.connectedScenes {
+            if let windowScene = scene as? UIWindowScene {
+                // Retrieve the key window from the window scene
+                if let keyWindow = windowScene.windows.first(where: { $0.isKeyWindow }) {
+                    return keyWindow
+                }
+            }
         }
-        return window
-    }
-    
-    // MARK: - Private Keychain Operations
-    
-    private func loadBaseURL() async throws -> URL? {
-        let urlString = try await KeychainHelper.shared.read(service: baseURLService, account: baseURLAccount)
-        if let urlString = urlString, let url = URL(string: urlString) {
-            return url
-        }
-        return nil
-    }
-    
-    private func loadAccessToken() async throws -> String? {
-        guard let baseURL = self.baseURL else { return nil }
-        let service = "Mustard-\(baseURL.host ?? "unknown")-accessToken"
-        let token = try await KeychainHelper.shared.read(service: service, account: accessTokenAccount)
-        return token
+        // Fallback to a new UIWindow if no key window is found
+        return UIWindow()
     }
 }
