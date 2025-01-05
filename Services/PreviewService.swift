@@ -24,7 +24,7 @@ class PreviewService: MastodonServiceProtocol {
     init(shouldSucceed: Bool = true, mockPosts: [Post]? = nil, mockAccounts: [Account]? = nil) {
         self.shouldSucceed = shouldSucceed
         self.mockAccounts = mockAccounts ?? []
-        
+
         if self.mockAccounts.isEmpty {
             let sampleAccount1 = Account(
                 id: "mockAccount1",
@@ -35,7 +35,7 @@ class PreviewService: MastodonServiceProtocol {
                 instanceURL: baseURL!,
                 accessToken: "mockAccessToken123"
             )
-            
+
             let sampleAccount2 = Account(
                 id: "mockAccount2",
                 username: "testuser2",
@@ -45,12 +45,12 @@ class PreviewService: MastodonServiceProtocol {
                 instanceURL: baseURL!,
                 accessToken: "mockAccessToken456"
             )
-            
+
             self.mockAccounts = [sampleAccount1, sampleAccount2]
         }
-        
+
         self.mockPosts = mockPosts ?? []
-        
+
         if self.mockPosts.isEmpty, !self.mockAccounts.isEmpty {
             self.mockPosts = self.mockAccounts.enumerated().map { index, account in
                 Post(
@@ -68,9 +68,11 @@ class PreviewService: MastodonServiceProtocol {
             }
         }
     }
-    
+
     // MARK: - MastodonServiceProtocol Methods
-    
+
+    // MARK: - Timeline Methods
+
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
         if shouldSucceed {
             return mockPosts
@@ -78,26 +80,53 @@ class PreviewService: MastodonServiceProtocol {
             throw MockError.failedToFetchTimeline
         }
     }
-    
-    func clearTimelineCache() {
-        mockPosts.removeAll()
+
+    func fetchTimeline(page: Int, useCache: Bool) async throws -> [Post] {
+        if shouldSucceed {
+            // Simulate pagination by returning a subset of mockPosts
+            let pageSize = 20
+            let start = (page - 1) * pageSize
+            let end = min(start + pageSize, mockPosts.count)
+            guard start < end else { return [] }
+            return Array(mockPosts[start..<end])
+        } else {
+            throw MockError.failedToFetchTimeline
+        }
     }
-    
-    func loadTimelineFromDisk() -> [Post] {
-        return mockPosts
+
+    func clearTimelineCache() async throws {
+        if shouldSucceed {
+            mockPosts.removeAll()
+        } else {
+            throw MockError.failedToClearTimelineCache
+        }
     }
-    
-    func saveTimelineToDisk(_ posts: [Post]) {
-        self.mockPosts = posts
+
+    func loadTimelineFromDisk() async throws -> [Post] {
+        if shouldSucceed {
+            return mockPosts
+        } else {
+            throw MockError.failedToLoadTimelineFromDisk
+        }
     }
-    
+
+    func saveTimelineToDisk(_ posts: [Post]) async throws {
+        if shouldSucceed {
+            self.mockPosts = posts
+        } else {
+            throw MockError.failedToSaveTimelineToDisk
+        }
+    }
+
     func backgroundRefreshTimeline() async {
         if shouldSucceed {
             // Simulate adding new posts
             mockPosts.append(contentsOf: generateMockPosts(count: 2))
         }
     }
-    
+
+    // MARK: - Authentication Methods
+
     func validateToken() async throws {
         if shouldSucceed, let token = accessToken, !token.isEmpty {
             // Simulate successful token validation
@@ -105,39 +134,41 @@ class PreviewService: MastodonServiceProtocol {
             throw MockError.invalidToken
         }
     }
-    
-    func saveAccessToken(_ token: String) throws {
+
+    func saveAccessToken(_ token: String) async throws {
         if shouldSucceed {
             self.accessToken = token
         } else {
             throw MockError.failedToSaveAccessToken
         }
     }
-    
-    func clearAccessToken() throws {
+
+    func clearAccessToken() async throws {
         if shouldSucceed {
             self.accessToken = nil
         } else {
             throw MockError.failedToClearAccessToken
         }
     }
-    
-    func retrieveAccessToken() throws -> String? {
+
+    func retrieveAccessToken() async throws -> String? {
         if shouldSucceed {
             return accessToken
         } else {
             throw MockError.failedToRetrieveAccessToken
         }
     }
-    
-    func retrieveInstanceURL() throws -> URL? {
+
+    func retrieveInstanceURL() async throws -> URL? {
         if shouldSucceed {
             return baseURL
         } else {
             throw MockError.failedToRetrieveInstanceURL
         }
     }
-    
+
+    // MARK: - Post Actions
+
     func toggleLike(postID: String) async throws {
         if shouldSucceed {
             guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
@@ -149,7 +180,7 @@ class PreviewService: MastodonServiceProtocol {
             throw MockError.failedToToggleLike
         }
     }
-    
+
     func toggleRepost(postID: String) async throws {
         if shouldSucceed {
             guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
@@ -161,7 +192,7 @@ class PreviewService: MastodonServiceProtocol {
             throw MockError.failedToToggleRepost
         }
     }
-    
+
     func comment(postID: String, content: String) async throws {
         if shouldSucceed {
             guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
@@ -172,7 +203,9 @@ class PreviewService: MastodonServiceProtocol {
             throw MockError.failedToAddComment
         }
     }
-    
+
+    // MARK: - OAuth Methods
+
     func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
         if shouldSucceed {
             // Return a mock OAuthConfig
@@ -187,7 +220,7 @@ class PreviewService: MastodonServiceProtocol {
             throw MockError.failedToRegisterOAuthApp
         }
     }
-    
+
     func authenticateOAuth(instanceURL: URL, config: OAuthConfig) async throws -> String {
         if shouldSucceed {
             // Return a mock authorization code
@@ -196,7 +229,7 @@ class PreviewService: MastodonServiceProtocol {
             throw MockError.failedToAuthenticateOAuth
         }
     }
-    
+
     func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
         if shouldSucceed {
             // Simulate exchanging code for access token
@@ -205,9 +238,25 @@ class PreviewService: MastodonServiceProtocol {
             throw MockError.failedToExchangeCode
         }
     }
-    
+
+    // MARK: - Streaming Methods
+
+    func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {
+        if shouldSucceed {
+            return AsyncThrowingStream { continuation in
+                // Simulate streaming by periodically sending mock posts
+                for post in mockPosts {
+                    continuation.yield(post)
+                }
+                continuation.finish()
+            }
+        } else {
+            throw MockError.failedToStreamTimeline
+        }
+    }
+
     // MARK: - Private Mock Data Methods
-    
+
     private func generateMockPosts(count: Int) -> [Post] {
         guard !mockAccounts.isEmpty else { return [] }
         let accountsToUse = mockAccounts
@@ -227,11 +276,15 @@ class PreviewService: MastodonServiceProtocol {
             )
         }
     }
-    
+
     // MARK: - Mock Errors
-    
+
     enum MockError: LocalizedError {
         case failedToFetchTimeline
+        case failedToFetchTimelinePage
+        case failedToClearTimelineCache
+        case failedToLoadTimelineFromDisk
+        case failedToSaveTimelineToDisk
         case failedToSaveAccessToken
         case failedToClearAccessToken
         case failedToRetrieveAccessToken
@@ -242,12 +295,17 @@ class PreviewService: MastodonServiceProtocol {
         case failedToRegisterOAuthApp
         case failedToAuthenticateOAuth
         case failedToExchangeCode
+        case failedToStreamTimeline
         case invalidToken
         case postNotFound
-        
+
         var errorDescription: String? {
             switch self {
             case .failedToFetchTimeline: return "Failed to fetch timeline."
+            case .failedToFetchTimelinePage: return "Failed to fetch timeline page."
+            case .failedToClearTimelineCache: return "Failed to clear timeline cache."
+            case .failedToLoadTimelineFromDisk: return "Failed to load timeline from disk."
+            case .failedToSaveTimelineToDisk: return "Failed to save timeline to disk."
             case .failedToSaveAccessToken: return "Failed to save access token."
             case .failedToClearAccessToken: return "Failed to clear access token."
             case .failedToRetrieveAccessToken: return "Failed to retrieve access token."
@@ -258,6 +316,7 @@ class PreviewService: MastodonServiceProtocol {
             case .failedToRegisterOAuthApp: return "Failed to register OAuth application."
             case .failedToAuthenticateOAuth: return "Failed to authenticate via OAuth."
             case .failedToExchangeCode: return "Failed to exchange authorization code for access token."
+            case .failedToStreamTimeline: return "Failed to stream timeline."
             case .invalidToken: return "Invalid token."
             case .postNotFound: return "Post not found."
             }

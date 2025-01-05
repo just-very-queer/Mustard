@@ -7,16 +7,38 @@
 
 import Foundation
 
+@MainActor
+/// OAuth Configuration Details
+struct OAuthConfig {
+    let clientID: String
+    let clientSecret: String
+    let redirectURI: String
+    let scope: String
+}
+
+/// Represents the response received after successful registration.
+struct RegisterResponse: Codable {
+    let client_id: String
+    let client_secret: String
+    // Removed 'access_token' and 'account' as they are not part of the registration response
+}
+
+/// Represents the response received after obtaining an access token.
+struct TokenResponse: Codable {
+    let access_token: String
+    let token_type: String
+    let scope: String
+    let created_at: Int
+}
+
 /// Protocol defining the required methods and properties for interacting with a Mastodon-like backend service.
+@MainActor
 protocol MastodonServiceProtocol {
     // MARK: - Properties
-
-    /// The base URL of the Mastodon instance.
+    
     var baseURL: URL? { get set }
-
-    /// The access token for authenticated requests.
     var accessToken: String? { get set }
-
+    
     // MARK: - Timeline Methods
 
     /// Fetches the user's home timeline.
@@ -24,19 +46,27 @@ protocol MastodonServiceProtocol {
     /// - Parameter useCache: Whether to use a cached version if available.
     /// - Returns: An array of `Post` objects representing the timeline.
     func fetchTimeline(useCache: Bool) async throws -> [Post]
+    
+    /// Fetches a specific page of the timeline.
+    ///
+    /// - Parameters:
+    ///   - page: The page number to fetch.
+    ///   - useCache: Whether to use a cached version if available.
+    /// - Returns: An array of `Post` objects representing the timeline for the specified page.
+    func fetchTimeline(page: Int, useCache: Bool) async throws -> [Post]
 
     /// Clears any in-memory or on-disk cache of timeline data.
-    func clearTimelineCache()
+    func clearTimelineCache() async throws
 
     /// Loads the timeline from disk cache.
     ///
     /// - Returns: An array of cached `Post` objects.
-    func loadTimelineFromDisk() -> [Post]
+    func loadTimelineFromDisk() async throws -> [Post]
 
     /// Saves the provided timeline to disk cache.
     ///
     /// - Parameter posts: An array of `Post` objects to save.
-    func saveTimelineToDisk(_ posts: [Post])
+    func saveTimelineToDisk(_ posts: [Post]) async throws
 
     /// Performs a background refresh of the timeline.
     func backgroundRefreshTimeline() async
@@ -52,24 +82,24 @@ protocol MastodonServiceProtocol {
     ///
     /// - Parameter token: The access token to save.
     /// - Throws: An error if the token cannot be saved.
-    func saveAccessToken(_ token: String) throws
+    func saveAccessToken(_ token: String) async throws
 
     /// Clears the stored access token.
     ///
     /// - Throws: An error if the access token cannot be cleared.
-    func clearAccessToken() throws
+    func clearAccessToken() async throws
 
     /// Retrieves the stored access token.
     ///
     /// - Returns: The access token, if available.
     /// - Throws: An error if the access token cannot be retrieved.
-    func retrieveAccessToken() throws -> String?
-
+    func retrieveAccessToken() async throws -> String?
+    
     /// Retrieves the stored instance URL.
     ///
     /// - Returns: The instance URL, if available.
     /// - Throws: An error if the instance URL cannot be retrieved.
-    func retrieveInstanceURL() throws -> URL?
+    func retrieveInstanceURL() async throws -> URL?
 
     // MARK: - Post Actions
 
@@ -119,5 +149,13 @@ protocol MastodonServiceProtocol {
     ///   - instanceURL: The Mastodon instance URL.
     /// - Throws: An error if the exchange fails.
     func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws
+
+    // MARK: - Streaming Methods
+
+    /// Streams the timeline for real-time updates.
+    ///
+    /// - Returns: An `AsyncThrowingStream` of `Post` objects.
+    func streamTimeline() async throws -> AsyncThrowingStream<Post, Error>
 }
 
+ 

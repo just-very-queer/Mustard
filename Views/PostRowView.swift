@@ -1,11 +1,12 @@
 //
-//  PostRowView.swift
-//  Mustard
-//
-//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
-//
+ //  PostRowView.swift
+ //  Mustard
+ //
+ //  Created by VAIBHAV SRIVASTAVA on 14/09/24.
+ //
 
 import SwiftUI
+import OSLog
 
 struct PostRowView: View {
     let post: Post
@@ -14,6 +15,9 @@ struct PostRowView: View {
     @State private var showingCommentSheet = false
     @State private var selectedImageURL: URL? = nil
     @State private var isImageFullScreen = false
+
+    // Logger
+    private let logger = OSLog(subsystem: "com.yourcompany.Mustard", category: "PostRowView")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -93,7 +97,7 @@ struct PostRowView: View {
     private func mediaAttachmentsView() -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                ForEach(post.mediaAttachments, id: \.id) { media in
+                ForEach(post.mediaAttachments) { media in
                     mediaAttachmentView(for: media)
                 }
             }
@@ -135,7 +139,7 @@ struct PostRowView: View {
             // Like Button
             Button(action: {
                 Task {
-                    await viewModel.toggleLike(post: post)
+                    await toggleLike()
                 }
             }) {
                 HStack(spacing: 4) {
@@ -151,7 +155,7 @@ struct PostRowView: View {
             // Repost Button
             Button(action: {
                 Task {
-                    await viewModel.toggleRepost(post: post)
+                    await toggleRepost()
                 }
             }) {
                 HStack(spacing: 4) {
@@ -180,47 +184,68 @@ struct PostRowView: View {
         }
         .padding(.top, 8)
     }
-}
 
-// MARK: - Image Viewer
-struct FullScreenImageView: View {
-    let imageURL: URL
-    @Binding var isPresented: Bool
+    // MARK: - Action Methods
 
-    var body: some View {
-        ZStack {
-            Color.black.edgesIgnoringSafeArea(.all)
-            VStack {
-                Spacer()
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    case .success(let image):
-                        image.resizable()
-                            .scaledToFit()
-                            .edgesIgnoringSafeArea(.all)
-                    case .failure:
-                        Image(systemName: "photo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .foregroundColor(.gray)
-                    @unknown default:
-                        EmptyView()
+    private func toggleLike() async {
+        do {
+            try await viewModel.toggleLike(post: post)
+            os_log("Toggled like for post ID: %{public}@", log: logger, type: .info, post.id)
+        } catch {
+            os_log("Failed to toggle like for post ID: %{public}@. Error: %{public}@", log: logger, type: .error, post.id, error.localizedDescription)
+        }
+    }
+
+    private func toggleRepost() async {
+        do {
+            try await viewModel.toggleRepost(post: post)
+            os_log("Toggled repost for post ID: %{public}@", log: logger, type: .info, post.id)
+        } catch {
+            os_log("Failed to toggle repost for post ID: %{public}@. Error: %{public}@", log: logger, type: .error, post.id, error.localizedDescription)
+        }
+    }
+
+    // MARK: - Full-Screen Image Viewer
+    struct FullScreenImageView: View {
+        let imageURL: URL
+        @Binding var isPresented: Bool
+
+        var body: some View {
+            ZStack {
+                Color.black.edgesIgnoringSafeArea(.all)
+                VStack {
+                    Spacer()
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .edgesIgnoringSafeArea(.all)
+                        case .failure:
+                            Image(systemName: "photo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .foregroundColor(.gray)
+                        @unknown default:
+                            EmptyView()
+                        }
                     }
+                    Spacer()
+                    Button("Done") {
+                        isPresented = false
+                    }
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(12)
+                    .foregroundColor(.blue)
+                    .accessibilityLabel("Close Image")
                 }
-                Spacer()
-                Button("Done") {
-                    isPresented = false
-                }
-                .padding()
-                .background(Color.white)
-                .cornerRadius(12)
-                .foregroundColor(.blue)
-                .accessibilityLabel("Close Image")
             }
         }
     }
@@ -262,3 +287,4 @@ struct PostRowView_Previews: PreviewProvider {
         }
     }
 }
+

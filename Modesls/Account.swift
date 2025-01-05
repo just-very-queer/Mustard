@@ -10,8 +10,8 @@ import SwiftData
 
 /// Represents a Mastodon account.
 @Model
-final class Account: Identifiable, Codable {
-    var id: String
+final class Account: Identifiable, Codable, Equatable {
+    @Attribute(.unique) var id: String
     var username: String
     var displayName: String
     var avatar: URL
@@ -63,6 +63,17 @@ final class Account: Identifiable, Codable {
         try container.encode(acct, forKey: .acct)
         try container.encode(instanceURL, forKey: .instanceURL)
         try container.encode(accessToken, forKey: .accessToken)
+    }
+    
+    // MARK: - Equatable Conformance
+    static func == (lhs: Account, rhs: Account) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.username == rhs.username &&
+               lhs.displayName == rhs.displayName &&
+               lhs.avatar == rhs.avatar &&
+               lhs.acct == rhs.acct &&
+               lhs.instanceURL == rhs.instanceURL &&
+               lhs.accessToken == rhs.accessToken
     }
 }
 

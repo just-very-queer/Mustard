@@ -1,12 +1,13 @@
 //
-//  TimelineView.swift
-//  Mustard
-//
-//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
-//
+ //  TimelineView.swift
+ //  Mustard
+ //
+ //  Created by VAIBHAV SRIVASTAVA on 30/12/24.
+ //
 
 import SwiftUI
 import SwiftData
+import OSLog
 
 struct TimelineView: View {
     @Environment(\.modelContext) private var modelContext
@@ -24,11 +25,19 @@ struct TimelineView: View {
                     .foregroundColor(.gray)
                     .padding()
             } else {
-                List(timelineViewModel.posts) { post in
-                    NavigationLink(destination: PostDetailView(post: post)) {
-                        PostRowView(post: post)
-                        // Removed: .environmentObject(timelineViewModel)
-                        // PostRowView already inherits the environment object
+                List {
+                    ForEach(timelineViewModel.posts) { post in
+                        NavigationLink(destination: PostDetailView(post: post)) {
+                            PostRowView(post: post)
+                        }
+                        .onAppear {
+                            // Detect when the last post appears to load more posts
+                            if post == timelineViewModel.posts.last {
+                                Task {
+                                    await timelineViewModel.fetchMoreTimeline()
+                                }
+                            }
+                        }
                     }
                 }
                 .listStyle(PlainListStyle())
@@ -59,7 +68,7 @@ struct TimelineView: View {
         }
         .onAppear {
             Task {
-                await timelineViewModel.fetchTimeline()
+                await timelineViewModel.fetchTimelineIfNeeded()
             }
         }
     }
@@ -111,6 +120,10 @@ struct TimelineView_Previews: PreviewProvider {
         timelineViewModel.posts = mockService.mockPosts
         timelineViewModel.isLoading = false
         timelineViewModel.alertError = nil
+        
+        // Ensure baseURL and accessToken are set for the preview
+        timelineViewModel.mastodonService.baseURL = URL(string: "https://mastodon.social")
+        timelineViewModel.mastodonService.accessToken = "mockAccessToken123"
 
         return NavigationView {
             TimelineView()

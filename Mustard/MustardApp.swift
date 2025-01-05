@@ -21,7 +21,7 @@ struct MustardApp: App {
     let container: ModelContainer
 
     // MARK: - Singleton MastodonService Instance
-    let mastodonService = MastodonService() // Using existing instance, not shared
+    let mastodonService = MastodonService.shared // Use the shared instance
 
     // MARK: - Sample Servers (Use your actual server list)
     let servers: [Server] = SampleServers.servers
@@ -35,18 +35,8 @@ struct MustardApp: App {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // 2) Retrieve baseURL from Keychain if available and set it on MastodonService
-        do {
-            if let baseURLString = try KeychainHelper.shared.read(service: "Mustard-baseURL", account: "baseURL"),
-               let baseURL = URL(string: baseURLString) {
-                mastodonService.baseURL = baseURL
-                print("[MustardApp] Retrieved baseURL from Keychain: \(baseURL.absoluteString)")
-            } else {
-                print("[MustardApp] No baseURL found in Keychain.")
-            }
-        } catch {
-            print("Failed to retrieve baseURL from Keychain: \(error.localizedDescription)")
-        }
+        // 2) Remove manual Keychain retrieval and setting of baseURL
+        // MastodonService.shared handles loading credentials internally
 
         // 3) Create local instances of the view models with the shared MastodonService
         let localAuthVM = AuthenticationViewModel(mastodonService: mastodonService)

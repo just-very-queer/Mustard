@@ -10,7 +10,7 @@ import SwiftData
 
 /// Represents a Mastodon post.
 @Model
-final class Post: Identifiable, Codable {
+final class Post: Identifiable, Codable, Equatable {
     @Attribute(.unique) var id: String
     var content: String
     var createdAt: Date
@@ -78,6 +78,20 @@ final class Post: Identifiable, Codable {
         try container.encode(favouritesCount, forKey: .favouritesCount)
         try container.encode(repliesCount, forKey: .repliesCount)
         try container.encode(mediaAttachments, forKey: .mediaAttachments)
+    }
+    
+    // MARK: - Equatable Conformance
+    static func == (lhs: Post, rhs: Post) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.content == rhs.content &&
+               lhs.createdAt == rhs.createdAt &&
+               lhs.account == rhs.account &&
+               lhs.isFavourited == rhs.isFavourited &&
+               lhs.isReblogged == rhs.isReblogged &&
+               lhs.reblogsCount == rhs.reblogsCount &&
+               lhs.favouritesCount == rhs.favouritesCount &&
+               lhs.repliesCount == rhs.repliesCount &&
+               lhs.mediaAttachments == rhs.mediaAttachments
     }
 }
 

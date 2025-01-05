@@ -1,4 +1,12 @@
+//
+ //  PostDetailView.swift
+ //  Mustard
+ //
+ //  Created by VAIBHAV SRIVASTAVA on 14/09/24.
+ //
+
 import SwiftUI
+import OSLog
 
 struct PostDetailView: View {
     let post: Post
@@ -9,6 +17,9 @@ struct PostDetailView: View {
     // State for full-screen image viewing
     @State private var selectedImageURL: URL? = nil
     @State private var isImageFullScreen = false
+
+    // Logger
+    private let logger = OSLog(subsystem: "com.yourcompany.Mustard", category: "PostDetailView")
 
     var body: some View {
         ScrollView {
@@ -41,7 +52,7 @@ struct PostDetailView: View {
                 if !post.mediaAttachments.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
-                            ForEach(post.mediaAttachments, id: \.id) { media in
+                            ForEach(post.mediaAttachments) { media in
                                 mediaAttachmentView(for: media)
                                     .onTapGesture {
                                         selectedImageURL = media.url
@@ -120,11 +131,21 @@ struct PostDetailView: View {
     // MARK: - Helper Methods
 
     private func toggleLike() async {
-        await viewModel.toggleLike(post: post)
+        do {
+            try await viewModel.toggleLike(post: post)
+            os_log("Toggled like for post ID: %{public}@", log: logger, type: .info, post.id)
+        } catch {
+            os_log("Failed to toggle like for post ID: %{public}@. Error: %{public}@", log: logger, type: .error, post.id, error.localizedDescription)
+        }
     }
 
     private func toggleRepost() async {
-        await viewModel.toggleRepost(post: post)
+        do {
+            try await viewModel.toggleRepost(post: post)
+            os_log("Toggled repost for post ID: %{public}@", log: logger, type: .info, post.id)
+        } catch {
+            os_log("Failed to toggle repost for post ID: %{public}@. Error: %{public}@", log: logger, type: .error, post.id, error.localizedDescription)
+        }
     }
 
     private func avatarView(for url: URL?) -> some View {
@@ -132,14 +153,17 @@ struct PostDetailView: View {
             switch phase {
             case .empty:
                 ProgressView()
+                    .frame(width: 50, height: 50)
             case .success(let image):
                 image
                     .resizable()
                     .scaledToFill()
+                    .frame(width: 50, height: 50)
                     .clipShape(Circle())
             case .failure:
                 Image(systemName: "person.crop.circle.badge.exclamationmark")
                     .resizable()
+                    .frame(width: 50, height: 50)
                     .foregroundColor(.gray)
             @unknown default:
                 EmptyView()
@@ -152,23 +176,24 @@ struct PostDetailView: View {
             switch phase {
             case .empty:
                 ProgressView()
-                    .frame(width: 250, height: 250)
+                    .frame(width: 300, height: 300)
             case .success(let image):
                 image
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 250, height: 250)
+                    .frame(width: 300, height: 300)
                     .cornerRadius(12)
                     .clipped()
             case .failure:
                 Image(systemName: "photo")
                     .resizable()
-                    .frame(width: 250, height: 250)
+                    .frame(width: 300, height: 300)
                     .foregroundColor(.gray)
             @unknown default:
                 EmptyView()
             }
         }
+        .accessibilityLabel("Media attachment")
     }
 
     // MARK: - Full-Screen Image Viewer
@@ -177,38 +202,42 @@ struct PostDetailView: View {
         @Binding var isPresented: Bool
 
         var body: some View {
-            VStack {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle())
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .edgesIgnoringSafeArea(.all)
-                    case .failure:
-                        Image(systemName: "photo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .foregroundColor(.gray)
-                    @unknown default:
-                        EmptyView()
+            ZStack {
+                Color.black.edgesIgnoringSafeArea(.all)
+                VStack {
+                    Spacer()
+                    AsyncImage(url: imageURL) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .edgesIgnoringSafeArea(.all)
+                        case .failure:
+                            Image(systemName: "photo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .foregroundColor(.gray)
+                        @unknown default:
+                            EmptyView()
+                        }
                     }
+                    Spacer()
+                    Button("Done") {
+                        isPresented = false
+                    }
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(12)
+                    .foregroundColor(.blue)
+                    .accessibilityLabel("Close Image")
                 }
-                .edgesIgnoringSafeArea(.all)
-
-                Button("Done") {
-                    isPresented = false
-                }
-                .padding()
-                .background(Color.white)
-                .cornerRadius(8)
             }
-            .background(Color.black)
         }
     }
 }

@@ -25,9 +25,15 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     
     // MARK: - Initialization
     
+    // Removed the default parameter to fix actor isolation error
     init(mastodonService: MastodonServiceProtocol) {
         self.mastodonService = mastodonService
         super.init()
+        
+        // Optionally, you can validate authentication upon initialization
+        Task {
+            await validateAuthentication()
+        }
     }
     
     // MARK: - Public Methods
@@ -43,11 +49,8 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             let config = try await mastodonService.registerOAuthApp(instanceURL: server.url)
             
             // 2. Set BaseURL and save to Keychain **before** exchanging the code
-            if let service = mastodonService as? MastodonService {
-                service.baseURL = server.url
-                try KeychainHelper.shared.save(server.url.absoluteString, service: "Mustard-baseURL", account: "baseURL")
-                print("[AuthenticationViewModel] baseURL set to: \(server.url.absoluteString)")
-            }
+            mastodonService.baseURL = server.url
+            print("[AuthenticationViewModel] baseURL set to: \(server.url.absoluteString)")
             
             // 3. Authenticate OAuth and get authorization code
             let authorizationCode = try await mastodonService.authenticateOAuth(instanceURL: server.url, config: config)
@@ -56,51 +59,60 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             try await mastodonService.exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
             
             // 5. Update authentication status
-            self.isAuthenticated = true
+            isAuthenticated = true
             print("[AuthenticationViewModel] Authentication successful.")
         } catch {
-            self.alertError = AppError(message: "Authentication failed: \(error.localizedDescription)")
-            self.isAuthenticated = false
+            alertError = AppError(message: "Authentication failed: \(error.localizedDescription)")
+            isAuthenticated = false
             print("[AuthenticationViewModel] Authentication failed with error: \(error.localizedDescription)")
             throw error
         }
 
         isAuthenticating = false
     }
-
     
     /// Logs out the user by clearing the access token.
-    func logout() {
+    func logout() async {
+        isAuthenticating = true
+        alertError = nil
+        
         do {
-            try mastodonService.clearAccessToken()
+            try await mastodonService.clearAccessToken()
             isAuthenticated = false
             print("[AuthenticationViewModel] Logged out successfully.")
         } catch {
             alertError = AppError(message: "Failed to log out: \(error.localizedDescription)")
             print("[AuthenticationViewModel] Logout failed with error: \(error.localizedDescription)")
         }
+        
+        isAuthenticating = false
     }
     
     /// Validates existing authentication by checking the stored access token.
     func validateAuthentication() async {
+        isAuthenticating = true
+        alertError = nil
+        
         do {
-            if let token = try mastodonService.retrieveAccessToken(),
-               let baseURL = try mastodonService.retrieveInstanceURL(),
+            if let token = try await mastodonService.retrieveAccessToken(),
+               let _ = try await mastodonService.retrieveInstanceURL(),
                !token.isEmpty {
-                mastodonService.baseURL = baseURL
+                // baseURL is already set in the service during retrieval
                 print("[AuthenticationViewModel] Retrieved baseURL and token from MastodonService.")
                 try await mastodonService.validateToken()
-                self.isAuthenticated = true
+                isAuthenticated = true
                 print("[AuthenticationViewModel] Token validated successfully.")
             } else {
-                self.isAuthenticated = false
+                isAuthenticated = false
                 print("[AuthenticationViewModel] No valid token or baseURL found.")
             }
         } catch {
-            self.isAuthenticated = false
-            self.alertError = AppError(message: "Authentication validation failed: \(error.localizedDescription)")
+            isAuthenticated = false
+            alertError = AppError(message: "Authentication validation failed: \(error.localizedDescription)")
             print("[AuthenticationViewModel] Authentication validation failed with error: \(error.localizedDescription)")
         }
+        
+        isAuthenticating = false
     }
     
     // MARK: - ASWebAuthenticationPresentationContextProviding

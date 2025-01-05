@@ -74,8 +74,10 @@ class AccountsViewModel: ObservableObject {
     /// - Parameter account: The `Account` to select.
     func selectAccount(_ account: Account) {
         selectedAccount = account
-        mastodonService.baseURL = account.instanceURL
-        mastodonService.accessToken = account.accessToken
+        if let service = mastodonService as? MastodonService {
+            service.baseURL = account.instanceURL
+            service.accessToken = account.accessToken
+        }
         
         // Persist the selected account if needed
         do {
@@ -96,8 +98,10 @@ class AccountsViewModel: ObservableObject {
             modelContext.delete(account)
             if let selected = selectedAccount, selected.id == account.id {
                 selectedAccount = nil
-                mastodonService.baseURL = nil
-                mastodonService.accessToken = nil
+                if let service = mastodonService as? MastodonService {
+                    service.baseURL = nil
+                    service.accessToken = nil
+                }
             }
         }
         
@@ -131,5 +135,4 @@ class AccountsViewModel: ObservableObject {
         return true
     }
 }
-
 

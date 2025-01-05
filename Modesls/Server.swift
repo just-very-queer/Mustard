@@ -8,7 +8,7 @@
 import Foundation
 
 /// Represents a Mastodon server instance.
-struct Server: Identifiable {
+struct Server: Identifiable, Equatable {
     let id = UUID()
     let name: String
     let url: URL

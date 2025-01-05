@@ -19,6 +19,9 @@ extension Notification.Name {
     static let didSelectAccount = Notification.Name("didSelectAccount") // New Notification
     
     static let didAddAccount = Notification.Name("didAddAccount")
+    
+    static let authenticationFailed = Notification.Name("authenticationFailed")
+
 }
 
 
