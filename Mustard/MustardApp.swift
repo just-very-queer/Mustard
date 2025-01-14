@@ -7,13 +7,14 @@
 
 import SwiftUI
 import SwiftData
+import OSLog
 
 @main
 struct MustardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     // MARK: - ViewModels
-    @StateObject private var authViewModel = AuthenticationViewModel(mastodonService: MastodonService.shared)
+    @StateObject private var authViewModel: AuthenticationViewModel
     @StateObject private var timelineViewModel: TimelineViewModel
     @StateObject private var locationManager = LocationManager()
 
@@ -30,13 +31,17 @@ struct MustardApp: App {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
+        // Initialize authViewModel first
+        let mockService = MockMastodonService(shouldSucceed: true) // Use MockService for previews/testing
+        let authVM = AuthenticationViewModel(mastodonService: mockService)
+        _authViewModel = StateObject(wrappedValue: authVM)
+
         // Initialize timelineViewModel with authViewModel
-        _timelineViewModel = StateObject(
-            wrappedValue: TimelineViewModel(
-                mastodonService: MastodonService.shared,
-                authViewModel: AuthenticationViewModel(mastodonService: MastodonService.shared)
-            )
+        let timelineVM = TimelineViewModel(
+            mastodonService: mockService,
+            authViewModel: authVM
         )
+        _timelineViewModel = StateObject(wrappedValue: timelineVM)
     }
 
     var body: some Scene {
@@ -112,14 +117,16 @@ struct MustardApp: App {
 
 /// AppDelegate class to handle application-level events, such as OAuth callbacks.
 class AppDelegate: NSObject, UIApplicationDelegate {
-    /// Handles incoming URLs (e.g., OAuth callback URLs).
+    // MARK: - Logger
+    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "AppDelegate")
+    
     func application(
         _ app: UIApplication,
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
         // Log the received OAuth callback URL for debugging
-        print("Received OAuth callback URL: \(url.absoluteString)")
+        logger.info("Received OAuth callback URL: \(url.absoluteString, privacy: .public)")
         
         // Notify about the received URL for OAuth callback
         NotificationCenter.default.post(

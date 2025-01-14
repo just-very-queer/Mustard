@@ -127,15 +127,15 @@ class MockMastodonService: MastodonServiceProtocol {
     }
 
     func fetchCurrentUser() async throws -> User {
-        guard shouldSucceed, let mockAccount = mockAccounts.first else {
+        guard shouldSucceed, let account = mockAccounts.first else {
             throw MockError.failedToFetchCurrentUser
         }
         return User(
-            id: mockAccount.id,
-            username: mockAccount.username,
-            displayName: mockAccount.displayName,
-            avatar: mockAccount.avatar, // Correctly passing URL?
-            instanceURL: mockAccount.instanceURL // Correctly passing URL
+            id: account.id,
+            username: account.username,
+            displayName: account.displayName,
+            avatar: account.avatar,
+            url: account.url // Changed from instanceURL
         )
     }
 
@@ -173,16 +173,16 @@ class MockMastodonService: MastodonServiceProtocol {
                 username: "user1",
                 displayName: "User One",
                 avatar: baseURL.appendingPathComponent("avatar1.png"),
-                acct: "user1",
-                instanceURL: baseURL
+                acct: "@user1",
+                url: baseURL // Changed from instanceURL
             ),
             Account(
                 id: "a2",
                 username: "user2",
                 displayName: "User Two",
                 avatar: baseURL.appendingPathComponent("avatar2.png"),
-                acct: "user2",
-                instanceURL: baseURL
+                acct: "@user2",
+                url: baseURL // Changed from instanceURL
             )
         ]
     }

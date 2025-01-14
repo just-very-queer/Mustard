@@ -16,7 +16,34 @@ struct User: Decodable {
     let username: String
     let displayName: String
     let avatar: URL?
-    let instanceURL: URL
+    let url: URL  // Represents the account's URL, e.g., "https://mastodon.social/@username"
+    
+    // Computed property to derive instanceURL from the account URL
+    var instanceURL: URL? {
+          guard let host = url.host else { return nil }
+          return URL(string: "https://\(host)")
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id
+        case username
+        case displayName = "display_name"
+        case avatar
+        case url
+    }
+    
+    /// Converts User to Account.
+    func toAccount(url: URL) -> Account {
+        return Account(
+            id: id,
+            username: username,
+            displayName: displayName,
+            avatar: avatar ?? URL(string: "https://example.com/default_avatar.png")!,
+            acct: "@\(username)",
+            url: url,
+            accessToken: nil
+        )
+    }
 }
 
 // MARK: - Avatar View
@@ -195,4 +222,3 @@ struct CombinedUtilityViews_Previews: PreviewProvider {
         .padding()
     }
 }
-

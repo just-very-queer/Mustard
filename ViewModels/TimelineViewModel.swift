@@ -79,7 +79,7 @@ class TimelineViewModel: ObservableObject {
             posts = fetchedPosts.sorted(by: { $0.createdAt > $1.createdAt })
             currentPage = 1
         } catch {
-            handleError("Failed to fetch timeline", error)
+            handleError("Failed to fetch timeline", AppError(mastodon: .failedToFetchTimeline))
         }
     }
 

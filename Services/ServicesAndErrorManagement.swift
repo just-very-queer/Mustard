@@ -21,6 +21,7 @@ struct AppError: Identifiable, Error {
     enum ErrorType {
         case generic(String)
         case mastodon(MastodonError)
+        case authentication(AuthenticationError)
     }
 
     enum MastodonError: Equatable {
@@ -33,7 +34,7 @@ struct AppError: Identifiable, Error {
         case serverError(status: Int)
         case encodingError
         case decodingError
-        case networkError(underlying: Error)
+        case networkError(message: String)
         case oauthError(message: String)
         case unknown(status: Int)
         case failedToFetchTimeline
@@ -51,67 +52,201 @@ struct AppError: Identifiable, Error {
         case failedToRegisterOAuthApp
         case failedToExchangeCode
         case failedToStreamTimeline
+        case invalidAuthorizationCode
 
         static func == (lhs: MastodonError, rhs: MastodonError) -> Bool {
             switch (lhs, rhs) {
             case (.missingCredentials, .missingCredentials),
+                 (.invalidResponse, .invalidResponse),
+                 (.badRequest, .badRequest),
+                 (.unauthorized, .unauthorized),
+                 (.forbidden, .forbidden),
+                 (.notFound, .notFound),
                  (.failedToFetchTimeline, .failedToFetchTimeline),
-                 (.failedToRetrieveAccessToken, .failedToRetrieveAccessToken):
+                 (.failedToFetchTimelinePage, .failedToFetchTimelinePage),
+                 (.failedToClearTimelineCache, .failedToClearTimelineCache),
+                 (.failedToLoadTimelineFromDisk, .failedToLoadTimelineFromDisk),
+                 (.failedToSaveTimelineToDisk, .failedToSaveTimelineToDisk),
+                 (.failedToFetchTrendingPosts, .failedToFetchTrendingPosts),
+                 (.invalidToken, .invalidToken),
+                 (.failedToSaveAccessToken, .failedToSaveAccessToken),
+                 (.failedToClearAccessToken, .failedToClearAccessToken),
+                 (.failedToRetrieveAccessToken, .failedToRetrieveAccessToken),
+                 (.failedToRetrieveInstanceURL, .failedToRetrieveInstanceURL),
+                 (.postNotFound, .postNotFound),
+                 (.failedToRegisterOAuthApp, .failedToRegisterOAuthApp),
+                 (.failedToExchangeCode, .failedToExchangeCode),
+                 (.failedToStreamTimeline, .failedToStreamTimeline),
+                 (.invalidAuthorizationCode, .invalidAuthorizationCode):
                 return true
             case (.serverError(let lhsStatus), .serverError(let rhsStatus)):
                 return lhsStatus == rhsStatus
-            case (.networkError(let lhsUnderlying), .networkError(let rhsUnderlying)):
-                return lhsUnderlying.localizedDescription == rhsUnderlying.localizedDescription
+            case (.networkError(let lhsMessage), .networkError(let rhsMessage)):
+                return lhsMessage == rhsMessage
+            case (.oauthError(let lhsMessage), .oauthError(let rhsMessage)):
+                return lhsMessage == rhsMessage
             default:
                 return false
             }
         }
     }
 
+    enum AuthenticationError: Equatable {
+        case invalidAuthorizationCode
+        case webAuthSessionFailed
+        case noAuthorizationCode
+        case unknown
+    }
+
+    // MARK: - Initializers
     init(message: String, underlyingError: Error? = nil) {
         self.type = .generic(message)
         self.underlyingError = underlyingError
     }
 
-    init(mastodon: MastodonError, underlying: Error? = nil) {
+    init(mastodon: MastodonError, underlyingError: Error? = nil) {
         self.type = .mastodon(mastodon)
-        self.underlyingError = underlying
+        self.underlyingError = underlyingError
     }
+
+    init(authentication: AuthenticationError, underlyingError: Error? = nil) {
+        self.type = .authentication(authentication)
+        self.underlyingError = underlyingError
+    }
+
+    // MARK: - Computed Properties
 
     var message: String {
         switch type {
-        case .generic(let msg): return msg
-        case .mastodon(let error): return describeMastodonError(error)
+        case .generic(let msg):
+            return msg
+        case .mastodon(let error):
+            return describeMastodonError(error)
+        case .authentication(let authError):
+            return describeAuthenticationError(authError)
         }
     }
 
     private func describeMastodonError(_ error: MastodonError) -> String {
         switch error {
-        case .missingCredentials: return "Missing base URL or access token."
-        case .serverError(let code): return "Server error with status code \(code)."
-        case .failedToFetchTimeline: return "Unable to fetch timeline."
-        default: return "An unexpected error occurred."
+        case .missingCredentials:
+            return "Missing base URL or access token."
+        case .invalidResponse:
+            return "Invalid response from server."
+        case .badRequest:
+            return "Bad request."
+        case .unauthorized:
+            return "Unauthorized access."
+        case .forbidden:
+            return "Forbidden action."
+        case .notFound:
+            return "Resource not found."
+        case .serverError(let status):
+            return "Server error with status code \(status)."
+        case .encodingError:
+            return "Failed to encode data."
+        case .decodingError:
+            return "Failed to decode data."
+        case .networkError(let message):
+            return "Network error: \(message)"
+        case .oauthError(let message):
+            return "OAuth error: \(message)"
+        case .unknown(let status):
+            return "Unknown error with status code \(status)."
+        case .failedToFetchTimeline:
+            return "Unable to fetch timeline."
+        case .failedToFetchTimelinePage:
+            return "Unable to fetch more timeline posts."
+        case .failedToClearTimelineCache:
+            return "Failed to clear timeline cache."
+        case .failedToLoadTimelineFromDisk:
+            return "Failed to load timeline from disk."
+        case .failedToSaveTimelineToDisk:
+            return "Failed to save timeline to disk."
+        case .failedToFetchTrendingPosts:
+            return "Failed to fetch trending posts."
+        case .invalidToken:
+            return "Invalid access token."
+        case .failedToSaveAccessToken:
+            return "Failed to save access token."
+        case .failedToClearAccessToken:
+            return "Failed to clear access token."
+        case .failedToRetrieveAccessToken:
+            return "Failed to retrieve access token."
+        case .failedToRetrieveInstanceURL:
+            return "Failed to retrieve instance URL."
+        case .postNotFound:
+            return "Post not found."
+        case .failedToRegisterOAuthApp:
+            return "Failed to register OAuth application."
+        case .failedToExchangeCode:
+            return "Failed to exchange authorization code."
+        case .failedToStreamTimeline:
+            return "Failed to stream timeline."
+        case .invalidAuthorizationCode:
+            return "Invalid authorization code provided."
+        }
+    }
+
+    private func describeAuthenticationError(_ error: AuthenticationError) -> String {
+        switch error {
+            
+        case .invalidAuthorizationCode:
+            return "Invalid authorization code provided."
+        case .webAuthSessionFailed:
+            return "Web authentication session failed to start."
+        case .noAuthorizationCode:
+            return "Authorization code was not received."
+        case .unknown:
+            return "An unknown authentication error occurred."
         }
     }
 
     var isRecoverable: Bool {
         switch type {
-        case .generic: return true
+        case .generic:
+            return true
         case .mastodon(let error):
-            return error == .missingCredentials || error == .networkError(underlying: NSError(domain: "", code: -1009))
+            switch error {
+            case .missingCredentials:
+                return true
+            case .networkError:
+                return true
+            default:
+                return false
+            }
+        case .authentication:
+            return true
         }
     }
 
     var recoverySuggestion: String? {
         switch type {
-        case .generic: return "Please try again."
+        case .generic:
+            return "Please try again."
         case .mastodon(let error):
             switch error {
-            case .missingCredentials: return "Please verify your login credentials."
-            default: return nil
+            case .missingCredentials:
+                return "Please verify your login credentials."
+            case .networkError:
+                return "Please check your internet connection and try again."
+            default:
+                return nil
+            }
+        case .authentication(let authError):
+            switch authError {
+            case .invalidAuthorizationCode:
+                return "Please check your authorization code and try again."
+            case .webAuthSessionFailed:
+                return "Ensure that web authentication is available and try again."
+            case .noAuthorizationCode:
+                return "Authorization code was not received. Please try logging in again."
+            case .unknown:
+                return "An unexpected error occurred during authentication."
             }
         }
     }
+    
 }
 
 // MARK: - LocationManager
@@ -128,9 +263,12 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     func requestLocationPermission() {
         switch manager.authorizationStatus {
-        case .notDetermined: manager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse, .authorizedAlways: manager.requestLocation()
-        default: print("Location access denied or restricted.")
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        default:
+            print("Location access denied or restricted.")
         }
     }
 
@@ -144,6 +282,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
 }
 
 // MARK: - MockService
+
 @MainActor
 class MockService: MastodonServiceProtocol {
     // MARK: - Properties
@@ -177,13 +316,14 @@ class MockService: MastodonServiceProtocol {
 
     // MARK: Timeline Methods
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
-        return try validateData(mockPosts, errorMessage: "Failed to fetch timeline.")
+        try validateData(mockPosts, errorMessage: "Failed to fetch timeline.")
     }
 
     func fetchTimeline(page: Int, useCache: Bool) async throws -> [Post] {
         let start = (page - 1) * pageSize
         guard start < mockPosts.count else { return [] }
-        return try validateData(Array(mockPosts[start..<min(start + pageSize, mockPosts.count)]), errorMessage: "Failed to fetch timeline page.")
+        let end = min(start + pageSize, mockPosts.count)
+        return try validateData(Array(mockPosts[start..<end]), errorMessage: "Failed to fetch timeline page.")
     }
 
     func clearTimelineCache() async throws {
@@ -192,7 +332,7 @@ class MockService: MastodonServiceProtocol {
     }
 
     func loadTimelineFromDisk() async throws -> [Post] {
-        return try validateData(mockPosts, errorMessage: "Failed to load timeline from disk.")
+        try validateData(mockPosts, errorMessage: "Failed to load timeline from disk.")
     }
 
     func saveTimelineToDisk(_ posts: [Post]) async throws {
@@ -206,7 +346,7 @@ class MockService: MastodonServiceProtocol {
     }
 
     func fetchTrendingPosts() async throws -> [Post] {
-        return try validateData(mockTrendingPosts, errorMessage: "Failed to fetch trending posts.")
+        try validateData(mockTrendingPosts, errorMessage: "Failed to fetch trending posts.")
     }
 
     // MARK: User Methods
@@ -219,7 +359,7 @@ class MockService: MastodonServiceProtocol {
             username: account.username,
             displayName: account.displayName,
             avatar: account.avatar,
-            instanceURL: account.instanceURL
+            url: account.url
         )
     }
 
@@ -239,11 +379,11 @@ class MockService: MastodonServiceProtocol {
     }
 
     func retrieveAccessToken() async throws -> String? {
-        return try validateData(accessToken, errorMessage: "Failed to retrieve access token.")
+        try validateData(accessToken, errorMessage: "Failed to retrieve access token.")
     }
 
     func retrieveInstanceURL() async throws -> URL? {
-        return try validateData(baseURL, errorMessage: "Failed to retrieve instance URL.")
+        try validateData(baseURL, errorMessage: "Failed to retrieve instance URL.")
     }
 
     // MARK: Post Actions
@@ -270,7 +410,12 @@ class MockService: MastodonServiceProtocol {
     // MARK: OAuth Methods
     func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
         guard shouldSucceed else { throw AppError(message: "Failed to register OAuth application.") }
-        return OAuthConfig(clientID: "mockClientID", clientSecret: "mockClientSecret", redirectURI: "yourapp://oauth-callback", scope: "read write follow")
+        return OAuthConfig(
+            clientID: "mockClientID",
+            clientSecret: "mockClientSecret",
+            redirectURI: "yourapp://oauth-callback",
+            scope: "read write follow"
+        )
     }
 
     func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
@@ -289,6 +434,7 @@ class MockService: MastodonServiceProtocol {
     }
 
     // MARK: - Helpers
+
     private func validateData<T>(_ data: T?, errorMessage: String) throws -> T {
         guard shouldSucceed, let data = data else { throw AppError(message: errorMessage) }
         return data
@@ -296,22 +442,39 @@ class MockService: MastodonServiceProtocol {
 
     private func modifyPost(postID: String, action: String, update: (inout Post) -> Void) throws {
         guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
-            throw AppError(message: "Failed to \(action). Post not found.")
+            throw AppError(mastodon: .postNotFound)
         }
-        update(&mockPosts[index])
+        var post = mockPosts[index]
+        update(&post)
+        mockPosts[index] = post
     }
 
     // MARK: - Static Mock Data Generators
-    static func generateMockAccounts() -> [Account] {
+
+    private static func generateMockAccounts() -> [Account] {
         let baseURL = URL(string: "https://example.com")!
         return [
-            Account(id: "a1", username: "user1", displayName: "User One", avatar: baseURL.appendingPathComponent("avatar1.png"), acct: "user1", instanceURL: baseURL),
-            Account(id: "a2", username: "user2", displayName: "User Two", avatar: baseURL.appendingPathComponent("avatar2.png"), acct: "user2", instanceURL: baseURL)
+            Account(
+                id: "a1",
+                username: "user1",
+                displayName: "User One",
+                avatar: baseURL.appendingPathComponent("avatar1.png"),
+                acct: "@user1",
+                url: baseURL
+            ),
+            Account(
+                id: "a2",
+                username: "user2",
+                displayName: "User Two",
+                avatar: baseURL.appendingPathComponent("avatar2.png"),
+                acct: "@user2",
+                url: baseURL
+            )
         ]
     }
 
-    static func generateMockPosts(from accounts: [Account], count: Int) -> [Post] {
-        return (1...count).compactMap { i in
+    private static func generateMockPosts(from accounts: [Account], count: Int) -> [Post] {
+        (1...count).compactMap { i in
             guard let account = accounts.randomElement() else { return nil }
             return Post(
                 id: "post\(i)",
@@ -328,4 +491,3 @@ class MockService: MastodonServiceProtocol {
         }
     }
 }
-

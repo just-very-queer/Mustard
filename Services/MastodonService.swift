@@ -16,8 +16,6 @@ struct CachedTimeline {
     let timestamp: Date
 }
 
-
-
 @MainActor
 class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPresentationContextProviding {
     
@@ -33,15 +31,29 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     private let keychainService = "MustardKeychain"
     private let baseURLKey = "baseURL"
     private let accessTokenKey = "accessToken"
-
+    
+    // Custom JSONDecoder with .convertFromSnakeCase
+    private let jsonDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }()
+    
+    // Custom JSONEncoder with .convertToSnakeCase
+    private let jsonEncoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }()
+    
     // MARK: - MastodonServiceProtocol Properties
     var baseURL: URL? {
         get { _baseURL }
         set {
             _baseURL = newValue
-            Task {
-                await saveToKeychain(key: baseURLKey, value: newValue?.absoluteString)
-            }
+            Task { await saveToKeychain(key: baseURLKey, value: newValue?.absoluteString) }
         }
     }
 
@@ -49,12 +61,10 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         get { _accessToken }
         set {
             _accessToken = newValue
-            Task {
-                await saveToKeychain(key: accessTokenKey, value: newValue)
-            }
+            Task { await saveToKeychain(key: accessTokenKey, value: newValue) }
         }
     }
-
+    
     // MARK: - Initialization
     func ensureInitialized() async throws {
         _baseURL = await loadFromKeychain(key: baseURLKey).flatMap(URL.init)
@@ -64,7 +74,7 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
             throw AppError(mastodon: .missingCredentials)
         }
     }
-
+    
     // MARK: - Authentication Methods
     func fetchCurrentUser() async throws -> User {
         guard try isAuthenticated() else { throw AppError(mastodon: .missingCredentials) }
@@ -84,13 +94,13 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     }
 
     func retrieveAccessToken() async throws -> String? {
-        accessToken
+        return try await retrieveAccessTokenInternal()
     }
 
     func retrieveInstanceURL() async throws -> URL? {
-        baseURL
+        return try await retrieveInstanceURLInternal()
     }
-
+    
     // MARK: - Timeline Methods
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
         guard try isAuthenticated() else { throw AppError(mastodon: .missingCredentials) }
@@ -119,11 +129,11 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
 
     func loadTimelineFromDisk() async throws -> [Post] {
         guard let data = try? Data(contentsOf: timelineCacheURL()) else { return [] }
-        return try JSONDecoder().decode([Post].self, from: data)
+        return try jsonDecoder.decode([Post].self, from: data)
     }
 
     func saveTimelineToDisk(_ posts: [Post]) async throws {
-        let data = try JSONEncoder().encode(posts)
+        let data = try self.jsonEncoder.encode(posts)
         try data.write(to: timelineCacheURL())
     }
 
@@ -136,9 +146,9 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     }
 
     func fetchTrendingPosts() async throws -> [Post] {
-        try await fetchData(endpoint: "/api/v1/trends/statuses", type: [Post].self)
+        return try await fetchData(endpoint: "/api/v1/trends/statuses", type: [Post].self)
     }
-
+    
     // MARK: - Post Actions
     func toggleLike(postID: String) async throws {
         try await postAction(for: postID, path: "/favourite")
@@ -153,7 +163,7 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         let body: [String: Any] = ["status": content, "in_reply_to_id": postID]
         _ = try await postData(endpoint: "/api/v1/statuses", body: body, type: String.self)
     }
-
+    
     // MARK: - OAuth
     func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
         // Decode the response into RegisterResponse first
@@ -197,8 +207,9 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
             baseURLOverride: instanceURL
         )
         accessToken = tokenResponse.accessToken
+        logger.info("Access token acquired: \(tokenResponse.accessToken, privacy: .private)")
     }
-
+    
     func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {
         guard try isAuthenticated(), let baseURL = baseURL else {
             throw AppError(mastodon: .missingCredentials)
@@ -217,7 +228,7 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
                     return
                 }
                 do {
-                    let post = try JSONDecoder().decode(Post.self, from: data)
+                    let post = try self.jsonDecoder.decode(Post.self, from: data)
                     continuation.yield(post)
                 } catch {
                     continuation.finish(throwing: error)
@@ -226,14 +237,14 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
             task.resume()
         }
     }
-
-    // MARK: - Private Helpers
+    
+    // MARK: - Helpers
     private func fetchData<T: Decodable>(endpoint: String, type: T.Type) async throws -> T {
         let url = try endpointURL(endpoint)
         let request = try buildRequest(url: url, method: "GET")
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateResponse(response)
-        return try JSONDecoder().decode(T.self, from: data)
+        return try jsonDecoder.decode(T.self, from: data)
     }
 
     private func postData<T: Decodable>(
@@ -249,7 +260,7 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let (data, response) = try await URLSession.shared.data(for: request)
         try validateResponse(response)
-        return try JSONDecoder().decode(T.self, from: data)
+        return try jsonDecoder.decode(T.self, from: data)
     }
 
     private func postAction(for postID: String, path: String) async throws {
@@ -279,8 +290,13 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     }
 
     private func validateResponse(_ response: URLResponse) throws {
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else {
+            logger.error("Invalid response type received.")
             throw AppError(mastodon: .invalidResponse)
+        }
+        guard (200...299).contains(http.statusCode) else {
+            logger.error("Server returned status code \(http.statusCode).")
+            throw AppError(mastodon: .serverError(status: http.statusCode))
         }
     }
 
@@ -304,20 +320,35 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     func saveToKeychain(key: String, value: String?) async {
         guard let value = value else { return }
         do {
-            try await KeychainHelper.shared.save(value, service: "MustardKeychain", account: key)
+            try await KeychainHelper.shared.save(value, service: keychainService, account: key)
+            logger.debug("Saved \(key) to Keychain.")
         } catch {
-            logger.error("Failed to save to keychain: \(error.localizedDescription)")
+            logger.error("Failed to save \(key) to Keychain: \(error.localizedDescription)")
         }
     }
 
     func loadFromKeychain(key: String) async -> String? {
         do {
-            return try await KeychainHelper.shared.read(service: "MustardKeychain", account: key)
+            let value = try await KeychainHelper.shared.read(service: keychainService, account: key)
+            logger.debug("Loaded \(key) from Keychain: \(value ?? "nil")")
+            return value
         } catch {
-            logger.error("Failed to load from keychain: \(error.localizedDescription)")
+            logger.error("Failed to load \(key) from Keychain: \(error.localizedDescription)")
             return nil
         }
     }
+    
+    private func retrieveAccessTokenInternal() async throws -> String? {
+           return try await KeychainHelper.shared.read(service: keychainService, account: accessTokenKey)
+    }
+
+    private func retrieveInstanceURLInternal() async throws -> URL? {
+           if let baseURLString = try await KeychainHelper.shared.read(service: keychainService, account: baseURLKey),
+              let url = URL(string: baseURLString) {
+               return url
+           }
+           return nil
+       }
 
     // MARK: - ASWebAuthenticationPresentationContextProviding
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
@@ -335,4 +366,3 @@ extension Notification.Name {
     static let authenticationFailed = Notification.Name("authenticationFailed")
     static let didSelectAccount = Notification.Name("didSelectAccount")
 }
-

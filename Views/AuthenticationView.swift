@@ -52,14 +52,8 @@ struct AuthenticationView: View {
                         showingServerList = false
                         isAuthenticating = true
                         Task {
-                            do {
-                                // Delegate authentication to the ViewModel
-                                try await authViewModel.authenticate(to: server)
-                            } catch {
-                                // Handle any unexpected errors (optional)
-                                logger.error("Unexpected error during authentication: \(error.localizedDescription)")
-                                // Optionally, set alertError here if not already handled in ViewModel
-                            }
+                            // Delegate authentication to the ViewModel
+                            await authViewModel.authenticate(to: server)
                             isAuthenticating = false
                         }
                     },

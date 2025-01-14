@@ -16,8 +16,13 @@ final class Account: Identifiable, Codable, Equatable {
     var displayName: String
     var avatar: URL
     var acct: String
-    var instanceURL: URL
+    var url: URL // Changed from instanceURL
     var accessToken: String?
+    // Computed property to derive instanceURL from the profile URL
+    var instanceURL: URL? {
+        guard let host = url.host else { return nil }
+        return URL(string: "https://\(host)")
+    }
 
     // MARK: - Initializer
     init(
@@ -26,7 +31,7 @@ final class Account: Identifiable, Codable, Equatable {
         displayName: String,
         avatar: URL,
         acct: String,
-        instanceURL: URL,
+        url: URL, // Changed from instanceURL
         accessToken: String? = nil
     ) {
         self.id = id
@@ -34,13 +39,13 @@ final class Account: Identifiable, Codable, Equatable {
         self.displayName = displayName
         self.avatar = avatar
         self.acct = acct
-        self.instanceURL = instanceURL
+        self.url = url // Changed from instanceURL
         self.accessToken = accessToken
     }
 
     // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
-        case id, username, displayName, avatar, acct, instanceURL, accessToken
+        case id, username, displayName, avatar, acct, url, accessToken
     }
 
     required init(from decoder: Decoder) throws {
@@ -50,7 +55,7 @@ final class Account: Identifiable, Codable, Equatable {
         self.displayName = try container.decode(String.self, forKey: .displayName)
         self.avatar = try container.decode(URL.self, forKey: .avatar)
         self.acct = try container.decode(String.self, forKey: .acct)
-        self.instanceURL = try container.decode(URL.self, forKey: .instanceURL)
+        self.url = try container.decode(URL.self, forKey: .url)
         self.accessToken = try container.decodeIfPresent(String.self, forKey: .accessToken)
     }
 
@@ -61,7 +66,7 @@ final class Account: Identifiable, Codable, Equatable {
         try container.encode(displayName, forKey: .displayName)
         try container.encode(avatar, forKey: .avatar)
         try container.encode(acct, forKey: .acct)
-        try container.encode(instanceURL, forKey: .instanceURL)
+        try container.encode(url, forKey: .url)
         try container.encode(accessToken, forKey: .accessToken)
     }
     
@@ -72,8 +77,7 @@ final class Account: Identifiable, Codable, Equatable {
                lhs.displayName == rhs.displayName &&
                lhs.avatar == rhs.avatar &&
                lhs.acct == rhs.acct &&
-               lhs.instanceURL == rhs.instanceURL &&
+               lhs.url == rhs.url &&
                lhs.accessToken == rhs.accessToken
     }
 }
-

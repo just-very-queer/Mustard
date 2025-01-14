@@ -35,9 +35,10 @@ final class KeychainHelper: @unchecked Sendable {
     ///   - service: The service identifier.
     ///   - account: The account identifier.
     /// - Throws: `AppError` if the operation fails.
+
     func save(_ value: String, service: String, account: String) async throws {
         guard let data = value.data(using: .utf8) else {
-            os_log("Failed to encode value to data.", log: logger, type: .error)
+            os_log("Failed to encode value to data for account: %{public}@", log: logger, type: .error, account)
             throw AppError(message: "[KeychainHelper] Encoding string to Data failed.")
         }
         try await save(data, service: service, account: account)

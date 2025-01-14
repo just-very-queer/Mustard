@@ -12,6 +12,7 @@ import OSLog
 
 @MainActor
 class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+
     // MARK: - Published Properties
     @Published var isAuthenticated = false
     @Published var isAuthenticating = false
@@ -21,7 +22,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     // MARK: - Private Properties
     private let mastodonService: MastodonServiceProtocol
     private var webAuthSession: ASWebAuthenticationSession?
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "AuthenticationViewModel")
+    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "Authentication")
 
     // MARK: - Initialization
     init(mastodonService: MastodonServiceProtocol) {
@@ -33,7 +34,8 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     // MARK: - Public Methods
 
     /// Starts the OAuth flow for the selected server.
-    func authenticate(to server: Server) async throws {
+
+    func authenticate(to server: Server) async {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         alertError = nil
@@ -41,31 +43,31 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         do {
             // Register OAuth App and get OAuthConfig
             let config = try await mastodonService.registerOAuthApp(instanceURL: server.url)
-            logger.info("OAuth App registered with client ID: \(config.clientID, privacy: .public)")
-
+            logger.info("OAuth App registered with clientID: \(config.clientID, privacy: .public)")
+            
             // Start Web Authentication Session to get authorization code
-            let authorizationCode = try await startWebAuthSession(config: config, server: server)
-            logger.info("Authorization code received: \(authorizationCode, privacy: .public)")
-
+            let authorizationCode = try await startWebAuthSession(config: config, instanceURL: server.url)
+            logger.info("Received authorization code: \(authorizationCode, privacy: .private)")
+            
             // Exchange authorization code for access token
             try await mastodonService.exchangeAuthorizationCode(
                 authorizationCode,
                 config: config,
                 instanceURL: server.url
             )
-            logger.info("Access token exchanged successfully.")
-
+            logger.info("Exchanged authorization code for access token.")
+            
             // Fetch current user details
             self.currentUser = try await mastodonService.fetchCurrentUser()
+            logger.info("Fetched current user: \(self.currentUser?.username ?? "Unknown")")
             self.isAuthenticated = true
-            logger.info("User authenticated: \(self.currentUser?.username ?? "Unknown")")
 
             // Post notification of successful authentication
             NotificationCenter.default.post(name: .didAuthenticate, object: nil)
         } catch {
-            logger.error("Authentication failed: \(error.localizedDescription)")
-            self.alertError = AppError(message: "Authentication failed: \(error.localizedDescription)", underlyingError: error)
+            handleError(error)
             self.isAuthenticated = false
+            logger.error("Authentication failed: \(error.localizedDescription)")
         }
         self.isAuthenticating = false
     }
@@ -74,22 +76,26 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     func validateAuthentication() async {
         isAuthenticating = true
         alertError = nil
+
         do {
-            if let token = try await mastodonService.retrieveAccessToken(),
-               let _ = try await mastodonService.retrieveInstanceURL(),
-               !token.isEmpty {
-                try await mastodonService.validateToken()
-                self.currentUser = try await mastodonService.fetchCurrentUser()
-                self.isAuthenticated = true
-                logger.log("Authentication validation successful.")
-            } else {
-                logger.log("Authentication validation failed: Missing token or URL.")
-                self.isAuthenticated = false
+            guard let token = try await mastodonService.retrieveAccessToken(),
+                  let instanceURL = try await mastodonService.retrieveInstanceURL(),
+                  !token.isEmpty else {
+                alertError = AppError(mastodon: .missingCredentials, underlyingError: nil)
+                isAuthenticated = false
+                isAuthenticating = false
+                logger.warning("Missing access token or instance URL.")
+                return
             }
+
+            try await mastodonService.validateToken()
+            self.currentUser = try await mastodonService.fetchCurrentUser()
+            self.isAuthenticated = true
+            logger.info("User is authenticated: \(self.currentUser?.username ?? "Unknown")")
         } catch {
-            logger.error("Authentication validation error: \(error.localizedDescription)")
+            handleError(error)
             self.isAuthenticated = false
-            self.alertError = AppError(message: "Token validation failed: \(error.localizedDescription)", underlyingError: error)
+            logger.error("Authentication validation failed: \(error.localizedDescription)")
         }
         isAuthenticating = false
     }
@@ -97,15 +103,17 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     /// Logs out the user by clearing the access token and user information.
     func logout() async {
         isAuthenticating = true
+        alertError = nil
+
         do {
             try await mastodonService.clearAccessToken()
             self.isAuthenticated = false
             self.currentUser = nil
             NotificationCenter.default.post(name: .authenticationFailed, object: nil)
-            logger.log("User logged out successfully.")
+            logger.info("User logged out successfully.")
         } catch {
-            logger.error("Failed to logout: \(error.localizedDescription)")
-            self.alertError = AppError(message: "Failed to logout: \(error.localizedDescription)", underlyingError: error)
+            handleError(error)
+            logger.error("Logout failed: \(error.localizedDescription)")
         }
         isAuthenticating = false
     }
@@ -113,24 +121,27 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     /// Validates the base URL stored in the service.
     func validateBaseURL() async -> Bool {
         do {
-            if let url = try await mastodonService.retrieveInstanceURL() {
-                logger.log("Base URL validated successfully: \(url.absoluteString)")
+            if let _ = try await mastodonService.retrieveInstanceURL() {
+                logger.info("Base URL is valid.")
                 return true
             } else {
-                logger.error("Base URL is nil.")
+                alertError = AppError(mastodon: .missingCredentials, underlyingError: nil)
+                logger.warning("Base URL is missing.")
+                return false
             }
         } catch {
-            logger.error("Error during base URL validation: \(error.localizedDescription)")
-            self.alertError = AppError(message: "Failed to validate base URL: \(error.localizedDescription)", underlyingError: error)
+            alertError = AppError(mastodon: .invalidResponse, underlyingError: error)
+            logger.error("Failed to validate base URL: \(error.localizedDescription)")
+            return false
         }
-        return false
     }
 
     // MARK: - Private Methods
 
     /// Starts the Web Authentication Session to retrieve the authorization code.
-    private func startWebAuthSession(config: OAuthConfig, server: Server) async throws -> String {
-        let authURL = server.url.appendingPathComponent("/oauth/authorize")
+
+    private func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
+        let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
         var components = URLComponents(url: authURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "client_id", value: config.clientID),
@@ -140,40 +151,40 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         ]
 
         guard let finalURL = components.url else {
-            throw AppError(message: "Invalid authorization URL.")
+            throw AppError(mastodon: .invalidAuthorizationCode, underlyingError: nil)
         }
 
         guard let redirectScheme = URL(string: config.redirectURI)?.scheme else {
-            throw AppError(message: "Invalid redirect URI scheme.")
+            throw AppError(mastodon: .invalidResponse, underlyingError: nil)
         }
-
-        self.logger.log("Starting WebAuth session with URL: \(finalURL.absoluteString, privacy: .public)")
 
         return try await withCheckedThrowingContinuation { [weak self] continuation in
             guard let self = self else {
-                continuation.resume(throwing: AppError(message: "Authentication session failed: ViewModel was deallocated."))
+                continuation.resume(throwing: AppError(mastodon: .unknown(status: -1), underlyingError: nil))
                 return
             }
 
             let session = ASWebAuthenticationSession(
                 url: finalURL,
                 callbackURLScheme: redirectScheme
-            ) { callbackURL, error in
+            ) { [weak self] callbackURL, error in
+                guard let self = self else {
+                    continuation.resume(throwing: AppError(mastodon: .unknown(status: -1), underlyingError: nil))
+                    return
+                }
+                
                 if let error = error {
-                    self.logger.error("WebAuth session error: \(error.localizedDescription)")
-                    continuation.resume(throwing: AppError(message: "WebAuth session error: \(error.localizedDescription)"))
+                    continuation.resume(throwing: AppError(mastodon: .oauthError(message: error.localizedDescription), underlyingError: error))
                     return
                 }
 
                 guard let callbackURL = callbackURL,
                       let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
                         .queryItems?.first(where: { $0.name == "code" })?.value else {
-                    self.logger.error("Authorization code not found.")
-                    continuation.resume(throwing: AppError(message: "Authorization code not found."))
+                    continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Authorization code not found."), underlyingError: nil))
                     return
                 }
 
-                self.logger.log("Authorization code received: \(code, privacy: .public)")
                 continuation.resume(returning: code)
             }
 
@@ -181,12 +192,38 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             session.prefersEphemeralWebBrowserSession = true
 
             if !session.start() {
-                logger.error("Failed to start WebAuth session.")
-                continuation.resume(throwing: AppError(message: "Failed to start WebAuth session."))
-            } else {
-                logger.log("WebAuth session started successfully.")
+                continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Failed to start WebAuth session."), underlyingError: nil))
             }
             self.webAuthSession = session
+        }
+    }
+    /// Handles errors by setting the alertError property.
+    // AuthenticationViewModel.swift
+
+    private func handleError(_ error: Error) {
+        if let appError = error as? AppError {
+            self.alertError = appError
+            logger.error("AppError encountered: \(appError.message, privacy: .public)")
+        } else if let decodingError = error as? DecodingError {
+            switch decodingError {
+            case .typeMismatch(let type, let context):
+                alertError = AppError(mastodon: .decodingError, underlyingError: decodingError)
+                logger.error("Decoding error: Type '\(type)' mismatch at \(context.codingPath).")
+            case .valueNotFound(let type, let context):
+                alertError = AppError(mastodon: .decodingError, underlyingError: decodingError)
+                logger.error("Decoding error: Value '\(type)' not found at \(context.codingPath).")
+            case .keyNotFound(let key, let context):
+                alertError = AppError(mastodon: .decodingError, underlyingError: decodingError)
+            case .dataCorrupted(let context):
+                alertError = AppError(mastodon: .decodingError, underlyingError: decodingError)
+                logger.error("Decoding error: Data corrupted at \(context.codingPath).")
+            @unknown default:
+                alertError = AppError(mastodon: .unknown(status: -1), underlyingError: decodingError)
+                logger.error("Decoding error: Unknown decoding error.")
+            }
+        } else {
+            alertError = AppError(mastodon: .unknown(status: -1), underlyingError: error)
+            logger.error("Unknown error: \(error.localizedDescription, privacy: .public)")
         }
     }
 
