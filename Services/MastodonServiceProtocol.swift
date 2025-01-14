@@ -9,7 +9,7 @@ import Foundation
 
 @MainActor
 /// OAuth Configuration Details
-struct OAuthConfig: Decodable {
+struct OAuthConfig {
     let clientID: String
     let clientSecret: String
     let redirectURI: String

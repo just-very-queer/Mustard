@@ -118,8 +118,10 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
+        // Log the received OAuth callback URL for debugging
         print("Received OAuth callback URL: \(url.absoluteString)")
-        // Notify about received URL for OAuth callback
+        
+        // Notify about the received URL for OAuth callback
         NotificationCenter.default.post(
             name: .didReceiveOAuthCallback,
             object: nil,

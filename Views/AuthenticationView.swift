@@ -48,11 +48,18 @@ struct AuthenticationView: View {
                 ServerListView(
                     servers: SampleServers.servers,
                     onSelect: { server in
-                        logger.info("Server selected: \(server.url, privacy: .public)") // Log with privacy
+                        logger.info("Server selected: \(server.url, privacy: .public)")
                         showingServerList = false
                         isAuthenticating = true
                         Task {
-                            await authViewModel.authenticate(to: server)
+                            do {
+                                // Delegate authentication to the ViewModel
+                                try await authViewModel.authenticate(to: server)
+                            } catch {
+                                // Handle any unexpected errors (optional)
+                                logger.error("Unexpected error during authentication: \(error.localizedDescription)")
+                                // Optionally, set alertError here if not already handled in ViewModel
+                            }
                             isAuthenticating = false
                         }
                     },
@@ -73,7 +80,7 @@ struct AuthenticationView: View {
         .alert(item: $authViewModel.alertError) { error in // Improved error handling
             Alert(
                 title: Text("Authentication Error"),
-                message: Text(error.localizedDescription), // Use localizedDescription
+                message: Text(error.message), // Use error.message instead of localizedDescription
                 dismissButton: .default(Text("OK"))
             )
         }

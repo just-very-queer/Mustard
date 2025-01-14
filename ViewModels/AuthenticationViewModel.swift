@@ -21,8 +21,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     // MARK: - Private Properties
     private let mastodonService: MastodonServiceProtocol
     private var webAuthSession: ASWebAuthenticationSession?
-    private var clientID: String?
-    private var clientSecret: String?
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "AuthenticationViewModel")
 
     // MARK: - Initialization
@@ -35,31 +33,41 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     // MARK: - Public Methods
 
     /// Starts the OAuth flow for the selected server.
-    func authenticate(to server: Server) async {
+    func authenticate(to server: Server) async throws {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         alertError = nil
 
         do {
+            // Register OAuth App and get OAuthConfig
             let config = try await mastodonService.registerOAuthApp(instanceURL: server.url)
-            clientID = config.clientID
-            clientSecret = config.clientSecret
+            logger.info("OAuth App registered with client ID: \(config.clientID, privacy: .public)")
 
+            // Start Web Authentication Session to get authorization code
             let authorizationCode = try await startWebAuthSession(config: config, server: server)
+            logger.info("Authorization code received: \(authorizationCode, privacy: .public)")
+
+            // Exchange authorization code for access token
             try await mastodonService.exchangeAuthorizationCode(
                 authorizationCode,
                 config: config,
                 instanceURL: server.url
             )
+            logger.info("Access token exchanged successfully.")
 
-            currentUser = try await mastodonService.fetchCurrentUser()
-            isAuthenticated = true
+            // Fetch current user details
+            self.currentUser = try await mastodonService.fetchCurrentUser()
+            self.isAuthenticated = true
+            logger.info("User authenticated: \(self.currentUser?.username ?? "Unknown")")
+
+            // Post notification of successful authentication
             NotificationCenter.default.post(name: .didAuthenticate, object: nil)
         } catch {
-            alertError = AppError(message: "Authentication failed: \(error.localizedDescription)", underlyingError: error)
-            isAuthenticated = false
+            logger.error("Authentication failed: \(error.localizedDescription)")
+            self.alertError = AppError(message: "Authentication failed: \(error.localizedDescription)", underlyingError: error)
+            self.isAuthenticated = false
         }
-        isAuthenticating = false
+        self.isAuthenticating = false
     }
 
     /// Validates if the user is already authenticated.
@@ -71,17 +79,17 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
                let _ = try await mastodonService.retrieveInstanceURL(),
                !token.isEmpty {
                 try await mastodonService.validateToken()
-                currentUser = try await mastodonService.fetchCurrentUser()
-                isAuthenticated = true
+                self.currentUser = try await mastodonService.fetchCurrentUser()
+                self.isAuthenticated = true
                 logger.log("Authentication validation successful.")
             } else {
                 logger.log("Authentication validation failed: Missing token or URL.")
-                isAuthenticated = false
+                self.isAuthenticated = false
             }
         } catch {
             logger.error("Authentication validation error: \(error.localizedDescription)")
-            isAuthenticated = false
-            alertError = AppError(message: "Token validation failed: \(error.localizedDescription)", underlyingError: error)
+            self.isAuthenticated = false
+            self.alertError = AppError(message: "Token validation failed: \(error.localizedDescription)", underlyingError: error)
         }
         isAuthenticating = false
     }
@@ -91,11 +99,13 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         isAuthenticating = true
         do {
             try await mastodonService.clearAccessToken()
-            isAuthenticated = false
-            currentUser = nil
+            self.isAuthenticated = false
+            self.currentUser = nil
             NotificationCenter.default.post(name: .authenticationFailed, object: nil)
+            logger.log("User logged out successfully.")
         } catch {
-            alertError = AppError(message: "Failed to logout: \(error.localizedDescription)", underlyingError: error)
+            logger.error("Failed to logout: \(error.localizedDescription)")
+            self.alertError = AppError(message: "Failed to logout: \(error.localizedDescription)", underlyingError: error)
         }
         isAuthenticating = false
     }
@@ -111,7 +121,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             }
         } catch {
             logger.error("Error during base URL validation: \(error.localizedDescription)")
-            alertError = AppError(message: "Failed to validate base URL: \(error.localizedDescription)", underlyingError: error)
+            self.alertError = AppError(message: "Failed to validate base URL: \(error.localizedDescription)", underlyingError: error)
         }
         return false
     }
@@ -127,7 +137,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             URLQueryItem(name: "redirect_uri", value: config.redirectURI),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "scope", value: config.scope)
-            
         ]
 
         guard let finalURL = components.url else {
@@ -138,7 +147,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             throw AppError(message: "Invalid redirect URI scheme.")
         }
 
-        self.logger.log("Starting WebAuth session with URL: \(finalURL.absoluteString)")
+        self.logger.log("Starting WebAuth session with URL: \(finalURL.absoluteString, privacy: .public)")
 
         return try await withCheckedThrowingContinuation { [weak self] continuation in
             guard let self = self else {
@@ -164,7 +173,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
                     return
                 }
 
-                self.logger.log("Authorization code received: \(code)")
+                self.logger.log("Authorization code received: \(code, privacy: .public)")
                 continuation.resume(returning: code)
             }
 
@@ -177,7 +186,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             } else {
                 logger.log("WebAuth session started successfully.")
             }
-
             self.webAuthSession = session
         }
     }
@@ -193,5 +201,3 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         return window
     }
 }
-
-

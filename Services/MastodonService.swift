@@ -16,6 +16,8 @@ struct CachedTimeline {
     let timestamp: Date
 }
 
+
+
 @MainActor
 class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPresentationContextProviding {
     
@@ -154,17 +156,25 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
 
     // MARK: - OAuth
     func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
-        let body: [String: String] = [
-            "client_name": "Mustard",
-            "redirect_uris": "mustard://oauth-callback",
-            "scopes": "read write follow",
-            "website": "https://yourapp.com"
-        ]
-        return try await postData(
+        // Decode the response into RegisterResponse first
+        let registerResponse: RegisterResponse = try await postData(
             endpoint: "/api/v1/apps",
-            body: body,
-            type: OAuthConfig.self,
+            body: [
+                "client_name": "Mustard",
+                "redirect_uris": "mustard://oauth-callback",
+                "scopes": "read write follow",
+                "website": "https://yourapp.com"
+            ],
+            type: RegisterResponse.self,
             baseURLOverride: instanceURL
+        )
+        
+        // Construct OAuthConfig using RegisterResponse and known values
+        return OAuthConfig(
+            clientID: registerResponse.client_id,
+            clientSecret: registerResponse.client_secret,
+            redirectURI: "mustard://oauth-callback",
+            scope: "read write follow"
         )
     }
 
