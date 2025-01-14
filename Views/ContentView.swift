@@ -12,8 +12,6 @@ import SwiftData
 struct ContentView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
-    @EnvironmentObject var topPostsViewModel: TopPostsViewModel
-    @EnvironmentObject var weatherViewModel: WeatherViewModel
     @EnvironmentObject var locationManager: LocationManager
 
     var body: some View {
@@ -24,8 +22,6 @@ struct ContentView: View {
                     NavigationStack {
                         HomeView()
                             .environmentObject(timelineViewModel)
-                            .environmentObject(topPostsViewModel)
-                            .environmentObject(weatherViewModel)
                             .environmentObject(locationManager)
                     }
                     .tabItem {
@@ -37,8 +33,6 @@ struct ContentView: View {
                         SettingsView()
                             .environmentObject(authViewModel)
                             .environmentObject(timelineViewModel)
-                            .environmentObject(topPostsViewModel)
-                            .environmentObject(weatherViewModel)
                             .environmentObject(locationManager)
                     }
                     .tabItem {
@@ -89,31 +83,11 @@ struct ContentView: View {
     }
 }
 
-// Example SettingsView, since AccountsView is removed.
-struct SettingsView: View {
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
-
-    var body: some View {
-        Form {
-            Section(header: Text("Account")) {
-                Button("Logout") {
-                    Task {
-                        await authViewModel.logout()
-                    }
-                }
-                .foregroundColor(.red)
-                .accessibilityLabel("Logout")
-            }
-        }
-        .navigationTitle("Settings")
-    }
-}
-
 // MARK: - Preview
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         // Initialize Mock Service for Preview
-        let mockService = MockMastodonService(shouldSucceed: true)
+        let mockService = MockService(shouldSucceed: true)
 
         // Initialize Model Container with Required Models
         let container: ModelContainer
@@ -125,20 +99,16 @@ struct ContentView_Previews: PreviewProvider {
 
         // Initialize ViewModels with Mock Service and Context
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
-        let timelineViewModel = TimelineViewModel(mastodonService: mockService)
-        let topPostsViewModel = TopPostsViewModel(service: mockService)
-        let weatherViewModel = WeatherViewModel()
+        let timelineViewModel = TimelineViewModel(mastodonService: mockService, authViewModel: authViewModel)
         let locationManager = LocationManager()
 
         // Populate ViewModels with Mock Data
         timelineViewModel.posts = mockService.mockPosts
-        topPostsViewModel.topPosts = mockService.mockTrendingPosts
+        timelineViewModel.topPosts = mockService.mockTrendingPosts
 
         return ContentView()
             .environmentObject(authViewModel)
             .environmentObject(timelineViewModel)
-            .environmentObject(topPostsViewModel)
-            .environmentObject(weatherViewModel)
             .environmentObject(locationManager)
             .modelContainer(container)
     }

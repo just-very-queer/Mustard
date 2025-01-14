@@ -6,13 +6,15 @@
 //
 
 import SwiftUI
-import SwiftData
+import OSLog // Import for logging
 
 struct AuthenticationView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @State private var showingServerList = false
-    @State private var selectedServer: Server? = nil
     @State private var isAuthenticating = false
+
+    // Use a logger instance
+    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "Authentication")
 
     var body: some View {
         VStack(spacing: 20) {
@@ -24,13 +26,12 @@ struct AuthenticationView: View {
                 .multilineTextAlignment(.center)
                 .padding()
 
-            // Server selection button
             Button(action: {
                 showingServerList = true
             }) {
                 HStack {
-                    Text(selectedServer?.name ?? "Select a Mastodon Instance")
-                        .foregroundColor(selectedServer != nil ? .black : .blue)
+                    Text("Select a Mastodon Instance")
+                        .foregroundColor(.blue)
                     Spacer()
                     Image(systemName: "chevron.down")
                         .foregroundColor(.gray)
@@ -41,14 +42,19 @@ struct AuthenticationView: View {
                         .stroke(Color.gray, lineWidth: 1)
                 )
             }
-            .disabled(isAuthenticating) // Disable while authenticating
+            .disabled(isAuthenticating)
+
             .sheet(isPresented: $showingServerList) {
                 ServerListView(
                     servers: SampleServers.servers,
                     onSelect: { server in
-                        selectedServer = server
+                        logger.info("Server selected: \(server.url, privacy: .public)") // Log with privacy
                         showingServerList = false
-                        initiateAuthentication(with: server)
+                        isAuthenticating = true
+                        Task {
+                            await authViewModel.authenticate(to: server)
+                            isAuthenticating = false
+                        }
                     },
                     onCancel: {
                         showingServerList = false
@@ -58,44 +64,18 @@ struct AuthenticationView: View {
 
             Spacer()
 
-            // Authentication progress
             if isAuthenticating {
                 ProgressView("Authenticating...")
                     .padding()
             }
         }
         .padding()
-        .overlay(
-            Group {
-                if authViewModel.isAuthenticating {
-                    Color.black.opacity(0.4)
-                        .edgesIgnoringSafeArea(.all)
-                }
-            }
-        )
-        .alert(item: $authViewModel.alertError) { error in
+        .alert(item: $authViewModel.alertError) { error in // Improved error handling
             Alert(
                 title: Text("Authentication Error"),
-                message: Text(error.message),
+                message: Text(error.localizedDescription), // Use localizedDescription
                 dismissButton: .default(Text("OK"))
             )
-        }
-    }
-
-    private func initiateAuthentication(with server: Server) {
-        guard !isAuthenticating else { return }
-        isAuthenticating = true // Start loading
-        Task {
-            await authViewModel.authenticate(to: server)
-
-            // Validate base URL after authentication
-            let isValid = await authViewModel.validateBaseURL()
-            if isValid {
-                print("[AuthenticationView] Base URL validated successfully.")
-            } else {
-                authViewModel.alertError = AppError(message: "Failed to validate base URL after login.")
-            }
-            isAuthenticating = false // Stop loading
         }
     }
 }
@@ -104,26 +84,9 @@ struct AuthenticationView: View {
 struct AuthenticationView_Previews: PreviewProvider {
     static var previews: some View {
         let mockService = MockMastodonService(shouldSucceed: true)
-
-        let container: ModelContainer
-        do {
-            container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
-        } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
-        }
-
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
-        let timelineViewModel = TimelineViewModel(mastodonService: mockService)
-        let topPostsViewModel = TopPostsViewModel(service: mockService)
-        let weatherViewModel = WeatherViewModel()
-        let locationManager = LocationManager()
 
         return AuthenticationView()
             .environmentObject(authViewModel)
-            .environmentObject(timelineViewModel)
-            .environmentObject(topPostsViewModel)
-            .environmentObject(weatherViewModel)
-            .environmentObject(locationManager)
-            .modelContainer(container)
     }
 }

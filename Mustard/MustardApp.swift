@@ -14,9 +14,7 @@ struct MustardApp: App {
 
     // MARK: - ViewModels
     @StateObject private var authViewModel = AuthenticationViewModel(mastodonService: MastodonService.shared)
-    @StateObject private var timelineViewModel = TimelineViewModel(mastodonService: MastodonService.shared)
-    @StateObject private var topPostsViewModel = TopPostsViewModel(service: MastodonService.shared)
-    @StateObject private var weatherViewModel = WeatherViewModel()
+    @StateObject private var timelineViewModel: TimelineViewModel
     @StateObject private var locationManager = LocationManager()
 
     // MARK: - SwiftData container
@@ -31,6 +29,14 @@ struct MustardApp: App {
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
+
+        // Initialize timelineViewModel with authViewModel
+        _timelineViewModel = StateObject(
+            wrappedValue: TimelineViewModel(
+                mastodonService: MastodonService.shared,
+                authViewModel: AuthenticationViewModel(mastodonService: MastodonService.shared)
+            )
+        )
     }
 
     var body: some Scene {
@@ -44,8 +50,6 @@ struct MustardApp: App {
                             HomeView()
                                 .environmentObject(authViewModel)
                                 .environmentObject(timelineViewModel)
-                                .environmentObject(topPostsViewModel)
-                                .environmentObject(weatherViewModel)
                                 .environmentObject(locationManager)
                                 .modelContainer(container)
                         }
@@ -53,7 +57,17 @@ struct MustardApp: App {
                             Label("Home", systemImage: "house")
                         }
 
-                        // Additional Tabs (if any) can be added here
+                        // Settings Tab
+                        NavigationStack {
+                            SettingsView()
+                                .environmentObject(authViewModel)
+                                .environmentObject(timelineViewModel)
+                                .environmentObject(locationManager)
+                                .modelContainer(container)
+                        }
+                        .tabItem {
+                            Label("Settings", systemImage: "gearshape")
+                        }
                     }
                     .onOpenURL { url in
                         NotificationCenter.default.post(
@@ -63,7 +77,7 @@ struct MustardApp: App {
                         )
                         print("[MustardApp] Received URL via onOpenURL: \(url.absoluteString)")
                     }
-                    .alert(item: $timelineViewModel.alertError) { error in
+                    .alert(item: $timelineViewModel.alertError) { (error: AppError) in
                         Alert(
                             title: Text("Error"),
                             message: Text(error.message),
@@ -75,12 +89,9 @@ struct MustardApp: App {
                     AuthenticationView()
                         .environmentObject(authViewModel)
                         .environmentObject(timelineViewModel)
-                        .environmentObject(topPostsViewModel)
-                        .environmentObject(weatherViewModel)
                         .environmentObject(locationManager)
                         .modelContainer(container)
-                        .navigationTitle("Authentication")
-                        .alert(item: $authViewModel.alertError) { error in
+                        .alert(item: $authViewModel.alertError) { (error: AppError) in
                             Alert(
                                 title: Text("Authentication Error"),
                                 message: Text(error.message),
@@ -105,7 +116,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ app: UIApplication,
         open url: URL,
-        options: [UIApplication.OpenURLOptionsKey : Any] = [:]
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
         print("Received OAuth callback URL: \(url.absoluteString)")
         // Notify about received URL for OAuth callback
