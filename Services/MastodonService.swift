@@ -160,8 +160,8 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
 
     func comment(postID: String, content: String) async throws {
         guard try isAuthenticated() else { throw AppError(mastodon: .missingCredentials) }
-        let body: [String: Any] = ["status": content, "in_reply_to_id": postID]
-        _ = try await postData(endpoint: "/api/v1/statuses", body: body, type: String.self)
+        let body: [String: String] = ["status": content, "in_reply_to_id": postID]
+        _ = try await postData(endpoint: "/api/v1/statuses", body: body, type: Post.self)
     }
     
     // MARK: - OAuth
@@ -200,12 +200,15 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
             "client_id": config.clientID,
             "client_secret": config.clientSecret
         ]
+        
         let tokenResponse: TokenResponse = try await postData(
             endpoint: "/oauth/token",
             body: body,
             type: TokenResponse.self,
-            baseURLOverride: instanceURL
+            baseURLOverride: instanceURL,
+            contentType: "application/x-www-form-urlencoded"
         )
+        
         accessToken = tokenResponse.accessToken
         logger.info("Access token acquired: \(tokenResponse.accessToken, privacy: .private)")
     }
@@ -243,27 +246,58 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         let url = try endpointURL(endpoint)
         let request = try buildRequest(url: url, method: "GET")
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validateResponse(response)
+        try validateResponse(response, data: data)
         return try jsonDecoder.decode(T.self, from: data)
     }
 
     private func postData<T: Decodable>(
         endpoint: String,
-        body: [String: Any],
+        body: [String: String],
         type: T.Type,
-        baseURLOverride: URL? = nil
+        baseURLOverride: URL? = nil,
+        contentType: String = "application/json"
     ) async throws -> T {
         let url = try endpointURL(endpoint, baseURLOverride: baseURLOverride)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        switch contentType {
+        case "application/json":
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        case "application/x-www-form-urlencoded":
+            let formBody = body
+                .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
+                .joined(separator: "&")
+                .data(using: .utf8)
+            request.httpBody = formBody
+        default:
+            throw AppError(message: "Unsupported content type: \(contentType)")
+        }
+        
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        
+        // Enhanced Logging
+        if let bodyData = request.httpBody,
+           let bodyString = String(data: bodyData, encoding: .utf8) {
+            logger.debug("Sending POST request to \(url.absoluteString) with body: \(bodyString)")
+        }
+        
         let (data, response) = try await URLSession.shared.data(for: request)
-        try validateResponse(response)
+        try validateResponse(response, data: data)
+        
+        // Enhanced Logging
+        if let responseString = String(data: data, encoding: .utf8) {
+            logger.debug("Received response: \(responseString)")
+        }
+        
         return try jsonDecoder.decode(T.self, from: data)
     }
 
     private func postAction(for postID: String, path: String) async throws {
+        try await postActionInternal(postID: postID, path: path)
+    }
+
+    private func postActionInternal(postID: String, path: String) async throws {
         let url = try endpoint("/api/v1/statuses/\(postID)\(path)")
         let request = try buildRequest(url: url, method: "POST")
         _ = try await URLSession.shared.data(for: request)
@@ -289,12 +323,16 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         return request
     }
 
-    private func validateResponse(_ response: URLResponse) throws {
+    private func validateResponse(_ response: URLResponse, data: Data) throws {
         guard let http = response as? HTTPURLResponse else {
             logger.error("Invalid response type received.")
             throw AppError(mastodon: .invalidResponse)
         }
         guard (200...299).contains(http.statusCode) else {
+            if let errorMessage = String(data: data, encoding: .utf8) {
+                logger.error("Server returned status code \(http.statusCode): \(errorMessage)")
+                throw AppError(message: "Server error (\(http.statusCode)): \(errorMessage)")
+            }
             logger.error("Server returned status code \(http.statusCode).")
             throw AppError(mastodon: .serverError(status: http.statusCode))
         }
@@ -349,7 +387,7 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
            }
            return nil
        }
-
+    
     // MARK: - ASWebAuthenticationPresentationContextProviding
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         UIApplication.shared.connectedScenes
@@ -357,12 +395,4 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
             .flatMap { $0.windows }
             .first { $0.isKeyWindow } ?? UIWindow()
     }
-}
-
-// MARK: - Notification Utility
-extension Notification.Name {
-    static let didReceiveOAuthCallback = Notification.Name("didReceiveOAuthCallback")
-    static let didAuthenticate = Notification.Name("didAuthenticate")
-    static let authenticationFailed = Notification.Name("authenticationFailed")
-    static let didSelectAccount = Notification.Name("didSelectAccount")
 }

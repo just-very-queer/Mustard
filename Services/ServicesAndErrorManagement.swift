@@ -10,6 +10,15 @@ import SwiftUI
 import OSLog
 import CoreLocation
 
+
+// MARK: - Notification.Name Extensions
+
+extension Notification.Name {
+    static let didAuthenticate = Notification.Name("didAuthenticate")
+    static let authenticationFailed = Notification.Name("authenticationFailed")
+    static let didReceiveOAuthCallback = Notification.Name("didReceiveOAuthCallback")
+}
+
 // MARK: - AppError
 
 struct AppError: Identifiable, Error {

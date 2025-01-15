@@ -10,6 +10,8 @@ import Combine
 import AuthenticationServices
 import OSLog
 
+
+
 @MainActor
 class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
 
@@ -34,7 +36,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     // MARK: - Public Methods
 
     /// Starts the OAuth flow for the selected server.
-
     func authenticate(to server: Server) async {
         guard !isAuthenticating else { return }
         isAuthenticating = true
@@ -67,7 +68,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         } catch {
             handleError(error)
             self.isAuthenticated = false
-            logger.error("Authentication failed: \(error.localizedDescription)")
+            logger.error("Authentication failed: \(error.localizedDescription, privacy: .public)")
         }
         self.isAuthenticating = false
     }
@@ -79,7 +80,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
 
         do {
             guard let token = try await mastodonService.retrieveAccessToken(),
-                  let instanceURL = try await mastodonService.retrieveInstanceURL(),
+                  let _ = try await mastodonService.retrieveInstanceURL(),
                   !token.isEmpty else {
                 alertError = AppError(mastodon: .missingCredentials, underlyingError: nil)
                 isAuthenticated = false
@@ -95,7 +96,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         } catch {
             handleError(error)
             self.isAuthenticated = false
-            logger.error("Authentication validation failed: \(error.localizedDescription)")
+            logger.error("Authentication validation failed: \(error.localizedDescription, privacy: .public)")
         }
         isAuthenticating = false
     }
@@ -113,7 +114,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             logger.info("User logged out successfully.")
         } catch {
             handleError(error)
-            logger.error("Logout failed: \(error.localizedDescription)")
+            logger.error("Logout failed: \(error.localizedDescription, privacy: .public)")
         }
         isAuthenticating = false
     }
@@ -131,7 +132,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             }
         } catch {
             alertError = AppError(mastodon: .invalidResponse, underlyingError: error)
-            logger.error("Failed to validate base URL: \(error.localizedDescription)")
+            logger.error("Failed to validate base URL: \(error.localizedDescription, privacy: .public)")
             return false
         }
     }
@@ -139,7 +140,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     // MARK: - Private Methods
 
     /// Starts the Web Authentication Session to retrieve the authorization code.
-
     private func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
         let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
         var components = URLComponents(url: authURL, resolvingAgainstBaseURL: false)!
@@ -158,21 +158,11 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             throw AppError(mastodon: .invalidResponse, underlyingError: nil)
         }
 
-        return try await withCheckedThrowingContinuation { [weak self] continuation in
-            guard let self = self else {
-                continuation.resume(throwing: AppError(mastodon: .unknown(status: -1), underlyingError: nil))
-                return
-            }
-
+        return try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
                 url: finalURL,
                 callbackURLScheme: redirectScheme
-            ) { [weak self] callbackURL, error in
-                guard let self = self else {
-                    continuation.resume(throwing: AppError(mastodon: .unknown(status: -1), underlyingError: nil))
-                    return
-                }
-                
+            ) { callbackURL, error in
                 if let error = error {
                     continuation.resume(throwing: AppError(mastodon: .oauthError(message: error.localizedDescription), underlyingError: error))
                     return
@@ -197,9 +187,8 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             self.webAuthSession = session
         }
     }
-    /// Handles errors by setting the alertError property.
-    // AuthenticationViewModel.swift
 
+    /// Handles errors by setting the alertError property.
     private func handleError(_ error: Error) {
         if let appError = error as? AppError {
             self.alertError = appError
@@ -208,15 +197,18 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
             switch decodingError {
             case .typeMismatch(let type, let context):
                 alertError = AppError(mastodon: .decodingError, underlyingError: decodingError)
-                logger.error("Decoding error: Type '\(type)' mismatch at \(context.codingPath).")
+                logger.error("Decoding error: Type '\(type)' mismatch at \(context.codingPath.map { $0.stringValue }.joined(separator: "."), privacy: .public).")
             case .valueNotFound(let type, let context):
                 alertError = AppError(mastodon: .decodingError, underlyingError: decodingError)
-                logger.error("Decoding error: Value '\(type)' not found at \(context.codingPath).")
+                logger.error("Decoding error: Value '\(type)' not found at \(context.codingPath.map { $0.stringValue }.joined(separator: "."), privacy: .public).")
             case .keyNotFound(let key, let context):
+                let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+                logger.error("Decoding error: Key '\(key.stringValue, privacy: .public)' not found at \(path, privacy: .public).")
                 alertError = AppError(mastodon: .decodingError, underlyingError: decodingError)
             case .dataCorrupted(let context):
+                let path = context.codingPath.map { $0.stringValue }.joined(separator: ".")
+                logger.error("Decoding error: Data corrupted at \(path, privacy: .public).")
                 alertError = AppError(mastodon: .decodingError, underlyingError: decodingError)
-                logger.error("Decoding error: Data corrupted at \(context.codingPath).")
             @unknown default:
                 alertError = AppError(mastodon: .unknown(status: -1), underlyingError: decodingError)
                 logger.error("Decoding error: Unknown decoding error.")
