@@ -6,24 +6,27 @@
 //
 
 import Foundation
+import Combine
 
-/// A mock service conforming to `MastodonServiceProtocol` for testing and previews.
+@MainActor
 class MockMastodonService: MastodonServiceProtocol {
+
     // MARK: - Properties
+    private let pageSize = 20
     var baseURL: URL? = URL(string: "https://example.com")
     var accessToken: String? = "mockAccessToken123"
-
-    // Mock data
-    var mockAccounts: [Account]
-    var mockPosts: [Post]
-    var mockTrendingPosts: [Post]
     var shouldSucceed: Bool
+    private(set) var mockAccounts: [Account]
+    private(set) var mockPosts: [Post]
+    private(set) var mockTrendingPosts: [Post]
+    var tokenCreationDate: Date?
 
-    // MARK: - Initializer
+    
+    // MARK: - Initialization
     init(
         shouldSucceed: Bool = true,
-        mockPosts: [Post]? = nil,
         mockAccounts: [Account]? = nil,
+        mockPosts: [Post]? = nil,
         mockTrendingPosts: [Post]? = nil
     ) {
         self.shouldSucceed = shouldSucceed
@@ -31,116 +34,114 @@ class MockMastodonService: MastodonServiceProtocol {
         self.mockPosts = mockPosts ?? MockMastodonService.generateMockPosts(from: self.mockAccounts, count: 20)
         self.mockTrendingPosts = mockTrendingPosts ?? MockMastodonService.generateMockPosts(from: self.mockAccounts, count: 5)
     }
-
+    
     // MARK: - MastodonServiceProtocol Methods
+    
+    // MARK: Initialization
     func ensureInitialized() async throws {
-        guard shouldSucceed else {
-            throw MockError.failedToInitialize
-        }
+        // No-op in the mock implementation
     }
-
+    
+    // MARK: Authentication
+    func isAuthenticated() async throws -> Bool {
+        return shouldSucceed && baseURL != nil && accessToken != nil
+    }
+    
+    // MARK: Timeline Methods
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
-        guard shouldSucceed else { throw MockError.failedToFetchTimeline }
-        return mockPosts
+        try validateData(mockPosts, errorMessage: "Failed to fetch timeline.")
     }
-
+    
     func fetchTimeline(page: Int, useCache: Bool) async throws -> [Post] {
-        guard shouldSucceed else { throw MockError.failedToFetchTimelinePage }
-        let pageSize = 10
-        let startIndex = (page - 1) * pageSize
-        guard startIndex < mockPosts.count else { return [] }
-        return Array(mockPosts[startIndex..<min(startIndex + pageSize, mockPosts.count)])
+        let start = (page - 1) * pageSize
+        guard start < mockPosts.count else { return [] }
+        let end = min(start + pageSize, mockPosts.count)
+        return try validateData(Array(mockPosts[start..<end]), errorMessage: "Failed to fetch timeline page.")
     }
-
-    func clearTimelineCache() async throws {
-        guard shouldSucceed else { throw MockError.failedToClearTimelineCache }
+    
+    func clearTimelineCache() {
         mockPosts.removeAll()
     }
-
+    
     func loadTimelineFromDisk() async throws -> [Post] {
-        guard shouldSucceed else { throw MockError.failedToLoadTimelineFromDisk }
-        return mockPosts
+        try validateData(mockPosts, errorMessage: "Failed to load timeline from disk.")
     }
-
+    
     func saveTimelineToDisk(_ posts: [Post]) async throws {
-        guard shouldSucceed else { throw MockError.failedToSaveTimelineToDisk }
+        guard shouldSucceed else { throw AppError(message: "Failed to save timeline to disk.") }
         mockPosts = posts
     }
-
+    
     func backgroundRefreshTimeline() async {
-        if shouldSucceed {
-            let newPosts = MockMastodonService.generateMockPosts(from: mockAccounts, count: 5)
-            mockPosts.append(contentsOf: newPosts)
-        }
+        guard shouldSucceed else { return }
+        mockPosts.append(contentsOf: MockMastodonService.generateMockPosts(from: mockAccounts, count: 5))
     }
-
+    
     func fetchTrendingPosts() async throws -> [Post] {
-        guard shouldSucceed else { throw MockError.failedToFetchTrendingPosts }
-        return mockTrendingPosts
+        try validateData(mockTrendingPosts, errorMessage: "Failed to fetch trending posts.")
     }
-
-    func validateToken() async throws {
-        guard shouldSucceed, let token = accessToken, !token.isEmpty else { throw MockError.invalidToken }
-    }
-
-    func saveAccessToken(_ token: String) async throws {
-        guard shouldSucceed else { throw MockError.failedToSaveAccessToken }
-        accessToken = token
-    }
-
-    func clearAccessToken() async throws {
-        guard shouldSucceed else { throw MockError.failedToClearAccessToken }
-        accessToken = nil
-    }
-
-    func retrieveAccessToken() async throws -> String? {
-        guard shouldSucceed else { throw MockError.failedToRetrieveAccessToken }
-        return accessToken
-    }
-
-    func retrieveInstanceURL() async throws -> URL? {
-        guard shouldSucceed else { throw MockError.failedToRetrieveInstanceURL }
-        return baseURL
-    }
-
-    func toggleLike(postID: String) async throws {
-        guard shouldSucceed, let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
-            throw MockError.postNotFound
-        }
-        mockPosts[index].isFavourited.toggle()
-        mockPosts[index].favouritesCount += mockPosts[index].isFavourited ? 1 : -1
-    }
-
-    func toggleRepost(postID: String) async throws {
-        guard shouldSucceed, let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
-            throw MockError.postNotFound
-        }
-        mockPosts[index].isReblogged.toggle()
-        mockPosts[index].reblogsCount += mockPosts[index].isReblogged ? 1 : -1
-    }
-
-    func comment(postID: String, content: String) async throws {
-        guard shouldSucceed, let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
-            throw MockError.postNotFound
-        }
-        mockPosts[index].repliesCount += 1
-    }
-
+    
+    // MARK: User Methods
     func fetchCurrentUser() async throws -> User {
         guard shouldSucceed, let account = mockAccounts.first else {
-            throw MockError.failedToFetchCurrentUser
+            throw AppError(message: "Failed to fetch current user.")
         }
         return User(
             id: account.id,
             username: account.username,
             displayName: account.displayName,
             avatar: account.avatar,
-            url: account.url // Changed from instanceURL
+            url: account.url
         )
     }
-
+    
+    // MARK: Authentication Methods
+    func validateToken() async throws {
+        guard shouldSucceed, accessToken != nil else { throw AppError(message: "Invalid token.") }
+    }
+    
+    func saveAccessToken(_ token: String) async throws {
+        guard shouldSucceed else { throw AppError(message: "Failed to save access token.") }
+        accessToken = token
+    }
+    
+    func clearAccessToken() async throws {
+        guard shouldSucceed else { throw AppError(message: "Failed to clear access token.") }
+        accessToken = nil
+    }
+    
+    func retrieveAccessToken() async throws -> String? {
+        try validateData(accessToken, errorMessage: "Failed to retrieve access token.")
+    }
+    
+    func retrieveInstanceURL() async throws -> URL? {
+        try validateData(baseURL, errorMessage: "Failed to retrieve instance URL.")
+    }
+    
+    // MARK: Post Actions
+    func toggleLike(postID: String) async throws {
+        try modifyPost(postID: postID, action: "like") { post in
+            post.isFavourited.toggle()
+            post.favouritesCount += post.isFavourited ? 1 : -1
+        }
+    }
+    
+    func toggleRepost(postID: String) async throws {
+        try modifyPost(postID: postID, action: "repost") { post in
+            post.isReblogged.toggle()
+            post.reblogsCount += post.isReblogged ? 1 : -1
+        }
+    }
+    
+    func comment(postID: String, content: String) async throws {
+        try modifyPost(postID: postID, action: "comment") { post in
+            post.repliesCount += 1
+        }
+    }
+    
+    // MARK: OAuth Methods
     func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
-        guard shouldSucceed else { throw MockError.failedToRegisterOAuthApp }
+        guard shouldSucceed else { throw AppError(message: "Failed to register OAuth application.") }
         return OAuthConfig(
             clientID: "mockClientID",
             clientSecret: "mockClientSecret",
@@ -150,12 +151,24 @@ class MockMastodonService: MastodonServiceProtocol {
     }
 
     func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
-        guard shouldSucceed else { throw MockError.failedToExchangeCode }
+        guard shouldSucceed else { throw AppError(message: "Failed to exchange authorization code.") }
         accessToken = "mockAccessTokenAfterExchange"
     }
+    
+    func isTokenNearExpiry() -> Bool {
+           guard let creationDate = tokenCreationDate else { return true }
+           let expiryThreshold = TimeInterval(3600 * 24 * 80)
+           return Date().timeIntervalSince(creationDate) > expiryThreshold
+       }
 
+       func reauthenticate(config: OAuthConfig, instanceURL: URL) async throws {
+           guard shouldSucceed else { throw AppError(message: "Failed to reauthenticate.") }
+           accessToken = "mockNewAccessToken"
+           tokenCreationDate = Date()
+       }
+    
     func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {
-        guard shouldSucceed else { throw MockError.failedToStreamTimeline }
+        guard shouldSucceed else { throw AppError(message: "Failed to stream timeline.") }
         return AsyncThrowingStream { continuation in
             for post in mockPosts {
                 continuation.yield(post)
@@ -163,8 +176,25 @@ class MockMastodonService: MastodonServiceProtocol {
             continuation.finish()
         }
     }
-
-    // MARK: - Mock Data Generation
+    
+    // MARK: - Helpers
+    
+    private func validateData<T>(_ data: T?, errorMessage: String) throws -> T {
+        guard shouldSucceed, let data = data else { throw AppError(message: errorMessage) }
+        return data
+    }
+    
+    private func modifyPost(postID: String, action: String, update: (inout Post) -> Void) throws {
+        guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
+            throw AppError(mastodon: .postNotFound)
+        }
+        var post = mockPosts[index]
+        update(&post)
+        mockPosts[index] = post
+    }
+    
+    // MARK: - Static Mock Data Generators
+    
     private static func generateMockAccounts() -> [Account] {
         let baseURL = URL(string: "https://example.com")!
         return [
@@ -174,7 +204,7 @@ class MockMastodonService: MastodonServiceProtocol {
                 displayName: "User One",
                 avatar: baseURL.appendingPathComponent("avatar1.png"),
                 acct: "@user1",
-                url: baseURL // Changed from instanceURL
+                url: baseURL
             ),
             Account(
                 id: "a2",
@@ -182,11 +212,11 @@ class MockMastodonService: MastodonServiceProtocol {
                 displayName: "User Two",
                 avatar: baseURL.appendingPathComponent("avatar2.png"),
                 acct: "@user2",
-                url: baseURL // Changed from instanceURL
+                url: baseURL
             )
         ]
     }
-
+    
     private static func generateMockPosts(from accounts: [Account], count: Int) -> [Post] {
         return (1...count).compactMap { i in
             guard let account = accounts.randomElement() else { return nil }
@@ -204,7 +234,7 @@ class MockMastodonService: MastodonServiceProtocol {
             )
         }
     }
-
+    
     // MARK: - Mock Error
     enum MockError: Error, LocalizedError {
         case failedToFetchTimeline
@@ -226,5 +256,54 @@ class MockMastodonService: MastodonServiceProtocol {
         case postNotFound
         case failedToInitialize
         case failedToFetchCurrentUser
+
+        var errorDescription: String? {
+            switch self {
+            case .failedToFetchTimeline:
+                return "Failed to fetch timeline."
+            case .failedToFetchTimelinePage:
+                return "Failed to fetch timeline page."
+            case .failedToClearTimelineCache:
+                return "Failed to clear timeline cache."
+            case .failedToLoadTimelineFromDisk:
+                return "Failed to load timeline from disk."
+            case .failedToSaveTimelineToDisk:
+                return "Failed to save timeline to disk."
+            case .failedToFetchTrendingPosts:
+                return "Failed to fetch trending posts."
+            case .failedToSaveAccessToken:
+                return "Failed to save access token."
+            case .failedToClearAccessToken:
+                return "Failed to clear access token."
+            case .failedToRetrieveAccessToken:
+                return "Failed to retrieve access token."
+            case .failedToRetrieveInstanceURL:
+                return "Failed to retrieve instance URL."
+            case .failedToToggleLike:
+                return "Failed to toggle like status."
+            case .failedToToggleRepost:
+                return "Failed to toggle repost status."
+            case .failedToExchangeCode:
+                return "Failed to exchange authorization code."
+            case .failedToRegisterOAuthApp:
+                return "Failed to register OAuth application."
+            case .failedToStreamTimeline:
+                return "Failed to stream timeline."
+            case .invalidToken:
+                return "Invalid or missing access token."
+            case .postNotFound:
+                return "Post not found."
+            case .failedToInitialize:
+                return "Service initialization failed."
+            case .failedToFetchCurrentUser:
+                return "Failed to fetch current user."
+            }
+        }
+        
+    }
+    
+    func authenticate() async {
+        self.baseURL = URL(string: "https://mastodon.social")!
+        self.accessToken = "mockAccessToken"
     }
 }

@@ -54,28 +54,16 @@ struct ContentView: View {
                     )
                 }
             } else {
+                // If not authenticated, show the AuthenticationView
                 NavigationStack {
                     AuthenticationView()
                         .environmentObject(authViewModel)
-                        .navigationTitle("Sign In")
-                }
-                .onOpenURL { url in
-                    NotificationCenter.default.post(
-                        name: .didReceiveOAuthCallback,
-                        object: nil,
-                        userInfo: ["url": url]
-                    )
-                }
-                .alert(item: $authViewModel.alertError) { error in
-                    Alert(
-                        title: Text("Authentication Error"),
-                        message: Text(error.message),
-                        dismissButton: .default(Text("OK"))
-                    )
+                        .environmentObject(locationManager)
                 }
             }
         }
         .onAppear {
+            // Check authentication status on view appearance
             Task {
                 await authViewModel.validateAuthentication()
             }
@@ -87,7 +75,7 @@ struct ContentView: View {
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
         // Initialize Mock Service for Preview
-        let mockService = MockService(shouldSucceed: true)
+        let mockService = MockMastodonService(shouldSucceed: true)
 
         // Initialize Model Container with Required Models
         let container: ModelContainer
@@ -99,8 +87,8 @@ struct ContentView_Previews: PreviewProvider {
 
         // Initialize ViewModels with Mock Service and Context
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
-        let timelineViewModel = TimelineViewModel(mastodonService: mockService, authViewModel: authViewModel)
-        let locationManager = LocationManager()
+        let locationManager = LocationManager() // Create locationManager instance
+        let timelineViewModel = TimelineViewModel(mastodonService: mockService, authViewModel: authViewModel, locationManager: locationManager) // Pass locationManager here
 
         // Populate ViewModels with Mock Data
         timelineViewModel.posts = mockService.mockPosts
@@ -109,7 +97,7 @@ struct ContentView_Previews: PreviewProvider {
         return ContentView()
             .environmentObject(authViewModel)
             .environmentObject(timelineViewModel)
-            .environmentObject(locationManager)
+            .environmentObject(locationManager)  // Pass locationManager here
             .modelContainer(container)
     }
 }

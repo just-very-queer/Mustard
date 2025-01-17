@@ -6,8 +6,8 @@
 //
 
 import SwiftUI
-import SwiftData
 import OSLog
+import SwiftData
 
 @main
 struct MustardApp: App {
@@ -15,7 +15,6 @@ struct MustardApp: App {
 
     // MARK: - ViewModels
     @StateObject private var authViewModel: AuthenticationViewModel
-    @StateObject private var timelineViewModel: TimelineViewModel
     @StateObject private var locationManager = LocationManager()
 
     // MARK: - SwiftData container
@@ -32,84 +31,33 @@ struct MustardApp: App {
         }
 
         // Initialize authViewModel first
-        let mockService = MockMastodonService(shouldSucceed: true) // Use MockService for previews/testing
-        let authVM = AuthenticationViewModel(mastodonService: mockService)
+        let authVM = AuthenticationViewModel(mastodonService: MastodonService.shared)
         _authViewModel = StateObject(wrappedValue: authVM)
-
-        // Initialize timelineViewModel with authViewModel
-        let timelineVM = TimelineViewModel(
-            mastodonService: mockService,
-            authViewModel: authVM
-        )
-        _timelineViewModel = StateObject(wrappedValue: timelineVM)
     }
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if authViewModel.isAuthenticated {
-                    // Main App with Tabs
-                    TabView {
-                        // Home Tab
-                        NavigationStack {
-                            HomeView()
-                                .environmentObject(authViewModel)
-                                .environmentObject(timelineViewModel)
-                                .environmentObject(locationManager)
-                                .modelContainer(container)
-                        }
-                        .tabItem {
-                            Label("Home", systemImage: "house")
-                        }
-
-                        // Settings Tab
-                        NavigationStack {
-                            SettingsView()
-                                .environmentObject(authViewModel)
-                                .environmentObject(timelineViewModel)
-                                .environmentObject(locationManager)
-                                .modelContainer(container)
-                        }
-                        .tabItem {
-                            Label("Settings", systemImage: "gearshape")
-                        }
-                    }
-                    .onOpenURL { url in
-                        NotificationCenter.default.post(
-                            name: .didReceiveOAuthCallback,
-                            object: nil,
-                            userInfo: ["url": url]
-                        )
-                        print("[MustardApp] Received URL via onOpenURL: \(url.absoluteString)")
-                    }
-                    .alert(item: $timelineViewModel.alertError) { (error: AppError) in
-                        Alert(
-                            title: Text("Error"),
-                            message: Text(error.message),
-                            dismissButton: .default(Text("OK"))
-                        )
-                    }
-                } else {
-                    // Authentication Flow: Authentication View
-                    AuthenticationView()
-                        .environmentObject(authViewModel)
-                        .environmentObject(timelineViewModel)
-                        .environmentObject(locationManager)
-                        .modelContainer(container)
-                        .alert(item: $authViewModel.alertError) { (error: AppError) in
-                            Alert(
-                                title: Text("Authentication Error"),
-                                message: Text(error.message),
-                                dismissButton: .default(Text("OK"))
-                            )
-                        }
-                }
+            // Authentication Flow: Authentication View is now the root view
+            NavigationStack {
+                AuthenticationView()
+                    .environmentObject(authViewModel)
+                    .environmentObject(locationManager)
+                    .modelContainer(container)
             }
             .onAppear {
                 Task {
                     await authViewModel.validateAuthentication()
                 }
                 print("[MustardApp] App appeared. Validating authentication.")
+            }
+            .onReceive(authViewModel.$isAuthenticated) { isAuthenticated in
+                // When isAuthenticated changes, we might need to re-initialize
+                // the TimelineViewModel if it depends on authentication state.
+                if isAuthenticated {
+                    print("[MustardApp] User is authenticated. Setting up main view.")
+                } else {
+                    print("[MustardApp] User is not authenticated. Showing AuthenticationView.")
+                }
             }
         }
     }

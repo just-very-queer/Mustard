@@ -8,6 +8,7 @@
 import SwiftUI
 import OSLog
 import SwiftData
+import CoreLocation
 
 struct HomeView: View {
     // MARK: - Environment Objects
@@ -17,12 +18,20 @@ struct HomeView: View {
 
     // For infinite scroll detection
     @State private var isRequestingMore = false
+    @State private var isShowingFullScreenImage = false
+    @State private var selectedImageURL: URL?
+
+    // Logger
+    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "HomeView")
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    weatherHeader
+                    // Show weather only if user is authenticated
+                    if authViewModel.isAuthenticated {
+                        weatherHeader
+                    }
                     topPostsSection
                     timelineSection
                 }
@@ -31,6 +40,14 @@ struct HomeView: View {
             .navigationTitle("Home")
             .onAppear {
                 initializeData()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .didUpdateLocation)) { notification in
+                // Only fetch weather if user is authenticated
+                if authViewModel.isAuthenticated, let location = notification.userInfo?["location"] as? CLLocation {
+                    Task {
+                        await timelineViewModel.fetchWeather(for: location)
+                    }
+                }
             }
             .alert(item: $timelineViewModel.alertError) { error in
                 Alert(
@@ -42,6 +59,11 @@ struct HomeView: View {
             .toolbar {
                 logoutButton
             }
+            .sheet(isPresented: $isShowingFullScreenImage) {
+                if let imageURL = selectedImageURL {
+                    FullScreenImageView(imageURL: imageURL, isPresented: $isShowingFullScreenImage)
+                }
+            }
         }
     }
 
@@ -51,6 +73,21 @@ struct HomeView: View {
             if let weather = timelineViewModel.weather {
                 WeatherBarView(weather: weather)
                     .padding(.top)
+                    .transition(.opacity) // Add a transition effect
+            } else if authViewModel.isAuthenticated {
+                // Only prompt for location if authenticated
+                Button(action: {
+                    locationManager.requestLocationPermission()
+                }) {
+                    Text("Enable Location to Show Weather")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.blue)
+                        .cornerRadius(10)
+                        .shadow(radius: 3)
+                }
+                .padding(.top)
             }
         }
     }
@@ -59,27 +96,33 @@ struct HomeView: View {
     private var topPostsSection: some View {
         Group {
             if !timelineViewModel.topPosts.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading) {
                     Text("Here’s Today’s Top Mastodon Posts")
-                        .font(.headline)
-                        .padding(.leading, 16)
+                        .font(.title2)
+                        .bold()
+                        .padding(.leading)
+                        .padding(.top)
 
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 16) {
+                        HStack(spacing: 10) {
                             ForEach(timelineViewModel.topPosts) { post in
                                 NavigationLink(destination: PostView(post: post)) {
                                     PostView(post: post)
                                         .frame(width: 300)
+                                        .cornerRadius(15)
+                                        .shadow(radius: 5)
                                 }
                                 .buttonStyle(PlainButtonStyle())
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal)
                     }
                 }
+                .padding(.bottom)
                 .background(Color(UIColor.secondarySystemBackground))
-                .cornerRadius(12)
-                .padding(.horizontal)
+                .cornerRadius(20)
+                .shadow(radius: 5)
+                .padding(.horizontal, 5)
             }
         }
     }
@@ -96,18 +139,30 @@ struct HomeView: View {
                     .foregroundColor(.gray)
                     .padding()
             } else {
-                LazyVStack {
+                LazyVStack(spacing: 15) {
                     ForEach(timelineViewModel.posts) { post in
                         NavigationLink(destination: PostView(post: post)) {
                             PostView(post: post)
+                                .cornerRadius(15)
+                                .shadow(radius: 3)
                         }
                         .buttonStyle(PlainButtonStyle())
                         .onAppear {
                             loadMorePostsIfNeeded(currentPost: post)
                         }
+                        .contextMenu {
+                            if let firstImage = post.mediaAttachments.first?.url {
+                                Button(action: {
+                                    selectedImageURL = firstImage
+                                    isShowingFullScreenImage = true
+                                }) {
+                                    Label("View Image", systemImage: "photo")
+                                }
+                            }
+                        }
                     }
 
-                    if timelineViewModel.isLoading {
+                    if timelineViewModel.isFetchingMore {
                         HStack {
                             Spacer()
                             ProgressView("Loading more...")
@@ -116,6 +171,7 @@ struct HomeView: View {
                         .padding()
                     }
                 }
+                .padding(.top, 5) // Add some top padding to the LazyVStack
             }
         }
     }
@@ -129,7 +185,8 @@ struct HomeView: View {
                 }
             }) {
                 Image(systemName: "arrow.backward.circle.fill")
-                    .imageScale(.large)
+                    .font(.title2)
+                    .foregroundColor(.blue)
             }
             .accessibilityLabel("Logout")
         }
@@ -137,11 +194,12 @@ struct HomeView: View {
 
     // MARK: - Helper Functions
     private func initializeData() {
+        // Only initialize data if authenticated
         if authViewModel.isAuthenticated {
             Task {
                 await timelineViewModel.fetchTopPosts()
                 if let location = locationManager.userLocation {
-                    timelineViewModel.fetchWeather(for: location)
+                    await timelineViewModel.fetchWeather(for: location)
                 }
             }
         }
@@ -158,33 +216,61 @@ struct HomeView: View {
 }
 
 // MARK: - WeatherBarView
+
 struct WeatherBarView: View {
     let weather: WeatherData
 
     var body: some View {
         HStack {
-            Text(weather.cityName).font(.headline)
+            VStack(alignment: .leading) {
+                Text(weather.cityName)
+                    .font(.title2)
+                    .bold()
+                    .foregroundColor(.primary)
+                Text(weather.description.capitalized)
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+            }
             Spacer()
             Text("\(weather.temperature, specifier: "%.1f")°C")
-            Text(weather.description).font(.caption).foregroundColor(.gray)
+                .font(.largeTitle)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
         }
         .padding()
-        .background(Color(UIColor.systemBackground))
-        .cornerRadius(8)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color(UIColor.secondarySystemBackground))
+                .shadow(color: .gray.opacity(0.3), radius: 10, x: 0, y: 5)
+        )
     }
 }
 
 // MARK: - Preview
+
 struct HomeView_Preview: PreviewProvider {
     static var previews: some View {
         let mockService = MockMastodonService(shouldSucceed: true)
         let authViewModel = AuthenticationViewModel(mastodonService: mockService)
-        let timelineViewModel = TimelineViewModel(mastodonService: mockService, authViewModel: authViewModel)
         let locationManager = LocationManager()
+
+        // Initialize the TimelineViewModel with locationManager
+        let timelineViewModel = TimelineViewModel(
+            mastodonService: mockService,
+            authViewModel: authViewModel,
+            locationManager: locationManager // Add locationManager here
+        )
+
+        // Simulate fetched weather data
+        timelineViewModel.weather = WeatherData(
+            temperature: 23.5,
+            description: "Clear sky",
+            cityName: "San Francisco"
+        )
 
         return HomeView()
             .environmentObject(authViewModel)
             .environmentObject(timelineViewModel)
-            .environmentObject(locationManager)
+            .environmentObject(locationManager)  // Inject locationManager here
     }
 }

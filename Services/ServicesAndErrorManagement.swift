@@ -10,13 +10,15 @@ import SwiftUI
 import OSLog
 import CoreLocation
 
-
 // MARK: - Notification.Name Extensions
 
 extension Notification.Name {
     static let didAuthenticate = Notification.Name("didAuthenticate")
     static let authenticationFailed = Notification.Name("authenticationFailed")
     static let didReceiveOAuthCallback = Notification.Name("didReceiveOAuthCallback")
+    static let didUpdateLocation = Notification.Name("didUpdateLocation")
+    static let didDecodePostLocation = Notification.Name("didDecodePostLocatior")
+    static let didRequestWeatherFetch = Notification.Name("didRequestWeatherFetch")
 }
 
 // MARK: - AppError
@@ -26,13 +28,14 @@ struct AppError: Identifiable, Error {
     let type: ErrorType
     let underlyingError: Error?
     let timestamp: Date = Date()
-
+    
     enum ErrorType {
         case generic(String)
         case mastodon(MastodonError)
         case authentication(AuthenticationError)
+        case weather(WeatherError)
     }
-
+    
     enum MastodonError: Equatable {
         case missingCredentials
         case invalidResponse
@@ -62,31 +65,38 @@ struct AppError: Identifiable, Error {
         case failedToExchangeCode
         case failedToStreamTimeline
         case invalidAuthorizationCode
-
+        case authError
+        case WeatherError
+        case rateLimitExceeded
+        case missingOrClearedCredentials
+        case cacheNotFound
+        case noCacheAvailable
+        
+        
         static func == (lhs: MastodonError, rhs: MastodonError) -> Bool {
             switch (lhs, rhs) {
             case (.missingCredentials, .missingCredentials),
-                 (.invalidResponse, .invalidResponse),
-                 (.badRequest, .badRequest),
-                 (.unauthorized, .unauthorized),
-                 (.forbidden, .forbidden),
-                 (.notFound, .notFound),
-                 (.failedToFetchTimeline, .failedToFetchTimeline),
-                 (.failedToFetchTimelinePage, .failedToFetchTimelinePage),
-                 (.failedToClearTimelineCache, .failedToClearTimelineCache),
-                 (.failedToLoadTimelineFromDisk, .failedToLoadTimelineFromDisk),
-                 (.failedToSaveTimelineToDisk, .failedToSaveTimelineToDisk),
-                 (.failedToFetchTrendingPosts, .failedToFetchTrendingPosts),
-                 (.invalidToken, .invalidToken),
-                 (.failedToSaveAccessToken, .failedToSaveAccessToken),
-                 (.failedToClearAccessToken, .failedToClearAccessToken),
-                 (.failedToRetrieveAccessToken, .failedToRetrieveAccessToken),
-                 (.failedToRetrieveInstanceURL, .failedToRetrieveInstanceURL),
-                 (.postNotFound, .postNotFound),
-                 (.failedToRegisterOAuthApp, .failedToRegisterOAuthApp),
-                 (.failedToExchangeCode, .failedToExchangeCode),
-                 (.failedToStreamTimeline, .failedToStreamTimeline),
-                 (.invalidAuthorizationCode, .invalidAuthorizationCode):
+                (.invalidResponse, .invalidResponse),
+                (.badRequest, .badRequest),
+                (.unauthorized, .unauthorized),
+                (.forbidden, .forbidden),
+                (.notFound, .notFound),
+                (.failedToFetchTimeline, .failedToFetchTimeline),
+                (.failedToFetchTimelinePage, .failedToFetchTimelinePage),
+                (.failedToClearTimelineCache, .failedToClearTimelineCache),
+                (.failedToLoadTimelineFromDisk, .failedToLoadTimelineFromDisk),
+                (.failedToSaveTimelineToDisk, .failedToSaveTimelineToDisk),
+                (.failedToFetchTrendingPosts, .failedToFetchTrendingPosts),
+                (.invalidToken, .invalidToken),
+                (.failedToSaveAccessToken, .failedToSaveAccessToken),
+                (.failedToClearAccessToken, .failedToClearAccessToken),
+                (.failedToRetrieveAccessToken, .failedToRetrieveAccessToken),
+                (.failedToRetrieveInstanceURL, .failedToRetrieveInstanceURL),
+                (.postNotFound, .postNotFound),
+                (.failedToRegisterOAuthApp, .failedToRegisterOAuthApp),
+                (.failedToExchangeCode, .failedToExchangeCode),
+                (.failedToStreamTimeline, .failedToStreamTimeline),
+                (.invalidAuthorizationCode, .invalidAuthorizationCode):
                 return true
             case (.serverError(let lhsStatus), .serverError(let rhsStatus)):
                 return lhsStatus == rhsStatus
@@ -99,32 +109,49 @@ struct AppError: Identifiable, Error {
             }
         }
     }
-
+    
     enum AuthenticationError: Equatable {
         case invalidAuthorizationCode
         case webAuthSessionFailed
         case noAuthorizationCode
         case unknown
     }
-
+    
+    // WeatherError: Custom error for weather-related issues.
+    enum WeatherError: Error {
+        case invalidKey
+        case invalidURL
+        case badResponse
+    }
+    
+    
     // MARK: - Initializers
     init(message: String, underlyingError: Error? = nil) {
         self.type = .generic(message)
         self.underlyingError = underlyingError
     }
-
+    
     init(mastodon: MastodonError, underlyingError: Error? = nil) {
         self.type = .mastodon(mastodon)
         self.underlyingError = underlyingError
     }
-
+    
     init(authentication: AuthenticationError, underlyingError: Error? = nil) {
         self.type = .authentication(authentication)
         self.underlyingError = underlyingError
+        
     }
-
+    init(type: ErrorType, underlyingError: Error? = nil) {
+        self.type = type
+        self.underlyingError = underlyingError
+    }
+    
+    init(weather: WeatherError, underlyingError: Error? = nil) {
+        self.type = .mastodon(.WeatherError) // This associates the WeatherError as part of MastodonError
+        self.underlyingError = underlyingError
+    }
     // MARK: - Computed Properties
-
+    
     var message: String {
         switch type {
         case .generic(let msg):
@@ -133,9 +160,11 @@ struct AppError: Identifiable, Error {
             return describeMastodonError(error)
         case .authentication(let authError):
             return describeAuthenticationError(authError)
+        case .weather:
+            return "Weather-related error occurred." // Return a string message
         }
     }
-
+    
     private func describeMastodonError(_ error: MastodonError) -> String {
         switch error {
         case .missingCredentials:
@@ -194,9 +223,20 @@ struct AppError: Identifiable, Error {
             return "Failed to stream timeline."
         case .invalidAuthorizationCode:
             return "Invalid authorization code provided."
+        case .authError:
+            return "Authentication Error"
+        case .WeatherError:
+            return "Weather-related error occurred."
+        case .rateLimitExceeded:
+            return "Rate Limit Exceeded"
+        case .missingOrClearedCredentials:
+            return "missingOrClearedCredentials"
+        case .cacheNotFound:
+            return "Cached was not saved"
+        case .noCacheAvailable:
+            return "noCacheAvailable"
         }
     }
-
     private func describeAuthenticationError(_ error: AuthenticationError) -> String {
         switch error {
             
@@ -210,7 +250,7 @@ struct AppError: Identifiable, Error {
             return "An unknown authentication error occurred."
         }
     }
-
+    
     var isRecoverable: Bool {
         switch type {
         case .generic:
@@ -226,9 +266,11 @@ struct AppError: Identifiable, Error {
             }
         case .authentication:
             return true
+        case .weather:
+            return true // Assuming weather errors are recoverable
         }
     }
-
+    
     var recoverySuggestion: String? {
         switch type {
         case .generic:
@@ -253,250 +295,17 @@ struct AppError: Identifiable, Error {
             case .unknown:
                 return "An unexpected error occurred during authentication."
             }
-        }
-    }
-    
-}
-
-// MARK: - LocationManager
-
-final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
-    @Published var userLocation: CLLocation?
-    private let manager = CLLocationManager()
-
-    override init() {
-        super.init()
-        manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-    }
-
-    func requestLocationPermission() {
-        switch manager.authorizationStatus {
-        case .notDetermined:
-            manager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse, .authorizedAlways:
-            manager.requestLocation()
-        default:
-            print("Location access denied or restricted.")
-        }
-    }
-
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        userLocation = locations.first
-    }
-
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        print("Failed to update location: \(error.localizedDescription)")
-    }
-}
-
-// MARK: - MockService
-
-@MainActor
-class MockService: MastodonServiceProtocol {
-    // MARK: - Properties
-    private let pageSize = 20
-    var baseURL: URL? = URL(string: "https://example.com")
-    var accessToken: String? = "mockAccessToken123"
-    var shouldSucceed: Bool
-    private(set) var mockAccounts: [Account]
-    private(set) var mockPosts: [Post]
-    private(set) var mockTrendingPosts: [Post]
-
-    // MARK: - Initialization
-    init(
-        shouldSucceed: Bool = true,
-        mockAccounts: [Account]? = nil,
-        mockPosts: [Post]? = nil,
-        mockTrendingPosts: [Post]? = nil
-    ) {
-        self.shouldSucceed = shouldSucceed
-        self.mockAccounts = mockAccounts ?? MockService.generateMockAccounts()
-        self.mockPosts = mockPosts ?? MockService.generateMockPosts(from: self.mockAccounts, count: 20)
-        self.mockTrendingPosts = mockTrendingPosts ?? MockService.generateMockPosts(from: self.mockAccounts, count: 5)
-    }
-
-    // MARK: - MastodonServiceProtocol Methods
-
-    // MARK: Initialization
-    func ensureInitialized() async {
-        // No-op in the mock implementation
-    }
-
-    // MARK: Timeline Methods
-    func fetchTimeline(useCache: Bool) async throws -> [Post] {
-        try validateData(mockPosts, errorMessage: "Failed to fetch timeline.")
-    }
-
-    func fetchTimeline(page: Int, useCache: Bool) async throws -> [Post] {
-        let start = (page - 1) * pageSize
-        guard start < mockPosts.count else { return [] }
-        let end = min(start + pageSize, mockPosts.count)
-        return try validateData(Array(mockPosts[start..<end]), errorMessage: "Failed to fetch timeline page.")
-    }
-
-    func clearTimelineCache() async throws {
-        guard shouldSucceed else { throw AppError(message: "Failed to clear timeline cache.") }
-        mockPosts.removeAll()
-    }
-
-    func loadTimelineFromDisk() async throws -> [Post] {
-        try validateData(mockPosts, errorMessage: "Failed to load timeline from disk.")
-    }
-
-    func saveTimelineToDisk(_ posts: [Post]) async throws {
-        guard shouldSucceed else { throw AppError(message: "Failed to save timeline to disk.") }
-        mockPosts = posts
-    }
-
-    func backgroundRefreshTimeline() async {
-        guard shouldSucceed else { return }
-        mockPosts.append(contentsOf: MockService.generateMockPosts(from: mockAccounts, count: 5))
-    }
-
-    func fetchTrendingPosts() async throws -> [Post] {
-        try validateData(mockTrendingPosts, errorMessage: "Failed to fetch trending posts.")
-    }
-
-    // MARK: User Methods
-    func fetchCurrentUser() async throws -> User {
-        guard shouldSucceed, let account = mockAccounts.first else {
-            throw AppError(message: "Failed to fetch current user.")
-        }
-        return User(
-            id: account.id,
-            username: account.username,
-            displayName: account.displayName,
-            avatar: account.avatar,
-            url: account.url
-        )
-    }
-
-    // MARK: Authentication Methods
-    func validateToken() async throws {
-        guard shouldSucceed, accessToken != nil else { throw AppError(message: "Invalid token.") }
-    }
-
-    func saveAccessToken(_ token: String) async throws {
-        guard shouldSucceed else { throw AppError(message: "Failed to save access token.") }
-        accessToken = token
-    }
-
-    func clearAccessToken() async throws {
-        guard shouldSucceed else { throw AppError(message: "Failed to clear access token.") }
-        accessToken = nil
-    }
-
-    func retrieveAccessToken() async throws -> String? {
-        try validateData(accessToken, errorMessage: "Failed to retrieve access token.")
-    }
-
-    func retrieveInstanceURL() async throws -> URL? {
-        try validateData(baseURL, errorMessage: "Failed to retrieve instance URL.")
-    }
-
-    // MARK: Post Actions
-    func toggleLike(postID: String) async throws {
-        try modifyPost(postID: postID, action: "like") { post in
-            post.isFavourited.toggle()
-            post.favouritesCount += post.isFavourited ? 1 : -1
-        }
-    }
-
-    func toggleRepost(postID: String) async throws {
-        try modifyPost(postID: postID, action: "repost") { post in
-            post.isReblogged.toggle()
-            post.reblogsCount += post.isReblogged ? 1 : -1
-        }
-    }
-
-    func comment(postID: String, content: String) async throws {
-        try modifyPost(postID: postID, action: "comment") { post in
-            post.repliesCount += 1
-        }
-    }
-
-    // MARK: OAuth Methods
-    func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
-        guard shouldSucceed else { throw AppError(message: "Failed to register OAuth application.") }
-        return OAuthConfig(
-            clientID: "mockClientID",
-            clientSecret: "mockClientSecret",
-            redirectURI: "yourapp://oauth-callback",
-            scope: "read write follow"
-        )
-    }
-
-    func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
-        guard shouldSucceed else { throw AppError(message: "Failed to exchange authorization code.") }
-        accessToken = "mockAccessTokenAfterExchange"
-    }
-
-    func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {
-        guard shouldSucceed else { throw AppError(message: "Failed to stream timeline.") }
-        return AsyncThrowingStream { continuation in
-            for post in mockPosts {
-                continuation.yield(post)
+        case .weather(let error):
+            switch error {
+            case .invalidKey:
+                return "Please check your weather API key."
+            case .invalidURL:
+                return "Please check the weather API URL."
+            case .badResponse:
+                return "Please try again later. If the issue persists, check the API service status."
             }
-            continuation.finish()
         }
-    }
-
-    // MARK: - Helpers
-
-    private func validateData<T>(_ data: T?, errorMessage: String) throws -> T {
-        guard shouldSucceed, let data = data else { throw AppError(message: errorMessage) }
-        return data
-    }
-
-    private func modifyPost(postID: String, action: String, update: (inout Post) -> Void) throws {
-        guard let index = mockPosts.firstIndex(where: { $0.id == postID }) else {
-            throw AppError(mastodon: .postNotFound)
-        }
-        var post = mockPosts[index]
-        update(&post)
-        mockPosts[index] = post
-    }
-
-    // MARK: - Static Mock Data Generators
-
-    private static func generateMockAccounts() -> [Account] {
-        let baseURL = URL(string: "https://example.com")!
-        return [
-            Account(
-                id: "a1",
-                username: "user1",
-                displayName: "User One",
-                avatar: baseURL.appendingPathComponent("avatar1.png"),
-                acct: "@user1",
-                url: baseURL
-            ),
-            Account(
-                id: "a2",
-                username: "user2",
-                displayName: "User Two",
-                avatar: baseURL.appendingPathComponent("avatar2.png"),
-                acct: "@user2",
-                url: baseURL
-            )
-        ]
-    }
-
-    private static func generateMockPosts(from accounts: [Account], count: Int) -> [Post] {
-        (1...count).compactMap { i in
-            guard let account = accounts.randomElement() else { return nil }
-            return Post(
-                id: "post\(i)",
-                content: "<p>Mock post #\(i)</p>",
-                createdAt: Date().addingTimeInterval(-Double(i * 3600)),
-                account: account,
-                mediaAttachments: [],
-                isFavourited: Bool.random(),
-                isReblogged: Bool.random(),
-                reblogsCount: Int.random(in: 0...20),
-                favouritesCount: Int.random(in: 0...50),
-                repliesCount: Int.random(in: 0...10)
-            )
-        }
+        
     }
 }
+
