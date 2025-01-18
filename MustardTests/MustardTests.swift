@@ -104,12 +104,3 @@ class MustardTests: XCTestCase {
     }
 }
 
-// Mock functions for the test to compile
-extension MockMastodonService {
-    func authenticate() async {
-            // Simulate a successful authentication by setting the required properties
-            self.baseURL = URL(string: "https://mastodon.social")!
-            self.accessToken = "mockAccessToken"
-        
-    }
-}

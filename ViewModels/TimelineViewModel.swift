@@ -65,30 +65,38 @@ class TimelineViewModel: ObservableObject {
     // MARK: - Data Fetching
 
     func initializeData() async {
-            do {
-                try await mastodonService.ensureInitialized()
+        do {
+            try await mastodonService.ensureInitialized()
 
-                // Check if the token is near expiry or doesn't exist
-                if mastodonService.isTokenNearExpiry() {
-                    // Reauthenticate using the existing configuration
-                    if let instanceURL = try await mastodonService.retrieveInstanceURL(),
-                       let config = try? await mastodonService.registerOAuthApp(instanceURL: instanceURL) {
-                        try await mastodonService.reauthenticate(config: config, instanceURL: instanceURL)
-                    } else {
-                        // Handle the case where reauthentication is not possible (e.g., no stored instance URL)
-                        logger.warning("Reauthentication required but no stored instance URL found.")
-                        // You might want to prompt the user to log in again or handle this case as appropriate
-                    }
+            // Check if the token is near expiry or doesn't exist
+            if mastodonService.isTokenNearExpiry() {
+                // Reauthenticate using the existing configuration
+                if let instanceURL = try await mastodonService.retrieveInstanceURL(),
+                   let config = try? await mastodonService.registerOAuthApp(instanceURL: instanceURL) {
+                    try await mastodonService.reauthenticate(config: config, instanceURL: instanceURL)
+                } else {
+                    // Handle the case where reauthentication is not possible (e.g., no stored instance URL)
+                    logger.warning("Reauthentication required but no stored instance URL found.")
+                    // You might want to prompt the user to log in again or handle this case as appropriate
                 }
-
-                // Proceed with fetching data
-                await fetchTimeline()
-                await fetchTopPosts()
-            } catch {
-                alertError = AppError(type: .generic("Initialization failed."), underlyingError: error)
-                logger.error("Initialization failed: \(error.localizedDescription, privacy: .public)")
             }
+
+            // Proceed with fetching data
+            if let cachedTimeline = try? await mastodonService.loadTimelineFromDisk() {
+                posts = cachedTimeline
+                logger.info("Timeline loaded from disk cache.")
+            } else {
+                await fetchTimeline(useCache: false) // Fetch from network if no cache available
+            }
+            await fetchTopPosts()
+            if let location = locationManager.userLocation {
+                fetchWeather(for: location)
+            }
+        } catch {
+            alertError = AppError(type: .generic("Initialization failed."), underlyingError: error)
+            logger.error("Initialization failed: \(error.localizedDescription, privacy: .public)")
         }
+    }
 
     func fetchTimeline(useCache: Bool = true) async {
         // Prevent concurrent timeline fetches
@@ -100,7 +108,17 @@ class TimelineViewModel: ObservableObject {
             let fetchedPosts = try await mastodonService.fetchTimeline(useCache: useCache)
             posts = fetchedPosts.sorted { $0.createdAt > $1.createdAt }
             logger.info("Timeline fetched successfully.")
+        } catch let error as AppError {
+            // Handle specific AppError cases
+            if case .mastodon(.cacheNotFound) = error.type {
+                logger.info("Timeline cache not found on disk. Fetching from network.")
+                // Proceed to fetch from the network
+            } else {
+                alertError = error
+                logger.error("Failed to fetch timeline: \(error.localizedDescription, privacy: .public)")
+            }
         } catch {
+            // Handle generic errors
             alertError = AppError(type: .mastodon(.failedToFetchTimeline), underlyingError: error)
             logger.error("Failed to fetch timeline: \(error.localizedDescription, privacy: .public)")
         }

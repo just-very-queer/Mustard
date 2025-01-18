@@ -10,6 +10,10 @@ import Combine
 
 @MainActor
 class MockMastodonService: MastodonServiceProtocol {
+    func clearAllKeychainData() async throws {
+        // No-op in the mock implementation
+    }
+    
 
     // MARK: - Properties
     private let pageSize = 20

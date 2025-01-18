@@ -14,7 +14,11 @@ struct MustardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     // MARK: - ViewModels
-    @StateObject private var authViewModel: AuthenticationViewModel
+    @StateObject private var authViewModel: AuthenticationViewModel = {
+        // Initialize your MastodonService (or MockMastodonService for testing)
+        let mastodonService = MastodonService.shared // Or MockMastodonService(shouldSucceed: true)
+        return AuthenticationViewModel(mastodonService: mastodonService)
+    }()
     @StateObject private var locationManager = LocationManager()
 
     // MARK: - SwiftData container
@@ -29,10 +33,6 @@ struct MustardApp: App {
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
-
-        // Initialize authViewModel first
-        let authVM = AuthenticationViewModel(mastodonService: MastodonService.shared)
-        _authViewModel = StateObject(wrappedValue: authVM)
     }
 
     var body: some Scene {
@@ -49,15 +49,6 @@ struct MustardApp: App {
                     await authViewModel.validateAuthentication()
                 }
                 print("[MustardApp] App appeared. Validating authentication.")
-            }
-            .onReceive(authViewModel.$isAuthenticated) { isAuthenticated in
-                // When isAuthenticated changes, we might need to re-initialize
-                // the TimelineViewModel if it depends on authentication state.
-                if isAuthenticated {
-                    print("[MustardApp] User is authenticated. Setting up main view.")
-                } else {
-                    print("[MustardApp] User is not authenticated. Showing AuthenticationView.")
-                }
             }
         }
     }

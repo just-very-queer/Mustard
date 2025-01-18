@@ -34,6 +34,7 @@ struct AppError: Identifiable, Error {
         case mastodon(MastodonError)
         case authentication(AuthenticationError)
         case weather(WeatherError)
+        case other(String)
     }
     
     enum MastodonError: Equatable {
@@ -124,6 +125,12 @@ struct AppError: Identifiable, Error {
         case badResponse
     }
     
+    struct MastodonErrorType: Equatable {
+          static let missingOrClearedCredentials = MastodonErrorType(reason: "Missing or cleared credentials")
+
+          let reason: String
+      }
+    
     
     // MARK: - Initializers
     init(message: String, underlyingError: Error? = nil) {
@@ -162,6 +169,9 @@ struct AppError: Identifiable, Error {
             return describeAuthenticationError(authError)
         case .weather:
             return "Weather-related error occurred." // Return a string message
+            
+        case .other(let msg):
+                return msg // Use the associated string for the "other" case
         }
     }
     
@@ -230,16 +240,16 @@ struct AppError: Identifiable, Error {
         case .rateLimitExceeded:
             return "Rate Limit Exceeded"
         case .missingOrClearedCredentials:
-            return "missingOrClearedCredentials"
+            return "Missing or cleared credentials."
         case .cacheNotFound:
-            return "Cached was not saved"
+            return "Cache not found."
         case .noCacheAvailable:
-            return "noCacheAvailable"
+            return "No cache available."
         }
     }
+    
     private func describeAuthenticationError(_ error: AuthenticationError) -> String {
         switch error {
-            
         case .invalidAuthorizationCode:
             return "Invalid authorization code provided."
         case .webAuthSessionFailed:
@@ -268,6 +278,8 @@ struct AppError: Identifiable, Error {
             return true
         case .weather:
             return true // Assuming weather errors are recoverable
+        case .other(_):
+            return true // Assume "other" errors are recoverable
         }
     }
     
@@ -304,8 +316,10 @@ struct AppError: Identifiable, Error {
             case .badResponse:
                 return "Please try again later. If the issue persists, check the API service status."
             }
+        case .other(let msg):
+               return "An error occurred: \(msg). Please try again." // Provide a general suggestion for "other"
+        }
         }
         
-    }
 }
 

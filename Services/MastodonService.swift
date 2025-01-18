@@ -14,7 +14,7 @@ import CoreLocation
 @MainActor
 class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPresentationContextProviding {
 
-   
+    
     // MARK: - Singleton & Properties
     static let shared = MastodonService()
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "MastodonService")
@@ -36,7 +36,6 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     // Custom JSONEncoder/Decoder for Mastodon API
     private let jsonDecoder: JSONDecoder = {
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }()
@@ -258,6 +257,9 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     
     /// Registers the app with the specified Mastodon instance to get OAuth client credentials.
     func registerOAuthApp(instanceURL: URL) async throws -> OAuthConfig {
+        let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "MastodonService")
+        logger.info("Attempting to register OAuth app with instance: \(instanceURL)")
+
         let body = [
             "client_name": "Mustard",
             "redirect_uris": "mustard://oauth-callback",
@@ -268,56 +270,122 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         var request = URLRequest(url: requestURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            logger.error("Error creating request body: \(error)")
+            throw AppError(mastodon: .encodingError, underlyingError: error)
+        }
+
+        logger.info("Request body: \(String(data: request.httpBody!, encoding: .utf8) ?? "nil")")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            logger.error("Response was not an HTTPURLResponse")
+            throw AppError(mastodon: .invalidResponse)
+        }
+
+        logger.info("HTTP Status Code: \(httpResponse.statusCode)")
+
+        // Handle different status codes more specifically
+        switch httpResponse.statusCode {
+        case 200:
+            // Successful registration
+            if let responseString = String(data: data, encoding: .utf8) {
+                logger.info("Response body: \(responseString)")
+            }
+
+            let registerResponse: RegisterResponse
+            do {
+                registerResponse = try jsonDecoder.decode(RegisterResponse.self, from: data)
+            } catch {
+                logger.error("Error decoding response: \(error)")
+                throw AppError(mastodon: .decodingError, underlyingError: error)
+            }
+
+            // Ensure that either redirect_uri or redirect_uris is present
+            guard let redirectURI = registerResponse.redirect_uri ?? registerResponse.redirect_uris?.first else {
+                logger.error("No redirect URI found in response")
+                throw AppError(mastodon: .invalidResponse, underlyingError: nil)
+            }
+
+            let config = OAuthConfig(
+                clientID: registerResponse.client_id,
+                clientSecret: registerResponse.client_secret,
+                redirectURI: redirectURI, // Use the non-optional redirectURI
+                scope: "read write follow"
+            )
+
+            logger.info("Successfully registered OAuth app with client ID: \(config.clientID)")
+            return config
+
+        case 401:
+            logger.error("Failed to register OAuth app. HTTP Status: \(httpResponse.statusCode) - Unauthorized")
+            throw AppError(mastodon: .unauthorized)
+        case 403:
+            logger.error("Failed to register OAuth app. HTTP Status: \(httpResponse.statusCode) - Forbidden")
+            throw AppError(mastodon: .forbidden)
+        case 404:
+            logger.error("Failed to register OAuth app. HTTP Status: \(httpResponse.statusCode) - Not Found")
+            throw AppError(mastodon: .notFound)
+        case 422:
+            logger.error("Failed to register OAuth app. HTTP Status: \(httpResponse.statusCode) - Unprocessable Entity")
+            // You might want to inspect the response body here to provide more details to the user
+            if let responseString = String(data: data, encoding: .utf8) {
+                logger.error("Response body: \(responseString)")
+            }
+            throw AppError(mastodon: .badRequest)
+        case 500...599:
+            logger.error("Failed to register OAuth app. HTTP Status: \(httpResponse.statusCode) - Server Error")
+            throw AppError(mastodon: .serverError(status: httpResponse.statusCode))
+
+        default:
+            logger.error("Failed to register OAuth app. HTTP Status: \(httpResponse.statusCode)")
+            if let responseString = String(data: data, encoding: .utf8) {
+                logger.error("Response body: \(responseString)")
+            }
             throw AppError(mastodon: .failedToRegisterOAuthApp)
         }
-
-        let registerResponse = try jsonDecoder.decode(RegisterResponse.self, from: data)
-        let config = OAuthConfig(
-            clientID: registerResponse.client_id,
-            clientSecret: registerResponse.client_secret,
-            redirectURI: "mustard://oauth-callback",
-            scope: "read write follow"
-        )
-
-        logger.info("Successfully registered OAuth app with client ID: \(config.clientID)")
-        return config
     }
-
     /// Exchanges the authorization code for an access token.
     func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
-        let body = [
-            "grant_type": "authorization_code",
-            "code": code,
-            "client_id": config.clientID,
-            "client_secret": config.clientSecret,
-            "redirect_uri": config.redirectURI,
-            "scope": config.scope // Include scope
-        ]
-        let requestURL = instanceURL.appendingPathComponent("/oauth/token")
-        var request = URLRequest(url: requestURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
-            .joined(separator: "&")
-            .data(using: .utf8)
+           let body = [
+               "grant_type": "authorization_code",
+               "code": code,
+               "client_id": config.clientID,
+               "client_secret": config.clientSecret,
+               "redirect_uri": config.redirectURI,
+               "scope": config.scope // Include scope
+           ]
+           let requestURL = instanceURL.appendingPathComponent("/oauth/token")
+           var request = URLRequest(url: requestURL)
+           request.httpMethod = "POST"
+           request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw AppError(mastodon: .failedToExchangeCode)
-        }
+           // Correctly construct the request body
+           request.httpBody = body.map { key, value in
+               let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+               return "\(key)=\(encodedValue)"
+           }
+           .joined(separator: "&")
+           .data(using: .utf8)
 
-        let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
-        self.accessToken = tokenResponse.accessToken
-        self.tokenCreationDate = Date() // Store the token creation date
+           let (data, response) = try await URLSession.shared.data(for: request)
+           guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+               throw AppError(mastodon: .failedToExchangeCode)
+           }
 
-        // Fetch and save the instance URL after successful token exchange
-        self.baseURL = instanceURL
-        logger.info("Successfully exchanged authorization code for access token.")
-    }
+           // Decode the token response using the updated struct with CodingKeys
+           let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
+           self.accessToken = tokenResponse.accessToken
+           self.tokenCreationDate = Date() // Store the token creation date
+
+           // Fetch and save the instance URL after successful token exchange
+           self.baseURL = instanceURL
+           logger.info("Successfully exchanged authorization code for access token.")
+       }
     
     func isTokenNearExpiry() -> Bool {
         guard let creationDate = tokenCreationDate else { return true } // Treat as expired if no creation date
@@ -402,7 +470,7 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         }
     }
 
-    private func clearAllKeychainData() async throws {
+    func clearAllKeychainData() async throws {
         try await KeychainHelper.shared.delete(service: keychainService, account: "baseURL")
         try await KeychainHelper.shared.delete(service: keychainService, account: "accessToken")
     }
@@ -436,32 +504,32 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
                 logger.info("Timeline disk cache cleared.")
             }
         } catch {
-                    logger.error("Failed to clear timeline disk cache: \(error.localizedDescription)")
+                logger.error("Failed to clear timeline disk cache: \(error.localizedDescription)")
+            }
+        }
+
+        private func loadTrendingPostsFromDisk() async -> [Post]? {
+            let fileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("\(cacheDirectoryName)/trendingPostsCache.json")
+            guard let data = try? Data(contentsOf: fileURL) else { return nil }
+            return try? jsonDecoder.decode([Post].self, from: data)
+        }
+
+        private func saveTrendingPostsToDisk(_ posts: [Post]) async {
+            guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+            let cacheDirectoryURL = directory.appendingPathComponent(cacheDirectoryName)
+
+            do {
+                if !FileManager.default.fileExists(atPath: cacheDirectoryURL.path) {
+                    try FileManager.default.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true)
                 }
+
+                let fileURL = cacheDirectoryURL.appendingPathComponent("trendingPostsCache.json")
+                let data = try jsonEncoder.encode(posts)
+                try data.write(to: fileURL, options: [.atomic])
+            } catch {
+                logger.error("Failed to save trending posts to disk: \(error.localizedDescription)")
             }
-
-            private func loadTrendingPostsFromDisk() async -> [Post]? {
-                let fileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("\(cacheDirectoryName)/trendingPostsCache.json")
-                guard let data = try? Data(contentsOf: fileURL) else { return nil }
-                return try? jsonDecoder.decode([Post].self, from: data)
-            }
-
-            private func saveTrendingPostsToDisk(_ posts: [Post]) async {
-                guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-                let cacheDirectoryURL = directory.appendingPathComponent(cacheDirectoryName)
-
-                do {
-                    if !FileManager.default.fileExists(atPath: cacheDirectoryURL.path) {
-                        try FileManager.default.createDirectory(at: cacheDirectoryURL, withIntermediateDirectories: true)
-                    }
-
-                    let fileURL = cacheDirectoryURL.appendingPathComponent("trendingPostsCache.json")
-                    let data = try jsonEncoder.encode(posts)
-                    try data.write(to: fileURL, options: [.atomic])
-                } catch {
-                    logger.error("Failed to save trending posts to disk: \(error.localizedDescription)")
-                }
-            }
+        }
 
     private func updatePostInCache(postID: String, update: (inout Post) -> Void) async throws {
         let timelineCacheKey = "timeline" as NSString
@@ -496,8 +564,8 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         // Update disk cache for trending posts
         do {
             if var diskTrendingPosts = await loadTrendingPostsFromDisk(), let index = diskTrendingPosts.firstIndex(where: { $0.id == postID}) {
-                    update(&diskTrendingPosts[index])
-                    await saveTrendingPostsToDisk(diskTrendingPosts)
+                update(&diskTrendingPosts[index])
+                await saveTrendingPostsToDisk(diskTrendingPosts)
             }
         } catch {
             logger.error("Failed to update post in trending posts disk cache: \(error.localizedDescription)")
@@ -506,254 +574,273 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         }
     }
 
-            // MARK: - Networking Helpers
+    // MARK: - Networking Helpers
 
-            private func fetchData<T: Decodable>(endpoint: String, type: T.Type) async throws -> T {
-                // Check rate limit before making the request
-                guard rateLimiter.tryConsume() else {
-                    throw AppError(mastodon: .rateLimitExceeded)
+    private func fetchData<T: Decodable>(endpoint: String, type: T.Type) async throws -> T {
+        // Check rate limit before making the request
+        guard rateLimiter.tryConsume() else {
+            throw AppError(mastodon: .rateLimitExceeded)
+        }
+
+        let url = try endpointURL(endpoint)
+        let request = try buildRequest(url: url, method: "GET")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response, data: data)
+        return try jsonDecoder.decode(T.self, from: data)
+    }
+
+    private func postData<T: Decodable>(
+        endpoint: String,
+        body: [String: String],
+        type: T.Type,
+        baseURLOverride: URL? = nil,
+        contentType: String = "application/json"
+    ) async throws -> T {
+        // Check rate limit before making the request
+        guard rateLimiter.tryConsume() else {
+            throw AppError(mastodon: .rateLimitExceeded)
+        }
+
+        let url = try endpointURL(endpoint, baseURLOverride: baseURLOverride)
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = try buildBody(body: body, contentType: contentType)
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try validateResponse(response, data: data)
+        return try jsonDecoder.decode(T.self, from: data)
+    }
+
+    private func postAction(for postID: String, path: String) async throws {
+        // Check rate limit before making the request
+        guard rateLimiter.tryConsume() else {
+            throw AppError(mastodon: .rateLimitExceeded)
+        }
+
+        let url = try endpointURL("/api/v1/statuses/\(postID)\(path)")
+        let request = try buildRequest(url: url, method: "POST")
+        _ = try await URLSession.shared.data(for: request)
+    }
+
+    private func buildBody(body: [String: String], contentType: String) throws -> Data? {
+        switch contentType {
+        case "application/json":
+            return try JSONSerialization.data(withJSONObject: body)
+        case "application/x-www-form-urlencoded":
+            return body.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
+                .joined(separator: "&")
+                .data(using: .utf8)
+        default:
+            throw AppError(message: "Unsupported content type: \(contentType)")
+        }
+    }
+
+    private func endpointURL(_ path: String, baseURLOverride: URL? = nil) throws -> URL {
+        guard let base = baseURLOverride ?? baseURL else { throw AppError(mastodon: .missingCredentials) }
+        return base.appendingPathComponent(path)
+    }
+
+    private func buildRequest(url: URL, method: String) throws -> URLRequest {
+        guard let token = accessToken else { throw AppError(mastodon: .missingCredentials) }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
+    }
+
+    private func validateResponse(_ response: URLResponse, data: Data) throws {
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            logger.error("Invalid or server error response.")
+            throw AppError(mastodon: .invalidResponse)
+        }
+    }
+
+    // MARK: - OAuth Helper Methods
+    private func oauthRegisterBody() -> [String: String] {
+        return [
+            "client_name": "Mustard",
+            "redirect_uris": "mustard://oauth-callback",
+            "scopes": "read write follow"
+        ]
+    }
+
+    private func oauthExchangeBody(code: String, config: OAuthConfig) -> [String: String] {
+        return [
+            "client_id": config.clientID,
+            "client_secret": config.clientSecret,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": config.redirectURI
+        ]
+    }
+        
+    /// Starts the Web Authentication Session to retrieve the authorization code.
+    private func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
+        let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
+        var components = URLComponents(url: authURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "client_id", value: config.clientID),
+            URLQueryItem(name: "redirect_uri", value: config.redirectURI),
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "scope", value: config.scope)
+        ]
+            
+        guard let finalURL = components.url else {
+            throw AppError(mastodon: .invalidAuthorizationCode, underlyingError: nil)
+        }
+            
+        guard let redirectScheme = URL(string: config.redirectURI)?.scheme else {
+            throw AppError(mastodon: .invalidResponse, underlyingError: nil)
+        }
+            
+        return try await withCheckedThrowingContinuation { continuation in
+            let session = ASWebAuthenticationSession(
+                url: finalURL,
+                callbackURLScheme: redirectScheme
+            ) { callbackURL, error in
+                if let error = error {
+                    self.logger.error("ASWebAuthenticationSession error: \(error.localizedDescription, privacy: .public)")
+                    continuation.resume(throwing: AppError(mastodon: .oauthError(message: error.localizedDescription), underlyingError: error))
+                    return
                 }
-
-                let url = try endpointURL(endpoint)
-                let request = try buildRequest(url: url, method: "GET")
-                let (data, response) = try await URLSession.shared.data(for: request)
-                try validateResponse(response, data: data)
-                return try jsonDecoder.decode(T.self, from: data)
-            }
-
-            private func postData<T: Decodable>(
-                endpoint: String,
-                body: [String: String],
-                type: T.Type,
-                baseURLOverride: URL? = nil,
-                contentType: String = "application/json"
-            ) async throws -> T {
-                // Check rate limit before making the request
-                guard rateLimiter.tryConsume() else {
-                    throw AppError(mastodon: .rateLimitExceeded)
-                }
-
-                let url = try endpointURL(endpoint, baseURLOverride: baseURLOverride)
-                var request = URLRequest(url: url)
-                request.httpMethod = "POST"
-                request.httpBody = try buildBody(body: body, contentType: contentType)
-                request.setValue(contentType, forHTTPHeaderField: "Content-Type")
                 
-                let (data, response) = try await URLSession.shared.data(for: request)
-                try validateResponse(response, data: data)
-                return try jsonDecoder.decode(T.self, from: data)
-            }
-
-            private func postAction(for postID: String, path: String) async throws {
-                // Check rate limit before making the request
-                guard rateLimiter.tryConsume() else {
-                    throw AppError(mastodon: .rateLimitExceeded)
+                guard let callbackURL = callbackURL,
+                    let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                        .queryItems?.first(where: { $0.name == "code" })?.value else {
+                    self.logger.error("Authorization code not found in callback URL.")
+                    continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Authorization code not found."), underlyingError: nil))
+                    return
                 }
-
-                let url = try endpointURL("/api/v1/statuses/\(postID)\(path)")
-                let request = try buildRequest(url: url, method: "POST")
-                _ = try await URLSession.shared.data(for: request)
-            }
-
-            private func buildBody(body: [String: String], contentType: String) throws -> Data? {
-                switch contentType {
-                case "application/json":
-                    return try JSONSerialization.data(withJSONObject: body)
-                case "application/x-www-form-urlencoded":
-                    return body.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
-                        .joined(separator: "&")
-                        .data(using: .utf8)
-                default:
-                    throw AppError(message: "Unsupported content type: \(contentType)")
-                }
-            }
-
-            private func endpointURL(_ path: String, baseURLOverride: URL? = nil) throws -> URL {
-                guard let base = baseURLOverride ?? baseURL else { throw AppError(mastodon: .missingCredentials) }
-                return base.appendingPathComponent(path)
-            }
-
-            private func buildRequest(url: URL, method: String) throws -> URLRequest {
-                guard let token = accessToken else { throw AppError(mastodon: .missingCredentials) }
-                var request = URLRequest(url: url)
-                request.httpMethod = method
-                request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                return request
-            }
-
-            private func validateResponse(_ response: URLResponse, data: Data) throws {
-                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                    logger.error("Invalid or server error response.")
-                    throw AppError(mastodon: .invalidResponse)
-                }
-            }
-
-            // MARK: - OAuth Helper Methods
-            private func oauthRegisterBody() -> [String: String] {
-                return [
-                    "client_name": "Mustard",
-                    "redirect_uris": "mustard://oauth-callback",
-                    "scopes": "read write follow"
-                ]
-            }
-
-            private func oauthExchangeBody(code: String, config: OAuthConfig) -> [String: String] {
-                return [
-                    "client_id": config.clientID,
-                    "client_secret": config.clientSecret,
-                    "code": code,
-                    "grant_type": "authorization_code",
-                    "redirect_uri": config.redirectURI
-                ]
+                
+                continuation.resume(returning: code)
             }
             
-            /// Starts the Web Authentication Session to retrieve the authorization code.
-            private func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
-                let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
-                var components = URLComponents(url: authURL, resolvingAgainstBaseURL: false)!
-                components.queryItems = [
-                    URLQueryItem(name: "client_id", value: config.clientID),
-                    URLQueryItem(name: "redirect_uri", value: config.redirectURI),
-                    URLQueryItem(name: "response_type", value: "code"),
-                    URLQueryItem(name: "scope", value: config.scope)
-                ]
-                
-                guard let finalURL = components.url else {
-                    throw AppError(mastodon: .invalidAuthorizationCode, underlyingError: nil)
-                }
-                
-                guard let redirectScheme = URL(string: config.redirectURI)?.scheme else {
-                    throw AppError(mastodon: .invalidResponse, underlyingError: nil)
-                }
-                
-                return try await withCheckedThrowingContinuation { continuation in
-                    let session = ASWebAuthenticationSession(
-                        url: finalURL,
-                        callbackURLScheme: redirectScheme
-                    ) { callbackURL, error in
-                        if let error = error {
-                            self.logger.error("ASWebAuthenticationSession error: \(error.localizedDescription, privacy: .public)")
-                            continuation.resume(throwing: AppError(mastodon: .oauthError(message: error.localizedDescription), underlyingError: error))
-                            return
-                        }
-                        
-                        guard let callbackURL = callbackURL,
-                              let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
-                                .queryItems?.first(where: { $0.name == "code" })?.value else {
-                            self.logger.error("Authorization code not found in callback URL.")
-                            continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Authorization code not found."), underlyingError: nil))
-                            return
-                        }
-                        
-                        continuation.resume(returning: code)
-                    }
-                    
-                    session.presentationContextProvider = self
-                    session.prefersEphemeralWebBrowserSession = true
-                    
-                    if !session.start() {
-                        self.logger.error("ASWebAuthenticationSession failed to start.")
-                        continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Failed to start WebAuth session."), underlyingError: nil))
-                    }
-                }
-            }
-
+            session.presentationContextProvider = self
+            session.prefersEphemeralWebBrowserSession = true
             
-            // MARK: - Stream Functionality
+            if !session.start() {
+                self.logger.error("ASWebAuthenticationSession failed to start.")
+                continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Failed to start WebAuth session."), underlyingError: nil))
+            }
+        }
+    }
+
+    
+    // MARK: - Stream Functionality
     func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {
-            guard try await isAuthenticated(), let baseURL = baseURL else {
-                throw AppError(mastodon: .missingCredentials)
+        guard try await isAuthenticated(), let baseURL = baseURL else {
+            throw AppError(mastodon: .missingCredentials)
+        }
+
+        let streamingURL = baseURL.appendingPathComponent("/api/v1/streaming/user")
+        var request = try buildRequest(url: streamingURL, method: "GET")
+        // In `buildRequest`, set the timeout interval:
+        request.timeoutInterval = Double.infinity
+
+        
+        return AsyncThrowingStream { [weak self] continuation in
+            guard let self = self else {
+                continuation.finish(throwing: AppError(mastodon: .unknown(status: 0)))
+                return
             }
 
-            let streamingURL = baseURL.appendingPathComponent("/api/v1/streaming/user")
-            var request = try buildRequest(url: streamingURL, method: "GET")
-            // In `buildRequest`, set the timeout interval:
-            request.timeoutInterval = Double.infinity
-
-            
-            return AsyncThrowingStream { [weak self] continuation in
-                guard let self = self else {
-                    continuation.finish(throwing: AppError(mastodon: .unknown(status: 0)))
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
+                if let error = error {
+                    continuation.finish(throwing: error)
                     return
                 }
 
-                let task = URLSession.shared.dataTask(with: request) { data, response, error in
-                    if let error = error {
-                        continuation.finish(throwing: error)
-                        return
-                    }
-
-                    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                        continuation.finish(throwing: AppError(mastodon: .invalidResponse))
-                        return
-                    }
-
-                    guard let data = data else {
-                        continuation.finish(throwing: AppError(mastodon: .invalidResponse))
-                        return
-                    }
-
-                    self.processStreamingData(data, continuation: continuation)
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    continuation.finish(throwing: AppError(mastodon: .invalidResponse))
+                    return
                 }
 
-                task.resume()
-                self.streamingTasks.append(task)
+                guard let data = data else {
+                    continuation.finish(throwing: AppError(mastodon: .invalidResponse))
+                    return
+                }
 
-                continuation.onTermination = { @Sendable [weak self] _ in
-                    task.cancel()
-                    Task {
-                        await MainActor.run {
-                            self?.streamingTasks.removeAll(where: { $0 == task })
-                        }
+                self.processStreamingData(data, continuation: continuation)
+            }
+
+            task.resume()
+            self.streamingTasks.append(task)
+
+            continuation.onTermination = { @Sendable [weak self] _ in
+                task.cancel()
+                Task {
+                    await MainActor.run {self?.streamingTasks.removeAll(where: { $0 == task })
                     }
                 }
             }
         }
+    }
 
-            private func processStreamingData(_ data: Data, continuation: AsyncThrowingStream<Post, Error>.Continuation) {
-                guard let stringData = String(data: data, encoding: .utf8) else {
-                    continuation.finish(throwing: AppError(mastodon: .decodingError))
-                    return
-                }
+    private func processStreamingData(_ data: Data, continuation: AsyncThrowingStream<Post, Error>.Continuation) {
+        guard let stringData = String(data: data, encoding: .utf8) else {
+            continuation.finish(throwing: AppError(mastodon: .decodingError))
+            return
+        }
 
-                let lines = stringData.components(separatedBy: "\n")
+        let lines = stringData.components(separatedBy: "\n")
 
-                for line in lines {
-                    if line.hasPrefix("event: update") {
-                        if let dataLine = lines.first(where: { $0.hasPrefix("data: ") }) {
-                            let jsonData = dataLine.dropFirst(6).data(using: .utf8)!
-                            do {
-                                let post = try self.jsonDecoder.decode(Post.self, from: jsonData)
-                                continuation.yield(post)
-                            } catch {
-                                print("Error decoding post: \(error)")
-                                continuation.finish(throwing: AppError(mastodon: .decodingError))
-                            }
-                        }
-                    } else if line.hasPrefix("event: notification") {
-                        // TODO: Handle other events as needed
+        for line in lines {
+            if line.hasPrefix("event: update") {
+                if let dataLine = lines.first(where: { $0.hasPrefix("data: ") }) {
+                    let jsonData = dataLine.dropFirst(6).data(using: .utf8)!
+                    do {
+                        let post = try self.jsonDecoder.decode(Post.self, from: jsonData)
+                        continuation.yield(post)
+                    } catch {
+                        print("Error decoding post: \(error)")
+                        continuation.finish(throwing: AppError(mastodon: .decodingError))
                     }
                 }
-            }
-
-            // MARK: - Supporting Structs
-            private struct CachedTimeline {
-                let posts: [Post]
-                let timestamp: Date
-            }
-
-            struct RegisterResponse: Codable, Sendable {
-                let client_id: String
-                let client_secret: String
-            }
-            
-            struct TokenResponse: Codable, Sendable {
-                let access_token: String
-                /// Convenience property to access `access_token`.
-                var accessToken: String { access_token }
+            } else if line.hasPrefix("event: notification") {
+                // TODO: Handle other events as needed
             }
         }
+    }
+
+    // MARK: - Supporting Structs
+    private struct CachedTimeline {
+        let posts: [Post]
+        let timestamp: Date
+    }
+
+    struct RegisterResponse: Codable, Sendable {
+        let id: String?
+        let name: String?
+        let website: String?
+        let vapid_key: String?
+        let client_id: String
+        let client_secret: String
+        let redirect_uri: String?
+        let redirect_uris: [String]?
+
+        enum CodingKeys: String, CodingKey {
+            case id, name, website, vapid_key
+            case client_id
+            case client_secret
+            case redirect_uri
+            case redirect_uris
+        }
+    }
+        
+    struct TokenResponse: Codable, Sendable {
+            let access_token: String
+
+            /// Convenience property to access `access_token`.
+            var accessToken: String { access_token }
+
+            // Add CodingKeys here
+            enum CodingKeys: String, CodingKey {
+                case access_token
+            }
+    }
+}
 
 class RateLimiter {
     private let capacity: Int

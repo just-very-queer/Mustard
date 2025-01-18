@@ -18,11 +18,23 @@ struct OAuthConfig: Sendable {
 
 /// Represents the response received after successful registration.
 struct RegisterResponse: Codable, Sendable {
+    let id: String?
+    let name: String?
+    let website: String?
+    let vapid_key: String?
     let client_id: String
     let client_secret: String
-    // No 'access_token' or 'account' here, since we only get those after exchanging the code
-}
+    let redirect_uri: String?
+    let redirect_uris: [String]?
 
+    enum CodingKeys: String, CodingKey {
+        case id, name, website, vapid_key
+        case client_id
+        case client_secret
+        case redirect_uri
+        case redirect_uris
+    }
+}
 
 
 /// Represents the response received after obtaining an access token.
@@ -207,5 +219,8 @@ protocol MastodonServiceProtocol: AnyObject {
         ///   - instanceURL: The URL of the Mastodon instance.
         /// - Throws: An `AppError` if reauthentication fails.
         func reauthenticate(config: OAuthConfig, instanceURL: URL) async throws
-
+    /// Clears all keychain data for the current user session.
+        ///
+    /// - Throws: An `AppError` if the keychain clearing process fails.
+    func clearAllKeychainData() async throws
 }

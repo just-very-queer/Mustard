@@ -17,21 +17,16 @@ struct AuthenticationView: View {
     // Logger instance
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "Authentication")
 
-    // Gradient colors for the glowing effect
-    private let gradientColors = [
-        Color(red: 0.4, green: 0.6, blue: 1.0),
-        Color(red: 0.6, green: 0.8, blue: 1.0),
-        Color(red: 0.4, green: 0.6, blue: 1.0),
-        Color(red: 0.6, green: 0.8, blue: 1.0)
-    ]
+    // Animation properties
+    @State private var glowOpacity: Double = 0.5
+    @State private var glowRadius: CGFloat = 10
+    @State private var isAnimating = false
 
     var body: some View {
         NavigationView {
             ZStack {
-                // Background with glowing gradient effect
-                LinearGradient(gradient: Gradient(colors: gradientColors), startPoint: .top, endPoint: .bottom)
-                    .ignoresSafeArea()
-                    .opacity(0.5)
+                // Background with animated glowing gradient effect
+                AnimatedGradientGlowView()
 
                 // Main content
                 VStack(spacing: 20) {
@@ -109,6 +104,32 @@ struct AuthenticationView: View {
             }
         }
         .navigationViewStyle(.stack) // Apply the stack style to the NavigationView
+    }
+}
+
+// Animated Gradient Glow View
+struct AnimatedGradientGlowView: View {
+    @State private var startRadius: CGFloat = 0
+    @State private var endRadius: CGFloat = 200
+
+    var body: some View {
+        RadialGradient(
+            gradient: Gradient(colors: [
+                Color(red: 0.4, green: 0.6, blue: 1.0).opacity(0.8),
+                Color(red: 0.6, green: 0.8, blue: 1.0).opacity(0.3),
+                Color.clear
+            ]),
+            center: .center,
+            startRadius: startRadius,
+            endRadius: endRadius
+        )
+        .ignoresSafeArea()
+        .onAppear {
+            withAnimation(Animation.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
+                startRadius = 50
+                endRadius = 150
+            }
+        }
     }
 }
 
