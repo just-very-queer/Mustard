@@ -51,7 +51,8 @@ struct PostView: View {
         HStack(spacing: 12) {
             avatarView(for: post.account.avatar)
             VStack(alignment: .leading, spacing: 4) {
-                Text(post.account.displayName)
+                // Access display_name through the User object (if available)
+                Text(post.account.display_name)
                     .font(.headline)
                     .lineLimit(1)
                 Text("@\(post.account.acct)")
@@ -66,6 +67,7 @@ struct PostView: View {
             Spacer()
         }
     }
+
 
     // MARK: - Content Body
     private var contentBody: some View {
@@ -173,7 +175,7 @@ struct CommentSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 20) {
-                Text("Replying to \(post.account.displayName)")
+                Text("Replying to \(post.account.display_name)")
                     .font(.headline)
                     .padding(.top)
                 TextEditor(text: $commentText)

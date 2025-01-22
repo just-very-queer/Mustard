@@ -17,3 +17,13 @@ final class Item {
     }
 }
 
+// MARK: - Notification.Name Extensions
+
+extension Notification.Name {
+    static let didAuthenticate = Notification.Name("didAuthenticate")
+    static let authenticationFailed = Notification.Name("authenticationFailed")
+    static let didReceiveOAuthCallback = Notification.Name("didReceiveOAuthCallback")
+    static let didUpdateLocation = Notification.Name("didUpdateLocation")
+    static let didDecodePostLocation = Notification.Name("didDecodePostLocatior")
+    static let didRequestWeatherFetch = Notification.Name("didRequestWeatherFetch")
+}

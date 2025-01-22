@@ -83,15 +83,14 @@ final class Post: Identifiable, Codable, Equatable {
     // MARK: - Equatable Conformance
     static func == (lhs: Post, rhs: Post) -> Bool {
         return lhs.id == rhs.id &&
-               lhs.content == rhs.content &&
-               lhs.createdAt == rhs.createdAt &&
-               lhs.account == rhs.account &&
-               lhs.isFavourited == rhs.isFavourited &&
-               lhs.isReblogged == rhs.isReblogged &&
-               lhs.reblogsCount == rhs.reblogsCount &&
-               lhs.favouritesCount == rhs.favouritesCount &&
-               lhs.repliesCount == rhs.repliesCount &&
-               lhs.mediaAttachments == rhs.mediaAttachments
+            lhs.content == rhs.content &&
+            lhs.createdAt == rhs.createdAt &&
+            lhs.account == rhs.account &&
+            lhs.isFavourited == rhs.isFavourited &&
+            lhs.isReblogged == rhs.isReblogged &&
+            lhs.reblogsCount == rhs.reblogsCount &&
+            lhs.favouritesCount == rhs.favouritesCount &&
+            lhs.repliesCount == rhs.repliesCount &&
+            lhs.mediaAttachments == rhs.mediaAttachments
     }
 }
-

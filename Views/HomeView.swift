@@ -38,8 +38,8 @@ struct HomeView: View {
                 .padding(.horizontal)
             }
             .navigationTitle("Home")
-            .onAppear {
-                initializeData()
+            .task { // Use .task instead of .onAppear
+                await initializeData()
             }
             .onReceive(NotificationCenter.default.publisher(for: .didUpdateLocation)) { notification in
                 // Only fetch weather if user is authenticated
@@ -97,7 +97,7 @@ struct HomeView: View {
         Group {
             if !timelineViewModel.topPosts.isEmpty {
                 VStack(alignment: .leading) {
-                    Text("Here’s Today’s Top Mastodon Posts")
+                    Text("Trending Posts")
                         .font(.title2)
                         .bold()
                         .padding(.leading)
@@ -179,11 +179,11 @@ struct HomeView: View {
     // MARK: - Logout Button
     private var logoutButton: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
-            Button(action: {
-                Task {
+            Button {
+                Task { // Create an async context here
                     await authViewModel.logout()
                 }
-            }) {
+            } label: {
                 Image(systemName: "arrow.backward.circle.fill")
                     .font(.title2)
                     .foregroundColor(.blue)
@@ -193,15 +193,13 @@ struct HomeView: View {
     }
 
     // MARK: - Helper Functions
-    private func initializeData() {
+    private func initializeData() async {
         // Only initialize data if authenticated
-        if authViewModel.isAuthenticated {
-            Task {
-                await timelineViewModel.fetchTopPosts()
-                if let location = locationManager.userLocation {
-                    await timelineViewModel.fetchWeather(for: location)
-                }
-            }
+        guard authViewModel.isAuthenticated else { return }
+        await timelineViewModel.fetchTimeline()
+        await timelineViewModel.fetchTopPosts()
+        if let location = locationManager.userLocation {
+            await timelineViewModel.fetchWeather(for: location)
         }
     }
 
@@ -258,7 +256,7 @@ struct HomeView_Preview: PreviewProvider {
         let timelineViewModel = TimelineViewModel(
             mastodonService: mockService,
             authViewModel: authViewModel,
-            locationManager: locationManager // Add locationManager here
+            locationManager: locationManager
         )
 
         // Simulate fetched weather data
@@ -271,6 +269,6 @@ struct HomeView_Preview: PreviewProvider {
         return HomeView()
             .environmentObject(authViewModel)
             .environmentObject(timelineViewModel)
-            .environmentObject(locationManager)  // Inject locationManager here
+            .environmentObject(locationManager)
     }
 }

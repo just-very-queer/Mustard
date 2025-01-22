@@ -36,7 +36,26 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     // Custom JSONEncoder/Decoder for Mastodon API
     private let jsonDecoder: JSONDecoder = {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder -> Date in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            // First, try ISO 8601 format
+            let iso8601Formatter = ISO8601DateFormatter()
+            if let date = iso8601Formatter.date(from: dateString) {
+                return date
+            }
+
+            // If not ISO 8601, then try the date-only format
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd" // Date-only format
+            if let date = dateFormatter.date(from: dateString) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(in: container,
+                  debugDescription: "Cannot decode date string \(dateString)")
+        }
         return decoder
     }()
     
@@ -418,11 +437,17 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
 
     func fetchCurrentUser() async throws -> User {
         guard try await isAuthenticated() else { throw AppError(mastodon: .missingCredentials) }
-        let user = try await fetchData(endpoint: "/api/v1/accounts/verify_credentials", type: User.self)
-        // Cache the fetched user (if needed)
-        return user
-    }
 
+        logger.info("Fetching current user from: \(self.baseURL?.absoluteString ?? "nil")/api/v1/accounts/verify_credentials")
+
+        do {
+            let user = try await fetchData(endpoint: "/api/v1/accounts/verify_credentials", type: User.self)
+            return user
+        } catch {
+            logger.error("Error fetching current user: \(error.localizedDescription)")
+            throw AppError(message: "An unexpected error occurred while fetching user details. \(error.localizedDescription)", underlyingError: error)
+        }
+    }
 
     func validateToken() async throws {
         _ = try await fetchData(endpoint: "/api/v1/accounts/verify_credentials", type: User.self)
@@ -562,33 +587,100 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         }
 
         // Update disk cache for trending posts
-        do {
-            if var diskTrendingPosts = await loadTrendingPostsFromDisk(), let index = diskTrendingPosts.firstIndex(where: { $0.id == postID}) {
-                update(&diskTrendingPosts[index])
-                await saveTrendingPostsToDisk(diskTrendingPosts)
-            }
-        } catch {
-            logger.error("Failed to update post in trending posts disk cache: \(error.localizedDescription)")
-            // Optionally re-throw the error, or handle it silently
-            throw error
+        if var diskTrendingPosts = await loadTrendingPostsFromDisk(), let index = diskTrendingPosts.firstIndex(where: { $0.id == postID }) {
+            update(&diskTrendingPosts[index])
+            await saveTrendingPostsToDisk(diskTrendingPosts)
         }
     }
-
+    
     // MARK: - Networking Helpers
+    
+    // Helper function to safely log error messages with additional context
+
+    private func logError(message: String, error: Error, additionalInfo: String? = nil) {
+        // Prepare the log message
+        var logMessage = "\(message). Error details: \(error.localizedDescription)"
+        
+        // Add additional information if provided
+        if let additionalInfo = additionalInfo {
+            logMessage += " Additional Info: \(additionalInfo)"
+        }
+
+        // Use os_log for structured logging
+        os_log("%@", log: .default, type: .error, logMessage)
+    }
 
     private func fetchData<T: Decodable>(endpoint: String, type: T.Type) async throws -> T {
         // Check rate limit before making the request
         guard rateLimiter.tryConsume() else {
-            throw AppError(mastodon: .rateLimitExceeded)
+            throw AppError(type: .mastodon(.rateLimitExceeded)) // Using specific MastodonError
         }
 
         let url = try endpointURL(endpoint)
         let request = try buildRequest(url: url, method: "GET")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        try validateResponse(response, data: data)
-        return try jsonDecoder.decode(T.self, from: data)
-    }
 
+        // Log the request details
+        logger.info("Fetching data with request: \(request.url?.absoluteString ?? "nil")") // Log URL
+        if let headers = request.allHTTPHeaderFields {
+            logger.info("Request headers: \(headers)") // Log headers
+        }
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            // Log the raw JSON response (privately for debugging)
+            if let jsonString = String(data: data, encoding: .utf8) {
+                logger.debug("Raw JSON response: \(jsonString)") // Log raw response
+            }
+
+            // Log the response details
+            guard let httpResponse = response as? HTTPURLResponse else {
+                logError(message: "Response was not an HTTPURLResponse", error: AppError(type: .mastodon(.invalidResponse)))
+                throw AppError(type: .mastodon(.invalidResponse)) // Using specific MastodonError
+            }
+            logger.info("HTTP Status Code: \(httpResponse.statusCode)") // Log status code
+
+            try validateResponse(response, data: data)
+
+            // Decode the data to the expected model type
+            do {
+                let decodedData = try jsonDecoder.decode(T.self, from: data)
+                return decodedData
+            } catch let decodingError as DecodingError {
+                // Handling specific DecodingError cases
+                switch decodingError {
+                case .dataCorrupted(let context):
+                    logError(message: "Data corrupted", error: decodingError, additionalInfo: context.debugDescription)
+                    throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
+                case .keyNotFound(let key, let context):
+                    logError(message: "Key '\(key)' not found", error: decodingError, additionalInfo: context.debugDescription)
+                    throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
+                case .valueNotFound(let value, let context):
+                    logError(message: "Value '\(value)' not found", error: decodingError, additionalInfo: context.debugDescription)
+                    throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
+                case .typeMismatch(let type, let context):
+                    logError(message: "Type '\(type)' mismatch", error: decodingError, additionalInfo: context.debugDescription)
+                    throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
+                @unknown default:
+                    logError(message: "Unknown decoding error", error: decodingError)
+                    throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
+                }
+            } catch {
+                // Catch other errors during decoding
+                logError(message: "Error decoding response", error: error)
+                throw AppError(type: .mastodon(.decodingError), underlyingError: error)
+            }
+        } catch let networkError as URLError {
+            // Handle network errors separately
+            logError(message: "Network request failed", error: networkError)
+            throw AppError(type: .network(.requestFailed(underlyingError: networkError)), underlyingError: networkError) // Using NetworkError
+        } catch {
+            // Handle other general errors
+            logError(message: "General error during data fetching", error: error)
+            throw AppError(type: .generic("Data fetching failed"), underlyingError: error) // Using generic error
+        }
+    }
+    
     private func postData<T: Decodable>(
         endpoint: String,
         body: [String: String],
@@ -735,11 +827,11 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
 
         let streamingURL = baseURL.appendingPathComponent("/api/v1/streaming/user")
         var request = try buildRequest(url: streamingURL, method: "GET")
-        // In `buildRequest`, set the timeout interval:
+        // Set timeout interval
         request.timeoutInterval = Double.infinity
 
-        
         return AsyncThrowingStream { [weak self] continuation in
+            // Weakly capture self to avoid retain cycle
             guard let self = self else {
                 continuation.finish(throwing: AppError(mastodon: .unknown(status: 0)))
                 return
@@ -751,8 +843,8 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
                     return
                 }
 
+                // Remove the unused statusCode variable
                 guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
                     continuation.finish(throwing: AppError(mastodon: .invalidResponse))
                     return
                 }
@@ -762,22 +854,26 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
                     return
                 }
 
-                self.processStreamingData(data, continuation: continuation)
+                // Ensure we call `processStreamingData` on the MainActor context
+                Task { @MainActor in
+                    self.processStreamingData(data, continuation: continuation)
+                }
             }
 
             task.resume()
             self.streamingTasks.append(task)
 
             continuation.onTermination = { @Sendable [weak self] _ in
+                // Avoid capturing `self` strongly in termination handler
+                guard let self = self else { return }
                 task.cancel()
-                Task {
-                    await MainActor.run {self?.streamingTasks.removeAll(where: { $0 == task })
-                    }
+                Task { @MainActor in
+                    self.streamingTasks.removeAll(where: { $0 == task })
                 }
             }
         }
     }
-
+    
     private func processStreamingData(_ data: Data, continuation: AsyncThrowingStream<Post, Error>.Continuation) {
         guard let stringData = String(data: data, encoding: .utf8) else {
             continuation.finish(throwing: AppError(mastodon: .decodingError))

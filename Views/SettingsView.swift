@@ -21,7 +21,8 @@ struct SettingsView: View {
                         HStack {
                             AvatarView(url: user.avatar, size: 50)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(user.displayName).font(.headline)
+                                // Use the correct display_name property here
+                                Text(user.display_name).font(.headline)
                                 Text("@\(user.username)").font(.caption).foregroundColor(.gray)
                             }
                         }

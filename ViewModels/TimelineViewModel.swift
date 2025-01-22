@@ -29,7 +29,10 @@ class TimelineViewModel: ObservableObject {
     private let locationManager: LocationManager
     private var cancellables = Set<AnyCancellable>()
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "TimelineViewModel")
-    private let weatherAPIKeyBase64 = "OTk2NTdjOTNhN2E5M2JlYTJkZTdiZjkzZTMyMTkxMDQy" // Base64-encoded API key
+    private let weatherAPIKeyBase64 = "OTk2NTdjOTNhN2E5M2JlYTJkZTdiZjkzZTMyMTkxMDQy=" // Base64-encoded API key
+    
+    private var weatherFetchTask: Task<Void, Never>?
+    private var weatherFetchOnce: Bool = false // Ensures weather is fetched only once per app launch
 
     // MARK: - Initialization
 
@@ -49,7 +52,9 @@ class TimelineViewModel: ObservableObject {
         NotificationCenter.default.publisher(for: .didAuthenticate)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                Task { await self?.initializeData() }
+                Task {
+                    await self?.initializeData()
+                }
             }
             .store(in: &cancellables)
 
@@ -57,7 +62,13 @@ class TimelineViewModel: ObservableObject {
         locationManager.locationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] location in
-                self?.fetchWeather(for: location)
+                // Only fetch weather once after initialization or a significant location update
+                guard let self = self else { return }
+                if !self.weatherFetchOnce {
+                    Task {
+                        await self.fetchWeather(for: location)
+                    }
+                }
             }
             .store(in: &cancellables)
     }
@@ -68,29 +79,23 @@ class TimelineViewModel: ObservableObject {
         do {
             try await mastodonService.ensureInitialized()
 
-            // Check if the token is near expiry or doesn't exist
             if mastodonService.isTokenNearExpiry() {
-                // Reauthenticate using the existing configuration
                 if let instanceURL = try await mastodonService.retrieveInstanceURL(),
                    let config = try? await mastodonService.registerOAuthApp(instanceURL: instanceURL) {
                     try await mastodonService.reauthenticate(config: config, instanceURL: instanceURL)
                 } else {
-                    // Handle the case where reauthentication is not possible (e.g., no stored instance URL)
                     logger.warning("Reauthentication required but no stored instance URL found.")
-                    // You might want to prompt the user to log in again or handle this case as appropriate
                 }
             }
 
-            // Proceed with fetching data
-            if let cachedTimeline = try? await mastodonService.loadTimelineFromDisk() {
-                posts = cachedTimeline
-                logger.info("Timeline loaded from disk cache.")
-            } else {
-                await fetchTimeline(useCache: false) // Fetch from network if no cache available
-            }
+            // Fetch data sequentially using serial queue to avoid race conditions
+            await fetchTimeline(useCache: false)
             await fetchTopPosts()
-            if let location = locationManager.userLocation {
-                fetchWeather(for: location)
+
+            // Fetch weather once during initialization
+            if let location = self.locationManager.userLocation, !self.weatherFetchOnce {
+                await self.fetchWeather(for: location)
+                self.weatherFetchOnce = true
             }
         } catch {
             alertError = AppError(type: .generic("Initialization failed."), underlyingError: error)
@@ -110,7 +115,7 @@ class TimelineViewModel: ObservableObject {
             logger.info("Timeline fetched successfully.")
         } catch let error as AppError {
             // Handle specific AppError cases
-            if case .mastodon(.cacheNotFound) = error.type {
+            if case .cache(.notFound) = error.type {
                 logger.info("Timeline cache not found on disk. Fetching from network.")
                 // Proceed to fetch from the network
             } else {
@@ -149,7 +154,8 @@ class TimelineViewModel: ObservableObject {
 
     func fetchTopPosts() async {
         do {
-            topPosts = try await mastodonService.fetchTrendingPosts()
+            let fetchedTopPosts = try await mastodonService.fetchTrendingPosts()
+            topPosts = fetchedTopPosts
             logger.info("Top posts fetched successfully.")
         } catch {
             alertError = AppError(type: .mastodon(.failedToFetchTrendingPosts), underlyingError: error)
@@ -159,54 +165,71 @@ class TimelineViewModel: ObservableObject {
 
     // MARK: - Weather Fetching
     
-    func fetchWeather(for location: CLLocation) {
-        // Check if the user is authenticated before fetching weather
+    func fetchWeather(for location: CLLocation) async {
+        weatherFetchTask?.cancel() // Cancel any existing task
+
         guard authViewModel.isAuthenticated else {
             logger.warning("Weather fetch attempted when not authenticated.")
             return
         }
         
-        isLoading = true
+        weatherFetchTask = Task { [weak self] in
+            // Debounce: Wait for 0.5 seconds
+            try? await Task.sleep(nanoseconds: 500_000_000)
 
-        guard let apiKey = decodeAPIKey(weatherAPIKeyBase64) else {
-            alertError = AppError(type: .weather(.invalidKey))
-            isLoading = false
-            return
-        }
+            guard !Task.isCancelled else { return }
 
-        let weatherURLString = "https://api.openweathermap.org/data/2.5/weather?lat=\(location.coordinate.latitude)&lon=\(location.coordinate.longitude)&units=metric&appid=\(apiKey)"
+            await MainActor.run {
+                self?.isLoading = true
+            }
+            defer {
+                Task {
+                    await MainActor.run {
+                        self?.isLoading = false
+                    }
+                }
+            }
 
-        guard let weatherURL = URL(string: weatherURLString) else {
-            alertError = AppError(type: .weather(.invalidURL))
-            isLoading = false
-            return
-        }
+            guard let self = self, let apiKey = self.decodeAPIKey(self.weatherAPIKeyBase64) else {
+                await MainActor.run {
+                    self?.alertError = AppError(type: .weather(.invalidKey))
+                }
+                return
+            }
 
-        URLSession.shared.dataTaskPublisher(for: weatherURL)
-            .tryMap { data, response in
-                guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(location.coordinate.latitude)&lon=\(location.coordinate.longitude)&units=metric&appid=\(apiKey)"
+            guard let url = URL(string: urlString) else {
+                await MainActor.run {
+                    self.alertError = AppError(type: .weather(.invalidURL))
+                }
+                return
+            }
+
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let httpResponse = response as? HTTPURLResponse else {
                     throw AppError(type: .weather(.badResponse))
                 }
-                return data
-            }
-            .decode(type: OpenWeatherResponse.self, decoder: JSONDecoder())
-            .map { response in
-                WeatherData(temperature: response.main.temp, description: response.weather.first?.description ?? "No description", cityName: response.name)
-            }
-            .receive(on: DispatchQueue.main)
-            .sink(receiveCompletion: { [weak self] completion in
-                self?.isLoading = false
-                if case .failure(let error) = completion {
-                    let appError = (error as? AppError) ?? AppError(type: .weather(.badResponse), underlyingError: error)
-                    self?.alertError = appError
-                    self?.logger.error("Failed to fetch weather: \(appError.localizedDescription, privacy: .public)")
-                }
-            }, receiveValue: { [weak self] weatherData in
-                self?.weather = weatherData
-            })
-            .store(in: &cancellables)
-    }
 
+                logger.info("Weather API Response Status Code: \(httpResponse.statusCode)")
+
+                if (200...299).contains(httpResponse.statusCode) {
+                    let weatherResponse = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
+                    await MainActor.run {
+                        self.weather = WeatherData(temperature: weatherResponse.main.temp, description: weatherResponse.weather.first?.description ?? "No description", cityName: weatherResponse.name)
+                    }
+                } else {
+                    logger.error("Weather API Error: \(httpResponse.statusCode)")
+                    throw AppError(type: .weather(.badResponse), underlyingError: NSError(domain: "HTTPError", code: httpResponse.statusCode, userInfo: nil))
+                }
+            } catch {
+                logger.error("Weather fetch failed: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    self.alertError = AppError(type: .weather(.badResponse), underlyingError: error)
+                }
+            }
+        }
+    }
 
     // MARK: - Post Actions
 
@@ -259,3 +282,4 @@ class TimelineViewModel: ObservableObject {
         return String(data: data, encoding: .utf8)
     }
 }
+

@@ -11,14 +11,14 @@ import Combine
 @MainActor
 class MockMastodonService: MastodonServiceProtocol {
     func clearAllKeychainData() async throws {
-        // No-op in the mock implementation
+        
     }
     
-
+    
     // MARK: - Properties
     private let pageSize = 20
-    var baseURL: URL? = URL(string: "https://example.com")
-    var accessToken: String? = "mockAccessToken123"
+    var baseURL: URL?
+    var accessToken: String?
     var shouldSucceed: Bool
     private(set) var mockAccounts: [Account]
     private(set) var mockPosts: [Post]
@@ -29,7 +29,7 @@ class MockMastodonService: MastodonServiceProtocol {
     // MARK: - Initialization
     init(
         shouldSucceed: Bool = true,
-        mockAccounts: [Account]? = nil,
+        mockAccounts: [Mustard.Account]? = nil,
         mockPosts: [Post]? = nil,
         mockTrendingPosts: [Post]? = nil
     ) {
@@ -86,20 +86,62 @@ class MockMastodonService: MastodonServiceProtocol {
     }
     
     // MARK: User Methods
-    func fetchCurrentUser() async throws -> User {
-        guard shouldSucceed, let account = mockAccounts.first else {
-            throw AppError(message: "Failed to fetch current user.")
-        }
+    private static func generateMockUser(from account: Account) -> User {
+        // Mock values
+        let mockAvatarURL = URL(string: "https://example.com/avatar.jpg")!
+        let mockHeaderURL = URL(string: "https://example.com/header.jpg")!
+        let dateFormatter = ISO8601DateFormatter()
+        let createdAtDate = dateFormatter.date(from: "2023-01-01T00:00:00.000Z") ?? Date()
+
+        // Create the mock User from Account
         return User(
             id: account.id,
             username: account.username,
-            displayName: account.displayName,
-            avatar: account.avatar,
-            url: account.url
+            acct: account.acct,
+            display_name: account.display_name,  // Ensure that `display_name` is correctly referenced
+            locked: false,
+            bot: false,
+            discoverable: true, // Optional, providing true for mock data
+            indexable: true,    // Optional, providing true for mock data
+            group: false,
+            created_at: createdAtDate,
+            note: "<p>This is a mock user account for testing.</p>",
+            url: account.url,
+            avatar: mockAvatarURL,
+            avatar_static: mockAvatarURL,
+            header: mockHeaderURL,
+            header_static: mockHeaderURL,
+            followers_count: 100,
+            following_count: 50,
+            statuses_count: 200,
+            last_status_at: "2024-01-13", // Optional String, mock value
+            hide_collections: false, // Optional, providing false
+            noindex: false, // Optional, providing false
+            source: User.Source(
+                privacy: "public",
+                sensitive: false,
+                language: "en",
+                note: "This is a mock user profile.",
+                fields: [], // Mock empty fields
+                follow_requests_count: 0,
+                hide_collections: false,
+                discoverable: true,
+                indexable: true
+            ),
+            emojis: [], // Mock empty emojis
+            roles: [], // Mock empty roles
+            fields: []  // Mock empty fields
         )
     }
     
-    // MARK: Authentication Methods
+    func fetchCurrentUser() async throws -> User {
+        guard shouldSucceed, let accountData = mockAccounts.first else {
+            throw AppError(message: "Failed to fetch current user.")
+        }
+        return MockMastodonService.generateMockUser(from: accountData)
+    }
+    
+// MARK:- Authentication Methods
     func validateToken() async throws {
         guard shouldSucceed, accessToken != nil else { throw AppError(message: "Invalid token.") }
     }
@@ -160,16 +202,16 @@ class MockMastodonService: MastodonServiceProtocol {
     }
     
     func isTokenNearExpiry() -> Bool {
-           guard let creationDate = tokenCreationDate else { return true }
-           let expiryThreshold = TimeInterval(3600 * 24 * 80)
-           return Date().timeIntervalSince(creationDate) > expiryThreshold
-       }
+        guard let creationDate = tokenCreationDate else { return true }
+        let expiryThreshold = TimeInterval(3600 * 24 * 80)
+        return Date().timeIntervalSince(creationDate) > expiryThreshold
+    }
 
-       func reauthenticate(config: OAuthConfig, instanceURL: URL) async throws {
-           guard shouldSucceed else { throw AppError(message: "Failed to reauthenticate.") }
-           accessToken = "mockNewAccessToken"
-           tokenCreationDate = Date()
-       }
+    func reauthenticate(config: OAuthConfig, instanceURL: URL) async throws {
+        guard shouldSucceed else { throw AppError(message: "Failed to reauthenticate.") }
+        accessToken = "mockNewAccessToken"
+        tokenCreationDate = Date()
+    }
     
     func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {
         guard shouldSucceed else { throw AppError(message: "Failed to stream timeline.") }
@@ -199,46 +241,48 @@ class MockMastodonService: MastodonServiceProtocol {
     
     // MARK: - Static Mock Data Generators
     
-    private static func generateMockAccounts() -> [Account] {
-        let baseURL = URL(string: "https://example.com")!
-        return [
-            Account(
-                id: "a1",
-                username: "user1",
-                displayName: "User One",
-                avatar: baseURL.appendingPathComponent("avatar1.png"),
-                acct: "@user1",
-                url: baseURL
-            ),
-            Account(
-                id: "a2",
-                username: "user2",
-                displayName: "User Two",
-                avatar: baseURL.appendingPathComponent("avatar2.png"),
-                acct: "@user2",
-                url: baseURL
-            )
-        ]
-    }
-    
-    private static func generateMockPosts(from accounts: [Account], count: Int) -> [Post] {
-        return (1...count).compactMap { i in
-            guard let account = accounts.randomElement() else { return nil }
-            return Post(
-                id: "post\(i)",
-                content: "<p>Mock post content #\(i)</p>",
-                createdAt: Date().addingTimeInterval(-Double(i * 3600)),
-                account: account,
-                mediaAttachments: [],
-                isFavourited: Bool.random(),
-                isReblogged: Bool.random(),
-                reblogsCount: Int.random(in: 0...20),
-                favouritesCount: Int.random(in: 0...50),
-                repliesCount: Int.random(in: 0...10)
-            )
+private static func generateMockAccounts() -> [Account] {
+            let baseURL = URL(string: "https://example.com")!
+            return [
+                Account(
+                    id: "a1",
+                    username: "user1",
+                    displayName: "User One", // Corrected label to match Account model
+                    avatar: baseURL.appendingPathComponent("avatar1.png"),
+                    acct: "user1",
+                    url: baseURL,
+                    accessToken: "token1"
+                ),
+                Account(
+                    id: "a2",
+                    username: "user2",
+                    displayName: "User Two", // Corrected label
+                    avatar: baseURL.appendingPathComponent("avatar2.png"),
+                    acct: "user2",
+                    url: baseURL,
+                    accessToken: "token2"
+                )
+                // Add more mock accounts as needed
+            ]
         }
-    }
-    
+
+    private static func generateMockPosts(from accounts: [Account], count: Int) -> [Post] {
+            return (1...count).compactMap { i in
+                guard let account = accounts.randomElement() else { return nil }
+                return Post(
+                    id: "post\(i)",
+                    content: "<p>Mock post content #\(i)</p>",
+                    createdAt: Date().addingTimeInterval(-Double(i * 3600)),
+                    account: account,
+                    mediaAttachments: [],
+                    isFavourited: Bool.random(),
+                    isReblogged: Bool.random(),
+                    reblogsCount: Int.random(in: 0...20),
+                    favouritesCount: Int.random(in: 0...50),
+                    repliesCount: Int.random(in: 0...10)
+                )
+            }
+        }
     // MARK: - Mock Error
     enum MockError: Error, LocalizedError {
         case failedToFetchTimeline

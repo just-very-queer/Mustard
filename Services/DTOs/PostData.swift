@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftData
 
 /// Represents the data structure of a Mastodon post received from the API.
 struct PostData: Codable {
@@ -24,7 +25,7 @@ struct PostData: Codable {
     /// - Parameter instanceURL: The Mastodon instance URL associated with this post.
     /// - Returns: A `Post` instance.
     func toPost(instanceURL: URL) -> Post {
-        let acc = account.toAccount(url: instanceURL) // Changed parameter label to 'url'
+        let acc = account.toAccount(instanceURL: instanceURL) // Use instanceURL here
         let attachments = media_attachments.map { $0.toMediaAttachment() }
 
         return Post(
@@ -39,6 +40,14 @@ struct PostData: Codable {
             favouritesCount: favourites_count,
             repliesCount: replies_count
         )
+    }
+
+    enum CodingKeys: String, CodingKey {
+           case id, content, account, media_attachments, favourited, reblogged
+           case reblogs_count = "reblogs_count"
+           case favourites_count = "favourites_count"
+           case replies_count = "replies_count"
+           case created_at = "created_at" // Correct mapping
     }
 }
 
@@ -57,18 +66,24 @@ struct AccountData: Codable {
         return URL(string: "https://\(host)")
     }
 
-    func toAccount(url: URL) -> Account { // Changed parameter label to 'url'
+    func toAccount(instanceURL: URL) -> Account {
         return Account(
             id: id,
             username: username,
             displayName: display_name,
             avatar: URL(string: avatar) ?? URL(string: "https://example.com/default_avatar.png")!,
             acct: acct,
-            url: url, // Changed from 'instanceURL' to 'url'
+            url: instanceURL, // Use instanceURL here
             accessToken: nil
         )
     }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, username, acct, avatar, url
+        case display_name = "display_name"
+    }
 }
+
 
 /// Represents the media attachment data within a Mastodon post.
 struct MediaAttachmentData: Codable {
@@ -84,5 +99,9 @@ struct MediaAttachmentData: Codable {
             type: MediaAttachment.MediaType(rawValue: type.lowercased()) ?? .unknown,
             url: URL(string: url) ?? URL(string: "https://example.com")!
         )
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case id, type, url
     }
 }

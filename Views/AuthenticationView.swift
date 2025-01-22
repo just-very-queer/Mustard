@@ -68,6 +68,8 @@ struct AuthenticationView: View {
                                 logger.info("Server selected: \(server.url, privacy: .public)")
                                 showingServerList = false
                                 isAuthenticating = true
+                                
+                                // Use `Task` to run async code within the button's action
                                 Task {
                                     await authViewModel.authenticate(to: server)
                                     isAuthenticating = false
@@ -133,11 +135,42 @@ struct AnimatedGradientGlowView: View {
     }
 }
 
-// Placeholder for the Main App View
+// MainAppView for the authenticated user
 struct MainAppView: View {
+    @EnvironmentObject var authViewModel: AuthenticationViewModel
+    @EnvironmentObject var locationManager: LocationManager
+    
     var body: some View {
-        // Your main app content here
-        Text("Welcome to the Main App")
+        // Use a TabView to switch between HomeView and SettingsView
+        TabView {
+            // Home Tab
+            NavigationStack {
+                HomeView()
+                    .environmentObject(authViewModel)
+                    .environmentObject(TimelineViewModel(mastodonService: MastodonService.shared, authViewModel: authViewModel, locationManager: locationManager))
+            }
+            .tabItem {
+                Label("Home", systemImage: "house")
+            }
+
+            // Settings Tab
+            NavigationStack {
+                SettingsView()
+                    .environmentObject(authViewModel)
+                    .environmentObject(locationManager)
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gearshape")
+            }
+        }
+        .onAppear {
+            // Fetch the timeline when the MainAppView appears
+            Task {
+                let timelineViewModel = TimelineViewModel(mastodonService: MastodonService.shared, authViewModel: authViewModel, locationManager: locationManager)
+                await timelineViewModel.initializeData()
+                await timelineViewModel.fetchTimeline()
+            }
+        }
     }
 }
 
