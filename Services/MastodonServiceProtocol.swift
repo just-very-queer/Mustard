@@ -52,6 +52,9 @@ struct TokenResponse: Codable, Sendable {
 @MainActor
 protocol MastodonServiceProtocol: AnyObject {
     
+    func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String
+
+    
     // MARK: - Core Properties
     
     /// The base URL of the Mastodon instance to connect to (e.g., `https://mastodon.social`).

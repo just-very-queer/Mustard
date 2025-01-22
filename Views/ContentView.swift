@@ -11,48 +11,15 @@ import SwiftData
 
 struct ContentView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
     @EnvironmentObject var locationManager: LocationManager
 
     var body: some View {
         Group {
             if authViewModel.isAuthenticated {
-                TabView {
-                    // Home Tab
-                    NavigationStack {
-                        HomeView()
-                            .environmentObject(timelineViewModel)
-                            .environmentObject(locationManager)
-                    }
-                    .tabItem {
-                        Label("Home", systemImage: "house")
-                    }
-
-                    // Settings Tab
-                    NavigationStack {
-                        SettingsView()
-                            .environmentObject(authViewModel)
-                            .environmentObject(timelineViewModel)
-                            .environmentObject(locationManager)
-                    }
-                    .tabItem {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                }
-                .onOpenURL { url in
-                    NotificationCenter.default.post(
-                        name: .didReceiveOAuthCallback,
-                        object: nil,
-                        userInfo: ["url": url]
-                    )
-                }
-                .alert(item: $timelineViewModel.alertError) { error in
-                    Alert(
-                        title: Text("Error"),
-                        message: Text(error.message),
-                        dismissButton: .default(Text("OK"))
-                    )
-                }
+                // User is authenticated, show MainAppView
+                MainAppView()
+                    .environmentObject(authViewModel)
+                    .environmentObject(locationManager)
             } else {
                 // If not authenticated, show the AuthenticationView
                 NavigationStack {

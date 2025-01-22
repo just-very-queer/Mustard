@@ -139,7 +139,7 @@ struct AnimatedGradientGlowView: View {
 struct MainAppView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
-    
+
     var body: some View {
         // Use a TabView to switch between HomeView and SettingsView
         TabView {
@@ -161,14 +161,6 @@ struct MainAppView: View {
             }
             .tabItem {
                 Label("Settings", systemImage: "gearshape")
-            }
-        }
-        .onAppear {
-            // Fetch the timeline when the MainAppView appears
-            Task {
-                let timelineViewModel = TimelineViewModel(mastodonService: MastodonService.shared, authViewModel: authViewModel, locationManager: locationManager)
-                await timelineViewModel.initializeData()
-                await timelineViewModel.fetchTimeline()
             }
         }
     }

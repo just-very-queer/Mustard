@@ -196,13 +196,13 @@ struct User: Identifiable, Codable {
         
         // Decode 'created_at' as a Date
         let createdAtString = try container.decode(String.self, forKey: .created_at)
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = dateFormatter.date(from: createdAtString) {
-            created_at = date
-        } else {
-            throw DecodingError.dataCorruptedError(forKey: .created_at, in: container, debugDescription: "Date string does not match format expected by formatter.")
-        }
+           let dateFormatter = ISO8601DateFormatter()
+           dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+           if let date = dateFormatter.date(from: createdAtString) {
+               created_at = date
+           } else {
+               throw DecodingError.dataCorruptedError(forKey: .created_at, in: container, debugDescription: "Date string does not match format expected by formatter.")
+           }
     }
     
     func encode(to encoder: Encoder) throws {

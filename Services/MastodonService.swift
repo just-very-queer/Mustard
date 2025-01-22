@@ -27,6 +27,7 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     private let timelineCache = NSCache<NSString, NSArray>()
     private let trendingPostsCache = NSCache<NSString, NSArray>()
     private let cacheDirectoryName = "com.yourcompany.Mustard.datacache"
+    private var webAuthSession: ASWebAuthenticationSession?
 
 
     private var _baseURL: URL?
@@ -35,29 +36,37 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     
     // Custom JSONEncoder/Decoder for Mastodon API
     private let jsonDecoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder -> Date in
-            let container = try decoder.singleValueContainer()
-            let dateString = try container.decode(String.self)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .custom { decoder -> Date in
+                let container = try decoder.singleValueContainer()
+                let dateString = try container.decode(String.self)
 
-            // First, try ISO 8601 format
-            let iso8601Formatter = ISO8601DateFormatter()
-            if let date = iso8601Formatter.date(from: dateString) {
-                return date
+                // First, try ISO 8601 format with fractional seconds
+                let iso8601FormatterWithFractionalSeconds = ISO8601DateFormatter()
+                iso8601FormatterWithFractionalSeconds.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let date = iso8601FormatterWithFractionalSeconds.date(from: dateString) {
+                    return date
+                }
+
+                // If not ISO 8601 with fractional seconds, then try ISO 8601 without fractional seconds
+                let iso8601Formatter = ISO8601DateFormatter()
+                iso8601Formatter.formatOptions = [.withInternetDateTime]
+                if let date = iso8601Formatter.date(from: dateString) {
+                    return date
+                }
+
+                // If not ISO 8601, then try the date-only format
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd" // Date-only format
+                if let date = dateFormatter.date(from: dateString) {
+                    return date
+                }
+
+                throw DecodingError.dataCorruptedError(in: container,
+                    debugDescription: "Cannot decode date string \(dateString)")
             }
-
-            // If not ISO 8601, then try the date-only format
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd" // Date-only format
-            if let date = dateFormatter.date(from: dateString) {
-                return date
-            }
-
-            throw DecodingError.dataCorruptedError(in: container,
-                  debugDescription: "Cannot decode date string \(dateString)")
-        }
-        return decoder
-    }()
+            return decoder
+        }()
     
     private let jsonEncoder: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -84,15 +93,21 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     
     // MARK: - Initialization & Authentication
     func ensureInitialized() async throws {
-        _baseURL = await loadFromKeychain(key: "baseURL").flatMap(URL.init)
-        _accessToken = await loadFromKeychain(key: "accessToken")
+            if _baseURL == nil {
+                _baseURL = await loadFromKeychain(key: "baseURL").flatMap(URL.init)
+            }
+            
+            if _accessToken == nil {
+                _accessToken = await loadFromKeychain(key: "accessToken")
+            }
+            
 
-        // Check if the instance URL is nil, then clear all data from Keychain
-        if _baseURL == nil || _accessToken == nil {
-            try await clearAllKeychainData()
-            // Additional error thrown to indicate that credentials are not just missing but also cleared
-            throw AppError(mastodon: .missingOrClearedCredentials)
-        }
+            // Check if the instance URL is nil, then clear all data from Keychain
+            if _baseURL == nil || _accessToken == nil {
+                try await clearAllKeychainData()
+                // Additional error thrown to indicate that credentials are not just missing but also cleared
+                throw AppError(mastodon: .missingOrClearedCredentials)
+            }
     }
     
     func isAuthenticated() async throws -> Bool {
@@ -104,40 +119,40 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     
     // MARK: - Timeline Methods
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
-        guard try await isAuthenticated() else {
-            throw AppError(mastodon: .missingCredentials)
-        }
-
-        let cacheKey = "timeline" as NSString
-
-        do {
-            let cachedPosts = try await loadTimelineFromDisk()
-            Task { await backgroundRefreshTimeline() }
-            // Put loaded posts into in-memory cache
-            timelineCache.setObject(cachedPosts as NSArray, forKey: cacheKey)
-            return cachedPosts
-        } catch let error as AppError {
-            // Add type annotation to disambiguate the error
-            if case .mastodon(.cacheNotFound) = error.type {
-                // Cache not found, continue to fetch from network
-                logger.info("Timeline cache not found on disk. Fetching from network.")
-            } else {
-                // Handle other errors (e.g., decoding error)
-                logger.error("Error loading timeline from disk: \(error)")
-                throw error // Or handle it appropriately
+            guard try await isAuthenticated() else {
+                throw AppError(mastodon: .missingCredentials)
             }
+
+            let cacheKey = "timeline" as NSString
+
+            do {
+                let cachedPosts = try await loadTimelineFromDisk()
+                Task { await backgroundRefreshTimeline() }
+                // Put loaded posts into in-memory cache
+                timelineCache.setObject(cachedPosts as NSArray, forKey: cacheKey)
+                return cachedPosts
+            } catch let error as AppError {
+                // Add type annotation to disambiguate the error
+                if case .mastodon(.cacheNotFound) = error.type {
+                    // Cache not found, continue to fetch from network
+                    logger.info("Timeline cache not found on disk. Fetching from network.")
+                } else {
+                    // Handle other errors (e.g., decoding error)
+                    logger.error("Error loading timeline from disk: \(error)")
+                    throw error // Or handle it appropriately
+                }
+            }
+
+            // Fetch from network
+            let posts = try await fetchData(endpoint: "/api/v1/timelines/home", type: [Post].self)
+            cacheTimeline(posts) // Cache the fetched timeline both in memory and on disk
+
+            // Save to disk in the background
+            Task {
+                await saveTimelineToDisk(posts)
         }
 
-        // Fetch from network
-        let posts = try await fetchData(endpoint: "/api/v1/timelines/home", type: [Post].self)
-        cacheTimeline(posts) // Cache the fetched timeline both in memory and on disk
-
-        // Save to disk in the background
-        Task {
-            await saveTimelineToDisk(posts)
-        }
-
-        return posts
+            return posts
     }
     
     func fetchTimeline(page: Int, useCache: Bool) async throws -> [Post] {
@@ -223,25 +238,55 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     }
     
     func fetchTrendingPosts() async throws -> [Post] {
-        let cacheKey = "trendingPosts" as NSString
+            let cacheKey = "trendingPosts" as NSString
 
-        // Try to get from in-memory cache
-        if let cachedPosts = trendingPostsCache.object(forKey: cacheKey) as? [Post] {
-            return cachedPosts
+            // Try to get from in-memory cache
+            if let cachedPosts = trendingPostsCache.object(forKey: cacheKey) as? [Post] {
+                return cachedPosts
+            }
+
+            // Try to load from disk
+            if let diskCachedPosts = await loadTrendingPostsFromDisk() {
+                // Put loaded posts into in-memory cache
+                trendingPostsCache.setObject(diskCachedPosts as NSArray, forKey: cacheKey)
+                return diskCachedPosts
+            }
+
+            // Fetch from network
+            let posts = try await fetchData(endpoint: "/api/v1/trends/statuses", type: [Post].self)
+            cacheTrendingPosts(posts) // Cache the fetched trending posts
+
+            return posts
         }
 
-        // Try to load from disk
-        if let diskCachedPosts = await loadTrendingPostsFromDisk() {
-            // Put loaded posts into in-memory cache
-            trendingPostsCache.setObject(diskCachedPosts as NSArray, forKey: cacheKey)
-            return diskCachedPosts
+    private func loadTrendingPostsFromDisk() async -> [Post]? {
+        // Get the file URL where the cache is stored
+        let fileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("\(cacheDirectoryName)/trendingPostsCache.json")
+
+        // Check if the file URL is valid
+        guard let url = fileURL else {
+            // Log the error or return nil if the URL is not valid
+            logger.error("Failed to get file URL for trending posts cache.")
+            return nil
         }
 
-        // Fetch from network
-        let posts = try await fetchData(endpoint: "/api/v1/trends/statuses", type: [Post].self)
-        cacheTrendingPosts(posts) // Cache the fetched trending posts
+        // Attempt to read the data from the file
+        guard let data = try? Data(contentsOf: url) else {
+            // Log the error or return nil if the data couldn't be loaded
+            logger.error("Failed to load data from \(url.path).")
+            return nil
+        }
 
-        return posts
+        // Attempt to decode the data into an array of Post
+        do {
+            let posts = try jsonDecoder.decode([Post].self, from: data)
+            return posts
+        } catch {
+            // Log decoding failure and return nil
+            logger.error("Failed to decode trending posts from cache: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // MARK: - Post Actions
@@ -270,7 +315,7 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
         try await updatePostInCache(postID: postID) { post in
             post.repliesCount += 1
         }
-    }
+}
 
     // MARK: - OAuth Methods
     
@@ -368,43 +413,44 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
             throw AppError(mastodon: .failedToRegisterOAuthApp)
         }
     }
+    
     /// Exchanges the authorization code for an access token.
     func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
-           let body = [
-               "grant_type": "authorization_code",
-               "code": code,
-               "client_id": config.clientID,
-               "client_secret": config.clientSecret,
-               "redirect_uri": config.redirectURI,
-               "scope": config.scope // Include scope
-           ]
-           let requestURL = instanceURL.appendingPathComponent("/oauth/token")
-           var request = URLRequest(url: requestURL)
-           request.httpMethod = "POST"
-           request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let body = [
+                "grant_type": "authorization_code",
+                "code": code,
+                "client_id": config.clientID,
+                "client_secret": config.clientSecret,
+                "redirect_uri": config.redirectURI,
+                "scope": config.scope // Include scope
+            ]
+            let requestURL = instanceURL.appendingPathComponent("/oauth/token")
+            var request = URLRequest(url: requestURL)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-           // Correctly construct the request body
-           request.httpBody = body.map { key, value in
-               let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-               return "\(key)=\(encodedValue)"
-           }
-           .joined(separator: "&")
-           .data(using: .utf8)
+            // Correctly construct the request body
+            request.httpBody = body.map { key, value in
+                let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                return "\(key)=\(encodedValue)"
+            }
+            .joined(separator: "&")
+            .data(using: .utf8)
 
-           let (data, response) = try await URLSession.shared.data(for: request)
-           guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-               throw AppError(mastodon: .failedToExchangeCode)
-           }
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                throw AppError(mastodon: .failedToExchangeCode)
+            }
 
-           // Decode the token response using the updated struct with CodingKeys
-           let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
-           self.accessToken = tokenResponse.accessToken
-           self.tokenCreationDate = Date() // Store the token creation date
+            // Decode the token response using the updated struct with CodingKeys
+            let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
+            self.accessToken = tokenResponse.accessToken
+            self.tokenCreationDate = Date() // Store the token creation date
 
-           // Fetch and save the instance URL after successful token exchange
-           self.baseURL = instanceURL
-           logger.info("Successfully exchanged authorization code for access token.")
-       }
+            // Fetch and save the instance URL after successful token exchange
+            self.baseURL = instanceURL
+            logger.info("Successfully exchanged authorization code for access token.")
+        }
     
     func isTokenNearExpiry() -> Bool {
         guard let creationDate = tokenCreationDate else { return true } // Treat as expired if no creation date
@@ -413,23 +459,23 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     }
 
     func reauthenticate(config: OAuthConfig, instanceURL: URL) async throws {
-        // Clear existing credentials
-        try await clearAccessToken()
-        _baseURL = nil
-        tokenCreationDate = nil
+            // Clear existing credentials
+            try await clearAccessToken()
+            _baseURL = nil
+            tokenCreationDate = nil
 
-        // Start a new web authentication session to get a new authorization code
-        let authorizationCode = try await startWebAuthSession(config: config, instanceURL: instanceURL)
-        logger.info("Received new authorization code.")
+            // Start a new web authentication session to get a new authorization code
+            let authorizationCode = try await startWebAuthSession(config: config, instanceURL: instanceURL)
+            logger.info("Received new authorization code.")
 
-        // Exchange the new authorization code for a new access token
-        try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: instanceURL)
-        logger.info("Exchanged new authorization code for access token.")
+            // Exchange the new authorization code for a new access token
+            try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: instanceURL)
+            logger.info("Exchanged new authorization code for access token.")
 
-        // Fetch and update the current user details
-        let updatedUser = try await fetchCurrentUser()
-        NotificationCenter.default.post(name: .didAuthenticate, object: nil, userInfo: ["user": updatedUser])
-        logger.info("Fetched and updated current user: \(updatedUser.username)")
+            // Fetch and update the current user details
+            let updatedUser = try await fetchCurrentUser()
+            NotificationCenter.default.post(name: .didAuthenticate, object: nil, userInfo: ["user": updatedUser])
+            logger.info("Fetched and updated current user: \(updatedUser.username)")
     }
 
     
@@ -533,11 +579,6 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
             }
         }
 
-        private func loadTrendingPostsFromDisk() async -> [Post]? {
-            let fileURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!.appendingPathComponent("\(cacheDirectoryName)/trendingPostsCache.json")
-            guard let data = try? Data(contentsOf: fileURL) else { return nil }
-            return try? jsonDecoder.decode([Post].self, from: data)
-        }
 
         private func saveTrendingPostsToDisk(_ posts: [Post]) async {
             guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
@@ -768,56 +809,62 @@ class MastodonService: NSObject, MastodonServiceProtocol, ASWebAuthenticationPre
     }
         
     /// Starts the Web Authentication Session to retrieve the authorization code.
-    private func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
-        let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
-        var components = URLComponents(url: authURL, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: config.clientID),
-            URLQueryItem(name: "redirect_uri", value: config.redirectURI),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: config.scope)
-        ]
-            
-        guard let finalURL = components.url else {
-            throw AppError(mastodon: .invalidAuthorizationCode, underlyingError: nil)
-        }
-            
-        guard let redirectScheme = URL(string: config.redirectURI)?.scheme else {
-            throw AppError(mastodon: .invalidResponse, underlyingError: nil)
-        }
-            
-        return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: finalURL,
-                callbackURLScheme: redirectScheme
-            ) { callbackURL, error in
-                if let error = error {
-                    self.logger.error("ASWebAuthenticationSession error: \(error.localizedDescription, privacy: .public)")
-                    continuation.resume(throwing: AppError(mastodon: .oauthError(message: error.localizedDescription), underlyingError: error))
-                    return
-                }
+    internal func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
+            let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
+            var components = URLComponents(url: authURL, resolvingAgainstBaseURL: false)!
+            components.queryItems = [
+                URLQueryItem(name: "client_id", value: config.clientID),
+                URLQueryItem(name: "redirect_uri", value: config.redirectURI),
+                URLQueryItem(name: "response_type", value: "code"),
+                URLQueryItem(name: "scope", value: config.scope)
+            ]
                 
-                guard let callbackURL = callbackURL,
-                    let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
-                        .queryItems?.first(where: { $0.name == "code" })?.value else {
-                    self.logger.error("Authorization code not found in callback URL.")
-                    continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Authorization code not found."), underlyingError: nil))
-                    return
-                }
+            guard let finalURL = components.url else {
+                throw AppError(mastodon: .invalidAuthorizationCode, underlyingError: nil)
+            }
                 
-                continuation.resume(returning: code)
+            guard let redirectScheme = URL(string: config.redirectURI)?.scheme else {
+                throw AppError(mastodon: .invalidResponse, underlyingError: nil)
             }
-            
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = true
-            
-            if !session.start() {
-                self.logger.error("ASWebAuthenticationSession failed to start.")
-                continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Failed to start WebAuth session."), underlyingError: nil))
-            }
-        }
-    }
+                
+            return try await withCheckedThrowingContinuation { continuation in
+                let session = ASWebAuthenticationSession(
+                    url: finalURL,
+                    callbackURLScheme: redirectScheme
+                ) { callbackURL, error in
+                    if let error = error {
+                        if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                            print("User cancelled the operation")
+                            continuation.resume(throwing: AppError(mastodon: .authError, underlyingError: error))
+                            return
+                        } else {
+                            self.logger.error("ASWebAuthenticationSession error: \(error.localizedDescription, privacy: .public)")
+                            continuation.resume(throwing: AppError(mastodon: .oauthError(message: error.localizedDescription), underlyingError: error))
+                            return
+                        }
+                    }
 
+                    guard let callbackURL = callbackURL,
+                        let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                            .queryItems?.first(where: { $0.name == "code" })?.value else {
+                        self.logger.error("Authorization code not found in callback URL.")
+                        continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Authorization code not found."), underlyingError: nil))
+                        return
+                    }
+
+                    continuation.resume(returning: code)
+                }
+
+                session.presentationContextProvider = self
+                session.prefersEphemeralWebBrowserSession = true
+
+                if !session.start() {
+                    self.logger.error("ASWebAuthenticationSession failed to start.")
+                    continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Failed to start WebAuth session."), underlyingError: nil))
+                }
+                self.webAuthSession = session
+            }
+        }
     
     // MARK: - Stream Functionality
     func streamTimeline() async throws -> AsyncThrowingStream<Post, Error> {

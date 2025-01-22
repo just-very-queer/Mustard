@@ -23,7 +23,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     // MARK: - Private Properties
     
     private let mastodonService: MastodonServiceProtocol
-    private var webAuthSession: ASWebAuthenticationSession?
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "Authentication")
     
     // A dedicated Task to handle authentication operations
@@ -67,7 +66,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
                 logger.info("Starting web authentication session...")
                 let authorizationCode: String
                 do {
-                    authorizationCode = try await startWebAuthSession(config: config, instanceURL: server.url)
+                    authorizationCode = try await mastodonService.startWebAuthSession(config: config, instanceURL: server.url)
                 } catch {
                     throw AppError(mastodon: .oauthError(message: "Failed to start web authentication session."), underlyingError: error)
                 }
@@ -118,6 +117,7 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
                 let genericError = AppError(message: "An unexpected error occurred during authentication.", underlyingError: error)
                 handleError(genericError)
             }
+            isAuthenticating = false
         }
     }
 
@@ -177,63 +177,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
 
     // MARK: - Private Methods
 
-    // Starts the Web Authentication Session to retrieve the authorization code.
-    private func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
-        let authURL = instanceURL.appendingPathComponent("/oauth/authorize")
-        var components = URLComponents(url: authURL, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: config.clientID),
-            URLQueryItem(name: "redirect_uri", value: config.redirectURI),
-            URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: config.scope)
-        ]
-
-        guard let finalURL = components.url else {
-            throw AppError(mastodon: .invalidAuthorizationCode, underlyingError: nil)
-        }
-
-        guard let redirectScheme = URL(string: config.redirectURI)?.scheme else {
-            throw AppError(mastodon: .invalidResponse, underlyingError: nil)
-        }
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(
-                url: finalURL,
-                callbackURLScheme: redirectScheme
-            ) { callbackURL, error in
-                if let error = error {
-                    if (error as NSError).code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                        print("User cancelled the operation")
-                        continuation.resume(throwing: AppError(mastodon: .authError, underlyingError: error))
-                        return
-                    } else {
-                        self.logger.error("ASWebAuthenticationSession error: \(error.localizedDescription, privacy: .public)")
-                        continuation.resume(throwing: AppError(mastodon: .oauthError(message: error.localizedDescription), underlyingError: error))
-                        return
-                    }
-                }
-
-                guard let callbackURL = callbackURL,
-                    let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
-                        .queryItems?.first(where: { $0.name == "code" })?.value else {
-                    self.logger.error("Authorization code not found in callback URL.")
-                    continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Authorization code not found."), underlyingError: nil))
-                    return
-                }
-
-                continuation.resume(returning: code)
-            }
-
-            session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = true
-
-            if !session.start() {
-                self.logger.error("ASWebAuthenticationSession failed to start.")
-                continuation.resume(throwing: AppError(mastodon: .oauthError(message: "Failed to start WebAuth session."), underlyingError: nil))
-            }
-            self.webAuthSession = session
-        }
-    }
     // Handles errors by setting the alertError property.
     private func handleError(_ error: Error) {
         if let appError = error as? AppError {

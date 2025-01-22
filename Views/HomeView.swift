@@ -12,18 +12,25 @@ import CoreLocation
 
 struct HomeView: View {
     // MARK: - Environment Objects
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
 
-    // For infinite scroll detection
+    // MARK: - State Variables
+    @StateObject private var timelineViewModel: TimelineViewModel
     @State private var isRequestingMore = false
     @State private var isShowingFullScreenImage = false
     @State private var selectedImageURL: URL?
 
-    // Logger
+    // MARK: - Logger
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "HomeView")
 
+    // MARK: - Initializer
+    init(authViewModel: AuthenticationViewModel, locationManager: LocationManager) {
+        // Initialize the TimelineViewModel directly in the state object without manually assigning to @StateObject
+        _timelineViewModel = StateObject(wrappedValue: TimelineViewModel(mastodonService: MastodonService.shared, authViewModel: authViewModel, locationManager: locationManager))
+    }
+
+    // MARK: - Body
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -38,8 +45,10 @@ struct HomeView: View {
                 .padding(.horizontal)
             }
             .navigationTitle("Home")
-            .task { // Use .task instead of .onAppear
-                await initializeData()
+            .task {
+                if authViewModel.isAuthenticated {
+                    await initializeData()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .didUpdateLocation)) { notification in
                 // Only fetch weather if user is authenticated
@@ -194,8 +203,6 @@ struct HomeView: View {
 
     // MARK: - Helper Functions
     private func initializeData() async {
-        // Only initialize data if authenticated
-        guard authViewModel.isAuthenticated else { return }
         await timelineViewModel.fetchTimeline()
         await timelineViewModel.fetchTopPosts()
         if let location = locationManager.userLocation {
@@ -266,7 +273,7 @@ struct HomeView_Preview: PreviewProvider {
             cityName: "San Francisco"
         )
 
-        return HomeView()
+        return HomeView(authViewModel: authViewModel, locationManager: locationManager)
             .environmentObject(authViewModel)
             .environmentObject(timelineViewModel)
             .environmentObject(locationManager)
