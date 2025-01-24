@@ -29,13 +29,19 @@ class TimelineViewModel: ObservableObject {
 
     private var weatherFetchTask: Task<Void, Never>?
     private var weatherFetchOnce: Bool = false
+    private let cacheService: CacheService
+    private let networkService: NetworkService
+    private let cacheKey = "timeline"
 
-    init(timelineService: TimelineService, trendingService: TrendingService, postActionService: PostActionService, locationManager: LocationManager) {
+    init(timelineService: TimelineService,cacheService: CacheService, networkService: NetworkService ,trendingService: TrendingService, postActionService: PostActionService, locationManager: LocationManager) {
         self.timelineService = timelineService
         self.trendingService = trendingService
         self.postActionService = postActionService
+        self.cacheService = cacheService
+        self.networkService = networkService
         self.locationManager = locationManager
         setupSubscriptions()
+        
     }
 
     private func setupSubscriptions() {
@@ -72,19 +78,90 @@ class TimelineViewModel: ObservableObject {
             self.weatherFetchOnce = true
         }
     }
-
+    
+    /// Fetch the timeline
     func fetchTimeline(useCache: Bool = true) async {
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
+        
+        let cacheKey = "timeline"
 
+        if useCache {
+            do {
+                // Attempt to load posts from the cache
+                let cachedPosts = try await cacheService.loadPostsFromCache(forKey: cacheKey)
+                
+                // Perform a background refresh of the timeline
+                Task {
+                    await backgroundRefreshTimeline()
+                }
+                
+                // Update the `posts` with cached data and exit
+                posts = cachedPosts
+                return
+            } catch let error as AppError {
+                // Handle specific cache errors
+                if case .mastodon(.cacheNotFound) = error.type {
+                    logger.info("Timeline cache not found on disk. Fetching from network.")
+                } else {
+                    logger.error("Error loading timeline from cache: \(error.localizedDescription)")
+                    handleError(error)
+                    return
+                }
+            } catch {
+                // Handle other cache errors
+                logger.error("Error loading timeline from cache: \(error.localizedDescription)")
+                handleError(error)
+                return
+            }
+        }
+
+        // Fetch from the network if cache is not used or not found
         do {
-            posts = try await timelineService.fetchTimeline(useCache: useCache)
+            // Fetch base URL and access token for debugging
+            let baseURL = try await KeychainHelper.shared.read(service: "MustardKeychain", account: "baseURL")
+            let accessToken = try await KeychainHelper.shared.read(service: "MustardKeychain", account: "accessToken")
+            logger.debug("Using baseURL: \(baseURL ?? "nil")")
+            logger.debug("Using accessToken: \(accessToken ?? "nil")")
+            
+            // Construct the API endpoint and fetch the timeline
+            let url = try await networkService.endpointURL("/api/v1/timelines/home")
+            let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
+            
+            // Cache the fetched posts in a background task
+            Task {
+                await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
+            }
+            
+            // Update the `posts` with the fetched data
+            posts = fetchedPosts
         } catch {
+            // Handle network fetch errors
+            logger.error("Failed to fetch timeline: \(error.localizedDescription)")
             handleError(error)
         }
     }
+    /// Background refresh of the timeline
+        private func backgroundRefreshTimeline() async {
+            do {
+                let url = try await networkService.endpointURL("/api/v1/timelines/home")
+                let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
 
+                // Cache the fetched posts in a background task
+                Task {
+                    await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
+                }
+
+                // Update the `posts` on the main actor
+                await MainActor.run {
+                    self.posts = fetchedPosts
+                }
+            } catch {
+                logger.error("Failed to refresh timeline: \(error.localizedDescription)")
+            }
+        }
+    
     func fetchMoreTimeline() async {
         guard !isFetchingMore else { return }
         isFetchingMore = true

@@ -81,7 +81,11 @@ struct HomeView: View {
             }
         }
         .onAppear {
-            checkAuthenticationStatus()
+            if authViewModel.isAuthenticated {
+                Task {
+                    await initializeData()
+                }
+            }
         }
     }
 
@@ -123,10 +127,13 @@ struct HomeView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(timelineViewModel.topPosts) { post in
-                                PostView(post: post, viewModel: timelineViewModel)
-                                    .frame(width: 300)
-                                    .cornerRadius(15)
-                                    .shadow(radius: 5)
+                                NavigationLink(destination: PostView(post: post, viewModel: timelineViewModel)) {
+                                    PostView(post: post, viewModel: timelineViewModel)
+                                        .frame(width: 300)
+                                        .cornerRadius(15)
+                                        .shadow(radius: 5)
+                                }
+                                .buttonStyle(PlainButtonStyle())
                             }
                         }
                         .padding(.horizontal)
@@ -155,22 +162,25 @@ struct HomeView: View {
             } else {
                 LazyVStack(spacing: 15) {
                     ForEach(timelineViewModel.posts) { post in
-                        PostView(post: post, viewModel: timelineViewModel)
-                            .cornerRadius(15)
-                            .shadow(radius: 3)
-                            .onAppear {
-                                loadMorePostsIfNeeded(currentPost: post)
-                            }
-                            .contextMenu {
-                                if let firstImage = post.mediaAttachments.first?.url {
-                                    Button(action: {
-                                        selectedImageURL = firstImage
-                                        isShowingFullScreenImage = true
-                                    }) {
-                                        Label("View Image", systemImage: "photo")
-                                    }
+                        NavigationLink(destination: PostView(post: post, viewModel: timelineViewModel)) {
+                            PostView(post: post, viewModel: timelineViewModel)
+                                .cornerRadius(15)
+                                .shadow(radius: 3)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .onAppear {
+                            loadMorePostsIfNeeded(currentPost: post)
+                        }
+                        .contextMenu {
+                            if let firstImage = post.mediaAttachments.first?.url {
+                                Button(action: {
+                                    selectedImageURL = firstImage
+                                    isShowingFullScreenImage = true
+                                }) {
+                                    Label("View Image", systemImage: "photo")
                                 }
                             }
+                        }
                     }
 
                     if timelineViewModel.isFetchingMore {
@@ -204,16 +214,6 @@ struct HomeView: View {
     }
 
     // MARK: - Helper Functions
-    private func checkAuthenticationStatus() {
-        if authViewModel.isAuthenticated {
-            navigateToMainApp()
-        }
-    }
-
-    private func navigateToMainApp() {
-        authViewModel.isAuthenticated = true
-    }
-
     private func initializeData() async {
         await timelineViewModel.fetchTimeline()
         await timelineViewModel.fetchTopPosts()
@@ -263,8 +263,9 @@ struct PostView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Post content here
-            Text(post.content).font(.body).lineLimit(3)
+            Text(post.content)
+                .font(.body)
+                .lineLimit(3)
         }
         .padding()
         .background(Color(UIColor.secondarySystemBackground))

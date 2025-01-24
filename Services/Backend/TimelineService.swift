@@ -18,7 +18,7 @@ class TimelineService {
         self.cacheService = cacheService
     }
 
-    func fetchTimeline(useCache: Bool) async throws -> [Post] {
+    func fetchTimeline(useCache: Bool = true) async throws -> [Post] {
         let cacheKey = "timeline"
 
         if useCache {
@@ -45,6 +45,12 @@ class TimelineService {
 
         // Fetch from network if not using cache or cache not found
         do {
+            // Print base URL and access token for debugging
+            let baseURL = try await KeychainHelper.shared.read(service: "MustardKeychain", account: "baseURL")
+            let accessToken = try await KeychainHelper.shared.read(service: "MustardKeychain", account: "accessToken")
+            print("Using baseURL: \(baseURL ?? "nil")")
+            print("Using accessToken: \(accessToken ?? "nil")")
+
             let url = try await NetworkService.shared.endpointURL("/api/v1/timelines/home")
             let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
             // Use Task to perform cache operation concurrently
@@ -57,7 +63,7 @@ class TimelineService {
             throw error
         }
     }
-
+    
     func fetchMoreTimeline(page: Int) async throws -> [Post] {
         var endpoint = "/api/v1/timelines/home"
         if page > 1 {

@@ -18,6 +18,8 @@ struct MainAppView: View {
     let trendingService: TrendingService
     let postActionService: PostActionService
     let profileService: ProfileService
+    let cacheService: CacheService
+    let networkService: NetworkService
 
     var body: some View {
         TabView {
@@ -28,9 +30,11 @@ struct MainAppView: View {
                     locationManager: locationManager,
                     timelineViewModel: TimelineViewModel(
                         timelineService: timelineService,
-                        trendingService: trendingService,
-                        postActionService: postActionService,
-                        locationManager: locationManager
+                        cacheService: cacheService, // Pass the correct CacheService
+                        networkService: networkService, // Pass the correct NetworkService
+                        trendingService: trendingService, // Pass the correct TrendingService
+                        postActionService: postActionService, // Pass the correct PostActionService
+                        locationManager: locationManager // Pass the correct LocationManager
                     ),
                     profileViewModel: ProfileViewModel(
                         profileService: profileService,

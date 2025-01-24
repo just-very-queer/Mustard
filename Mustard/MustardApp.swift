@@ -14,7 +14,7 @@ struct MustardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     // MARK: - Services
-    private let networkService = NetworkService.shared
+    static private let networkService = NetworkService.shared // Now static
     private let cacheService = CacheService()
     private let authenticationService = AuthenticationService()
     private let timelineService: TimelineService
@@ -33,48 +33,51 @@ struct MustardApp: App {
     init() {
         // Initialize the ModelContainer with your @Model types
         do {
-            container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
+            container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, Server.self)
             print("[MustardApp] ModelContainer initialized successfully.")
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
         // Initialize the AuthenticationService
-        let authService = AuthenticationService()
-        _authViewModel = StateObject(wrappedValue: AuthenticationViewModel(authenticationService: authService))
+        let authViewModelInstance = AuthenticationViewModel(authenticationService: authenticationService)
+        _authViewModel = StateObject(wrappedValue: authViewModelInstance)
 
-        // Initialize other services
-        timelineService = TimelineService(networkService: networkService, cacheService: cacheService)
-        trendingService = TrendingService(networkService: networkService, cacheService: cacheService)
-        postActionService = PostActionService(networkService: networkService)
-        profileService = ProfileService(networkService: networkService)
+        // Initialize other services using the static networkService
+        timelineService = TimelineService(networkService: Self.networkService, cacheService: cacheService)
+        trendingService = TrendingService(networkService: Self.networkService, cacheService: cacheService)
+        postActionService = PostActionService(networkService: Self.networkService)
+        profileService = ProfileService(networkService: Self.networkService)
     }
 
     var body: some Scene {
-        WindowGroup {
-            // Inject dependencies into MainAppView
-            MainAppView(
-                timelineService: timelineService,
-                trendingService: trendingService,
-                postActionService: postActionService,
-                profileService: profileService
-            )
-            .environmentObject(authViewModel)
-            .environmentObject(locationManager)
-            .modelContainer(container)
-            .onAppear {
-                Task {
-                    await authViewModel.validateAuthentication()
+            WindowGroup {
+                // Inject dependencies into MainAppView
+                if authViewModel.isAuthenticated {
+                    MainAppView(
+                        timelineService: timelineService,
+                        trendingService: trendingService,
+                        postActionService: postActionService,
+                        profileService: profileService,
+                        cacheService: cacheService,
+                        networkService: MustardApp.networkService // Pass the networkService directly
+                    )
+                    .environmentObject(authViewModel)
+                    .environmentObject(locationManager)
+                    .modelContainer(container)
+                } else {
+                    LoginView()
+                        .environmentObject(authViewModel)
+                        .environmentObject(locationManager)
+                        .modelContainer(container)
                 }
-                print("[MustardApp] App appeared. Validating authentication.")
             }
-        }
     }
 
     // MARK: - Helper to Create ModelContainer
     private static func createModelContainer() -> ModelContainer {
         do {
-            let container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self)
+            let container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, Server.self)
             print("[MustardApp] ModelContainer initialized successfully.")
             return container
         } catch {
