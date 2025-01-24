@@ -34,7 +34,7 @@ struct MainAppView: View {
                     ),
                     profileViewModel: ProfileViewModel(
                         profileService: profileService,
-                        authenticationService: authViewModel.authenticationService // Removed the `$`
+                        authenticationService: authViewModel.authenticationService // Pass the service directly
                     )
                 )
                 .environmentObject(authViewModel) // Injecting authViewModel
@@ -50,7 +50,7 @@ struct MainAppView: View {
                     ProfileView(user: currentUser)
                         .environmentObject(ProfileViewModel(
                             profileService: profileService,
-                            authenticationService: authViewModel.authenticationService // Removed the `$`
+                            authenticationService: authViewModel.authenticationService // Pass the service directly
                         ))
                         .environmentObject(authViewModel)
                 } else {

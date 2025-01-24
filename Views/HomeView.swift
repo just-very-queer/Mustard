@@ -13,34 +13,40 @@ import CoreLocation
 struct HomeView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
+    @StateObject private var timelineViewModel: TimelineViewModel
     @StateObject private var profileViewModel: ProfileViewModel
 
-    
     // MARK: - State Variables
-    @StateObject private var timelineViewModel: TimelineViewModel
     @State private var isRequestingMore = false
     @State private var isShowingFullScreenImage = false
     @State private var selectedImageURL: URL?
-    
+
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "HomeView")
 
     // MARK: - Initializer
-    init(authViewModel: AuthenticationViewModel, locationManager: LocationManager, timelineViewModel: TimelineViewModel, profileViewModel: ProfileViewModel) {
-            _timelineViewModel = StateObject(wrappedValue: timelineViewModel)
-            _profileViewModel = StateObject(wrappedValue: profileViewModel) // Initialize here
-            self.authViewModel = authViewModel
-            self.locationManager = locationManager
+    init(
+        authViewModel: AuthenticationViewModel,
+        locationManager: LocationManager,
+        timelineViewModel: TimelineViewModel,
+        profileViewModel: ProfileViewModel
+    ) {
+        _timelineViewModel = StateObject(wrappedValue: timelineViewModel)
+        _profileViewModel = StateObject(wrappedValue: profileViewModel)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    // Only show the weather if the user is authenticated
+                    // Weather Header
                     if authViewModel.isAuthenticated {
                         weatherHeader
                     }
+
+                    // Trending Posts Section
                     topPostsSection
+
+                    // Timeline Section
                     timelineSection
                 }
                 .padding(.horizontal)
@@ -52,7 +58,6 @@ struct HomeView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .didUpdateLocation)) { notification in
-                // Only fetch weather if the user is authenticated
                 if authViewModel.isAuthenticated, let location = notification.userInfo?["location"] as? CLLocation {
                     Task {
                         await timelineViewModel.fetchWeather(for: location)
@@ -78,11 +83,6 @@ struct HomeView: View {
         .onAppear {
             checkAuthenticationStatus()
         }
-        .onChange(of: authViewModel.isAuthenticated) { isAuthenticated in
-            if isAuthenticated {
-                navigateToMainApp()
-            }
-        }
     }
 
     // MARK: - Weather Header
@@ -91,9 +91,8 @@ struct HomeView: View {
             if let weather = timelineViewModel.weather {
                 WeatherBarView(weather: weather)
                     .padding(.top)
-                    .transition(.opacity) // Add a transition effect
+                    .transition(.opacity)
             } else if authViewModel.isAuthenticated {
-                // Only prompt for location if authenticated
                 Button(action: {
                     locationManager.requestLocationPermission()
                 }) {
@@ -124,13 +123,10 @@ struct HomeView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(timelineViewModel.topPosts) { post in
-                                NavigationLink(destination: PostView(post: post)) {
-                                    PostView(post: post)
-                                        .frame(width: 300)
-                                        .cornerRadius(15)
-                                        .shadow(radius: 5)
-                                }
-                                .buttonStyle(PlainButtonStyle())
+                                PostView(post: post, viewModel: timelineViewModel)
+                                    .frame(width: 300)
+                                    .cornerRadius(15)
+                                    .shadow(radius: 5)
                             }
                         }
                         .padding(.horizontal)
@@ -159,25 +155,22 @@ struct HomeView: View {
             } else {
                 LazyVStack(spacing: 15) {
                     ForEach(timelineViewModel.posts) { post in
-                        NavigationLink(destination: PostView(post: post)) {
-                            PostView(post: post)
-                                .cornerRadius(15)
-                                .shadow(radius: 3)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        .onAppear {
-                            loadMorePostsIfNeeded(currentPost: post)
-                        }
-                        .contextMenu {
-                            if let firstImage = post.mediaAttachments.first?.url {
-                                Button(action: {
-                                    selectedImageURL = firstImage
-                                    isShowingFullScreenImage = true
-                                }) {
-                                    Label("View Image", systemImage: "photo")
+                        PostView(post: post, viewModel: timelineViewModel)
+                            .cornerRadius(15)
+                            .shadow(radius: 3)
+                            .onAppear {
+                                loadMorePostsIfNeeded(currentPost: post)
+                            }
+                            .contextMenu {
+                                if let firstImage = post.mediaAttachments.first?.url {
+                                    Button(action: {
+                                        selectedImageURL = firstImage
+                                        isShowingFullScreenImage = true
+                                    }) {
+                                        Label("View Image", systemImage: "photo")
+                                    }
                                 }
                             }
-                        }
                     }
 
                     if timelineViewModel.isFetchingMore {
@@ -189,7 +182,7 @@ struct HomeView: View {
                         .padding()
                     }
                 }
-                .padding(.top, 5) // Add some top padding to the LazyVStack
+                .padding(.top, 5)
             }
         }
     }
@@ -198,7 +191,7 @@ struct HomeView: View {
     private var logoutButton: some ToolbarContent {
         ToolbarItem(placement: .navigationBarTrailing) {
             Button {
-                Task { // Create an async context here
+                Task {
                     await authViewModel.logout()
                 }
             } label: {
@@ -236,5 +229,45 @@ struct HomeView: View {
             await timelineViewModel.fetchMoreTimeline()
             isRequestingMore = false
         }
+    }
+}
+
+// MARK: - WeatherBarView
+struct WeatherBarView: View {
+    let weather: WeatherData
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(weather.cityName)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text(weather.description.capitalized)
+                    .font(.caption)
+            }
+            Spacer()
+            Text("\(Int(weather.temperature))°C")
+                .font(.largeTitle)
+                .fontWeight(.bold)
+        }
+        .padding()
+        .background(Color.blue.opacity(0.2))
+        .cornerRadius(10)
+    }
+}
+
+// MARK: - PostView
+struct PostView: View {
+    let post: Post
+    @ObservedObject var viewModel: TimelineViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Post content here
+            Text(post.content).font(.body).lineLimit(3)
+        }
+        .padding()
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(12)
     }
 }

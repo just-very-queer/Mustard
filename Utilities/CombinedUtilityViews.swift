@@ -36,14 +36,17 @@ struct ActionButton: View {
 struct AvatarView: View {
     let url: URL?
     let size: CGFloat
-    
+
     var body: some View {
         AsyncImage(url: url) { phase in
             switch phase {
             case .empty:
                 ProgressView()
+                    .frame(width: size, height: size)
             case .success(let image):
-                image.resizable().scaledToFill().clipShape(Circle())
+                image.resizable()
+                    .scaledToFill()
+                    .clipShape(Circle())
             case .failure:
                 Image(systemName: "person.crop.circle.fill")
                     .resizable()
@@ -55,6 +58,7 @@ struct AvatarView: View {
         }
         .frame(width: size, height: size)
         .background(Circle().fill(Color.gray.opacity(0.3)))
+        .clipShape(Circle())
     }
 }
 

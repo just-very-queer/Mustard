@@ -20,6 +20,11 @@ class AuthenticationViewModel: NSObject, ObservableObject {
     private let authService: AuthenticationService
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "Authentication")
 
+    // Expose the authentication service publicly as a read-only property
+    var authenticationService: AuthenticationService {
+        authService
+    }
+
     private var authenticationTask: Task<Void, Never>?
 
     init(authenticationService: AuthenticationService) {

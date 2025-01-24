@@ -109,61 +109,75 @@ class TimelineViewModel: ObservableObject {
     }
 
     func fetchWeather(for location: CLLocation) async {
-           weatherFetchTask?.cancel()
-           weatherFetchTask = Task { [weak self] in
-               defer {
-                   Task {
-                       await MainActor.run {
-                           self?.isLoading = false
-                       }
-                   }
-               }
+        // Cancel any ongoing fetch tasks
+        weatherFetchTask?.cancel()
 
-               guard let self = self, let apiKey = self.decodeAPIKey(self.weatherAPIKeyBase64) else {
-                   await MainActor.run {
-                       self?.alertError = AppError(type: .weather(.invalidKey))
-                   }
-                   return
-               }
+        weatherFetchTask = Task { [weak self] in
+            defer {
+                Task {
+                    await MainActor.run {
+                        self?.isLoading = false
+                    }
+                }
+            }
 
-               let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(location.coordinate.latitude)&lon=\(location.coordinate.longitude)&units=metric&appid=\(apiKey)"
-               guard let url = URL(string: urlString) else {
-                   await MainActor.run {
-                       self.alertError = AppError(type: .weather(.invalidURL))
-                   }
-                   return
-               }
+            guard let self = self, let apiKey = self.decodeAPIKey(self.weatherAPIKeyBase64) else {
+                await MainActor.run {
+                    self?.alertError = AppError(type: .weather(.invalidKey))
+                }
+                return
+            }
 
-               do {
-                   let (data, response) = try await URLSession.shared.data(from: url)
-                   guard let httpResponse = response as? HTTPURLResponse else {
-                       throw AppError(type: .weather(.badResponse), underlyingError: NSError(domain: "HTTPError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not an HTTP response"]))
-                   }
+            let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(location.coordinate.latitude)&lon=\(location.coordinate.longitude)&units=metric&appid=\(apiKey)"
+            guard let url = URL(string: urlString) else {
+                await MainActor.run {
+                    self.alertError = AppError(type: .weather(.invalidURL))
+                }
+                return
+            }
 
-                   logger.info("Weather API Response Status Code: \(httpResponse.statusCode)")
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                    let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    let errorDescription = HTTPURLResponse.localizedString(forStatusCode: statusCode)
+                    logger.error("Weather API Error: \(statusCode) - \(errorDescription)")
+                    throw AppError(
+                        type: .weather(.badResponse),
+                        underlyingError: NSError(
+                            domain: "HTTPError",
+                            code: statusCode,
+                            userInfo: [NSLocalizedDescriptionKey: errorDescription]
+                        )
+                    )
+                }
 
-                   if (200...299).contains(httpResponse.statusCode) {
-                       let weatherResponse = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
-                       await MainActor.run {
-                           self.weather = WeatherData(temperature: weatherResponse.main.temp, description: weatherResponse.weather.first?.description ?? "No description", cityName: weatherResponse.name)
-                       }
-                   } else {
-                       let errorDescription = HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
-                       logger.error("Weather API Error: \(httpResponse.statusCode) - \(errorDescription)")
-                       throw AppError(type: .weather(.badResponse), underlyingError: NSError(domain: "HTTPError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorDescription]))
-                   }
-               } catch {
-                   logger.error("Weather fetch failed: \(error.localizedDescription, privacy: .public)")
-                   await MainActor.run {
-                       if let appError = error as? AppError {
-                           self.alertError = appError
-                       } else {
-                           self.alertError = AppError(type: .weather(.badResponse), underlyingError: error)
-                       }
-                   }
-               }
-           }
-       }
+                // Decode the weather response
+                let weatherResponse = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
+                let weatherData = WeatherData(
+                    temperature: weatherResponse.main.temp,
+                    description: weatherResponse.weather.first?.description ?? "No description",
+                    cityName: weatherResponse.name
+                )
+
+                // Update the weather on the main thread
+                await MainActor.run {
+                    self.weather = weatherData
+                }
+
+            } catch {
+                // Handle decoding or network errors
+                logger.error("Weather fetch failed: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    if let appError = error as? AppError {
+                        self.alertError = appError
+                    } else {
+                        self.alertError = AppError(type: .weather(.badResponse), underlyingError: error)
+                    }
+                }
+            }
+        }
+    }
 
     func toggleLike(on post: Post) async {
         do {
