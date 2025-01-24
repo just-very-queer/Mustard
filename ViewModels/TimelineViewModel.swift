@@ -12,43 +12,34 @@ import OSLog
 
 @MainActor
 class TimelineViewModel: ObservableObject {
-
-    // MARK: - Published Properties
-
     @Published var posts: [Post] = []
     @Published var topPosts: [Post] = []
     @Published var weather: WeatherData?
     @Published var isLoading = false
-    @Published var isFetchingMore = false // Indicates if fetching more posts for infinite scroll
+    @Published var isFetchingMore = false
     @Published var alertError: AppError?
 
-    // MARK: - Private Properties
-
-    private let mastodonService: MastodonServiceProtocol
-    private let authViewModel: AuthenticationViewModel
+    private let timelineService: TimelineService
+    private let trendingService: TrendingService
+    private let postActionService: PostActionService
     private let locationManager: LocationManager
     private var cancellables = Set<AnyCancellable>()
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "TimelineViewModel")
-    private let weatherAPIKeyBase64 = "OTk2NTdjOTNhN2E5M2JlYTJkZTdiZjkzZTMyMTkxMDQy=" // Base64-encoded API key
-    
+    private let weatherAPIKeyBase64 = "OTk2NTdjOTNhN2E5M2JlYTJkZTdiZjkzZTMyMTkxMDQy=" //
+
     private var weatherFetchTask: Task<Void, Never>?
-    private var weatherFetchOnce: Bool = false // Ensures weather is fetched only once per app launch
+    private var weatherFetchOnce: Bool = false
 
-    // MARK: - Initialization
-
-    init(mastodonService: MastodonServiceProtocol, authViewModel: AuthenticationViewModel, locationManager: LocationManager) {
-        self.mastodonService = mastodonService
-        self.authViewModel = authViewModel
+    init(timelineService: TimelineService, trendingService: TrendingService, postActionService: PostActionService, locationManager: LocationManager) {
+        self.timelineService = timelineService
+        self.trendingService = trendingService
+        self.postActionService = postActionService
         self.locationManager = locationManager
-
-        // Subscribe to authentication and location updates
         setupSubscriptions()
     }
 
-    // MARK: - Setup
-
     private func setupSubscriptions() {
-        // Authentication updates
+        // Subscribe to authentication success
         NotificationCenter.default.publisher(for: .didAuthenticate)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -58,224 +49,165 @@ class TimelineViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Location updates
+        // Subscribe to location updates
         locationManager.locationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] location in
-                // Only fetch weather once after initialization or a significant location update
-                guard let self = self else { return }
-                if !self.weatherFetchOnce {
-                    Task {
-                        await self.fetchWeather(for: location)
-                    }
+                guard let self = self, !self.weatherFetchOnce else { return }
+                Task {
+                    await self.fetchWeather(for: location)
                 }
             }
             .store(in: &cancellables)
     }
 
-    // MARK: - Data Fetching
-
     func initializeData() async {
-        do {
-            try await mastodonService.ensureInitialized()
+        // Fetch data sequentially
+        await fetchTimeline(useCache: false)
+        await fetchTopPosts()
 
-            if mastodonService.isTokenNearExpiry() {
-                if let instanceURL = try await mastodonService.retrieveInstanceURL(),
-                   let config = try? await mastodonService.registerOAuthApp(instanceURL: instanceURL) {
-                    try await mastodonService.reauthenticate(config: config, instanceURL: instanceURL)
-                } else {
-                    logger.warning("Reauthentication required but no stored instance URL found.")
-                }
-            }
-
-            // Fetch data sequentially using serial queue to avoid race conditions
-            await fetchTimeline(useCache: false)
-            await fetchTopPosts()
-
-            // Fetch weather once during initialization
-            if let location = self.locationManager.userLocation, !self.weatherFetchOnce {
-                await self.fetchWeather(for: location)
-                self.weatherFetchOnce = true
-            }
-        } catch {
-            alertError = AppError(type: .generic("Initialization failed."), underlyingError: error)
-            logger.error("Initialization failed: \(error.localizedDescription, privacy: .public)")
+        // Fetch weather once during initialization
+        if let location = self.locationManager.userLocation, !self.weatherFetchOnce {
+            await self.fetchWeather(for: location)
+            self.weatherFetchOnce = true
         }
     }
 
     func fetchTimeline(useCache: Bool = true) async {
-        // Prevent concurrent timeline fetches
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
 
         do {
-            let fetchedPosts = try await mastodonService.fetchTimeline(useCache: useCache)
-            posts = fetchedPosts.sorted { $0.createdAt > $1.createdAt }
-            logger.info("Timeline fetched successfully.")
-        } catch let error as AppError {
-            // Handle specific AppError cases
-            if case .cache(.notFound) = error.type {
-                logger.info("Timeline cache not found on disk. Fetching from network.")
-                // Proceed to fetch from the network
-            } else {
-                alertError = error
-                logger.error("Failed to fetch timeline: \(error.localizedDescription, privacy: .public)")
-            }
+            posts = try await timelineService.fetchTimeline(useCache: useCache)
         } catch {
-            // Handle generic errors
-            alertError = AppError(type: .mastodon(.failedToFetchTimeline), underlyingError: error)
-            logger.error("Failed to fetch timeline: \(error.localizedDescription, privacy: .public)")
+            handleError(error)
         }
     }
 
     func fetchMoreTimeline() async {
-        // Prevent fetching more if already fetching or not authenticated
-        guard !isFetchingMore, authViewModel.isAuthenticated else { return }
+        guard !isFetchingMore else { return }
         isFetchingMore = true
         defer { isFetchingMore = false }
 
         do {
-            let nextPagePosts = try await mastodonService.fetchTimeline(page: (posts.count / 20) + 1, useCache: false)
-            if !nextPagePosts.isEmpty {
-                let newPosts = nextPagePosts.filter { newPost in
-                    !posts.contains { $0.id == newPost.id }
-                }
-                posts.append(contentsOf: newPosts.sorted { $0.createdAt > $1.createdAt })
-                logger.info("Fetched more posts.")
-            } else {
-                logger.info("No more posts available.")
+            let newPosts = try await timelineService.fetchMoreTimeline(page: (posts.count / 20) + 1)
+            if !newPosts.isEmpty {
+                posts.append(contentsOf: newPosts)
             }
         } catch {
-            alertError = AppError(type: .mastodon(.failedToFetchTimelinePage), underlyingError: error)
-            logger.error("Failed to fetch more timeline: \(error.localizedDescription, privacy: .public)")
+            handleError(error)
         }
     }
 
     func fetchTopPosts() async {
         do {
-            let fetchedTopPosts = try await mastodonService.fetchTrendingPosts()
-            topPosts = fetchedTopPosts
-            logger.info("Top posts fetched successfully.")
+            topPosts = try await trendingService.fetchTrendingPosts()
         } catch {
-            alertError = AppError(type: .mastodon(.failedToFetchTrendingPosts), underlyingError: error)
-            logger.error("Failed to fetch top posts: \(error.localizedDescription, privacy: .public)")
+            handleError(error)
         }
     }
 
-    // MARK: - Weather Fetching
-    
     func fetchWeather(for location: CLLocation) async {
-        weatherFetchTask?.cancel() // Cancel any existing task
+           weatherFetchTask?.cancel()
+           weatherFetchTask = Task { [weak self] in
+               defer {
+                   Task {
+                       await MainActor.run {
+                           self?.isLoading = false
+                       }
+                   }
+               }
 
-        guard authViewModel.isAuthenticated else {
-            logger.warning("Weather fetch attempted when not authenticated.")
-            return
-        }
-        
-        weatherFetchTask = Task { [weak self] in
-            // Debounce: Wait for 0.5 seconds
-            try? await Task.sleep(nanoseconds: 500_000_000)
+               guard let self = self, let apiKey = self.decodeAPIKey(self.weatherAPIKeyBase64) else {
+                   await MainActor.run {
+                       self?.alertError = AppError(type: .weather(.invalidKey))
+                   }
+                   return
+               }
 
-            guard !Task.isCancelled else { return }
+               let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(location.coordinate.latitude)&lon=\(location.coordinate.longitude)&units=metric&appid=\(apiKey)"
+               guard let url = URL(string: urlString) else {
+                   await MainActor.run {
+                       self.alertError = AppError(type: .weather(.invalidURL))
+                   }
+                   return
+               }
 
-            await MainActor.run {
-                self?.isLoading = true
-            }
-            defer {
-                Task {
-                    await MainActor.run {
-                        self?.isLoading = false
-                    }
-                }
-            }
+               do {
+                   let (data, response) = try await URLSession.shared.data(from: url)
+                   guard let httpResponse = response as? HTTPURLResponse else {
+                       throw AppError(type: .weather(.badResponse), underlyingError: NSError(domain: "HTTPError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Not an HTTP response"]))
+                   }
 
-            guard let self = self, let apiKey = self.decodeAPIKey(self.weatherAPIKeyBase64) else {
-                await MainActor.run {
-                    self?.alertError = AppError(type: .weather(.invalidKey))
-                }
-                return
-            }
+                   logger.info("Weather API Response Status Code: \(httpResponse.statusCode)")
 
-            let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(location.coordinate.latitude)&lon=\(location.coordinate.longitude)&units=metric&appid=\(apiKey)"
-            guard let url = URL(string: urlString) else {
-                await MainActor.run {
-                    self.alertError = AppError(type: .weather(.invalidURL))
-                }
-                return
-            }
-
-            do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    throw AppError(type: .weather(.badResponse))
-                }
-
-                logger.info("Weather API Response Status Code: \(httpResponse.statusCode)")
-
-                if (200...299).contains(httpResponse.statusCode) {
-                    let weatherResponse = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
-                    await MainActor.run {
-                        self.weather = WeatherData(temperature: weatherResponse.main.temp, description: weatherResponse.weather.first?.description ?? "No description", cityName: weatherResponse.name)
-                    }
-                } else {
-                    logger.error("Weather API Error: \(httpResponse.statusCode)")
-                    throw AppError(type: .weather(.badResponse), underlyingError: NSError(domain: "HTTPError", code: httpResponse.statusCode, userInfo: nil))
-                }
-            } catch {
-                logger.error("Weather fetch failed: \(error.localizedDescription, privacy: .public)")
-                await MainActor.run {
-                    self.alertError = AppError(type: .weather(.badResponse), underlyingError: error)
-                }
-            }
-        }
-    }
-
-    // MARK: - Post Actions
+                   if (200...299).contains(httpResponse.statusCode) {
+                       let weatherResponse = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
+                       await MainActor.run {
+                           self.weather = WeatherData(temperature: weatherResponse.main.temp, description: weatherResponse.weather.first?.description ?? "No description", cityName: weatherResponse.name)
+                       }
+                   } else {
+                       let errorDescription = HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
+                       logger.error("Weather API Error: \(httpResponse.statusCode) - \(errorDescription)")
+                       throw AppError(type: .weather(.badResponse), underlyingError: NSError(domain: "HTTPError", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errorDescription]))
+                   }
+               } catch {
+                   logger.error("Weather fetch failed: \(error.localizedDescription, privacy: .public)")
+                   await MainActor.run {
+                       if let appError = error as? AppError {
+                           self.alertError = appError
+                       } else {
+                           self.alertError = AppError(type: .weather(.badResponse), underlyingError: error)
+                       }
+                   }
+               }
+           }
+       }
 
     func toggleLike(on post: Post) async {
         do {
-            try await mastodonService.toggleLike(postID: post.id)
+            try await postActionService.toggleLike(postID: post.id)
             if let index = posts.firstIndex(where: { $0.id == post.id }) {
                 posts[index].isFavourited.toggle()
                 posts[index].favouritesCount += posts[index].isFavourited ? 1 : -1
             }
-            logger.info("Post \(post.id) like toggled successfully.")
         } catch {
-            alertError = AppError(type: .generic("Failed to toggle like."), underlyingError: error)
-            logger.error("Failed to toggle like for post \(post.id): \(error.localizedDescription, privacy: .public)")
+            handleError(error)
         }
     }
 
     func toggleRepost(on post: Post) async {
         do {
-            try await mastodonService.toggleRepost(postID: post.id)
+            try await postActionService.toggleRepost(postID: post.id)
             if let index = posts.firstIndex(where: { $0.id == post.id }) {
                 posts[index].isReblogged.toggle()
                 posts[index].reblogsCount += posts[index].isReblogged ? 1 : -1
             }
-            logger.info("Post \(post.id) repost toggled successfully.")
         } catch {
-            alertError = AppError(type: .generic("Failed to toggle repost."), underlyingError: error)
-            logger.error("Failed to toggle repost for post \(post.id): \(error.localizedDescription, privacy: .public)")
+            handleError(error)
         }
     }
 
     func comment(on post: Post, content: String) async throws {
         do {
-            try await mastodonService.comment(postID: post.id, content: content)
+            try await postActionService.comment(postID: post.id, content: content)
             if let index = posts.firstIndex(where: { $0.id == post.id }) {
                 posts[index].repliesCount += 1
             }
-            logger.info("Comment added to post \(post.id) successfully.")
         } catch {
-            alertError = AppError(type: .generic("Failed to add comment."), underlyingError: error)
-            logger.error("Failed to add comment for post \(post.id): \(error.localizedDescription, privacy: .public)")
-            throw error // Re-throw the error after logging
+            handleError(error)
+            throw error
         }
     }
 
-    // MARK: - Private Helpers
+    private func handleError(_ error: Error) {
+        if let appError = error as? AppError {
+            alertError = appError
+        } else {
+            alertError = AppError(type: .generic("An error occurred."), underlyingError: error)
+        }
+    }
 
     private func decodeAPIKey(_ base64Key: String) -> String? {
         guard let data = Data(base64Encoded: base64Key) else { return nil }

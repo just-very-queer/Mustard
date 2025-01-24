@@ -103,18 +103,3 @@ struct SampleServers {
         )
     ]
 }
-
-// MARK: - Preview
-struct ServerListView_Previews: PreviewProvider {
-    static var previews: some View {
-        let mockService = MockMastodonService(shouldSucceed: true)
-        let authViewModel = AuthenticationViewModel(mastodonService: mockService)
-
-        return ServerListView(
-            servers: SampleServers.servers,
-            onSelect: { _ in },
-            onCancel: {}
-        )
-        .environmentObject(authViewModel)
-    }
-}

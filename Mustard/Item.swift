@@ -7,6 +7,9 @@
 
 import Foundation
 import SwiftData
+import CoreLocation
+import Combine
+import SwiftData
 
 @Model
 final class Item {
@@ -27,3 +30,4 @@ extension Notification.Name {
     static let didDecodePostLocation = Notification.Name("didDecodePostLocatior")
     static let didRequestWeatherFetch = Notification.Name("didRequestWeatherFetch")
 }
+

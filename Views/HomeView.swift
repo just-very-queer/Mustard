@@ -11,31 +11,32 @@ import SwiftData
 import CoreLocation
 
 struct HomeView: View {
-    // MARK: - Environment Objects
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
+    @StateObject private var profileViewModel: ProfileViewModel
 
+    
     // MARK: - State Variables
     @StateObject private var timelineViewModel: TimelineViewModel
     @State private var isRequestingMore = false
     @State private var isShowingFullScreenImage = false
     @State private var selectedImageURL: URL?
-
-    // MARK: - Logger
+    
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "HomeView")
 
     // MARK: - Initializer
-    init(authViewModel: AuthenticationViewModel, locationManager: LocationManager) {
-        // Initialize the TimelineViewModel directly in the state object without manually assigning to @StateObject
-        _timelineViewModel = StateObject(wrappedValue: TimelineViewModel(mastodonService: MastodonService.shared, authViewModel: authViewModel, locationManager: locationManager))
+    init(authViewModel: AuthenticationViewModel, locationManager: LocationManager, timelineViewModel: TimelineViewModel, profileViewModel: ProfileViewModel) {
+            _timelineViewModel = StateObject(wrappedValue: timelineViewModel)
+            _profileViewModel = StateObject(wrappedValue: profileViewModel) // Initialize here
+            self.authViewModel = authViewModel
+            self.locationManager = locationManager
     }
 
-    // MARK: - Body
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    // Show weather only if user is authenticated
+                    // Only show the weather if the user is authenticated
                     if authViewModel.isAuthenticated {
                         weatherHeader
                     }
@@ -51,7 +52,7 @@ struct HomeView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .didUpdateLocation)) { notification in
-                // Only fetch weather if user is authenticated
+                // Only fetch weather if the user is authenticated
                 if authViewModel.isAuthenticated, let location = notification.userInfo?["location"] as? CLLocation {
                     Task {
                         await timelineViewModel.fetchWeather(for: location)
@@ -72,6 +73,14 @@ struct HomeView: View {
                 if let imageURL = selectedImageURL {
                     FullScreenImageView(imageURL: imageURL, isPresented: $isShowingFullScreenImage)
                 }
+            }
+        }
+        .onAppear {
+            checkAuthenticationStatus()
+        }
+        .onChange(of: authViewModel.isAuthenticated) { isAuthenticated in
+            if isAuthenticated {
+                navigateToMainApp()
             }
         }
     }
@@ -202,6 +211,16 @@ struct HomeView: View {
     }
 
     // MARK: - Helper Functions
+    private func checkAuthenticationStatus() {
+        if authViewModel.isAuthenticated {
+            navigateToMainApp()
+        }
+    }
+
+    private func navigateToMainApp() {
+        authViewModel.isAuthenticated = true
+    }
+
     private func initializeData() async {
         await timelineViewModel.fetchTimeline()
         await timelineViewModel.fetchTopPosts()
@@ -217,65 +236,5 @@ struct HomeView: View {
             await timelineViewModel.fetchMoreTimeline()
             isRequestingMore = false
         }
-    }
-}
-
-// MARK: - WeatherBarView
-
-struct WeatherBarView: View {
-    let weather: WeatherData
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(weather.cityName)
-                    .font(.title2)
-                    .bold()
-                    .foregroundColor(.primary)
-                Text(weather.description.capitalized)
-                    .font(.callout)
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            Text("\(weather.temperature, specifier: "%.1f")°C")
-                .font(.largeTitle)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
-        }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color(UIColor.secondarySystemBackground))
-                .shadow(color: .gray.opacity(0.3), radius: 10, x: 0, y: 5)
-        )
-    }
-}
-
-// MARK: - Preview
-
-struct HomeView_Preview: PreviewProvider {
-    static var previews: some View {
-        let mockService = MockMastodonService(shouldSucceed: true)
-        let authViewModel = AuthenticationViewModel(mastodonService: mockService)
-        let locationManager = LocationManager()
-
-        // Initialize the TimelineViewModel with locationManager
-        let timelineViewModel = TimelineViewModel(
-            mastodonService: mockService,
-            authViewModel: authViewModel,
-            locationManager: locationManager
-        )
-
-        // Simulate fetched weather data
-        timelineViewModel.weather = WeatherData(
-            temperature: 23.5,
-            description: "Clear sky",
-            cityName: "San Francisco"
-        )
-
-        return HomeView(authViewModel: authViewModel, locationManager: locationManager)
-            .environmentObject(authViewModel)
-            .environmentObject(timelineViewModel)
-            .environmentObject(locationManager)
     }
 }

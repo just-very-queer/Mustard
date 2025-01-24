@@ -49,7 +49,8 @@ final class Post: Identifiable, Codable, Equatable {
 
     // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
-        case id, content, createdAt, account, mediaAttachments, isFavourited, isReblogged, reblogsCount, favouritesCount, repliesCount
+        case id, content, createdAt, account, mediaAttachments
+        case isFavourited, isReblogged, reblogsCount, favouritesCount, repliesCount
     }
 
     required init(from decoder: Decoder) throws {
@@ -79,7 +80,7 @@ final class Post: Identifiable, Codable, Equatable {
         try container.encode(repliesCount, forKey: .repliesCount)
         try container.encode(mediaAttachments, forKey: .mediaAttachments)
     }
-    
+
     // MARK: - Equatable Conformance
     static func == (lhs: Post, rhs: Post) -> Bool {
         return lhs.id == rhs.id &&

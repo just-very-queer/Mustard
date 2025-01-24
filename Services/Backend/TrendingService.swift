@@ -1,5 +1,5 @@
 //
-//   TrendingService.swift
+//  TrendingService.swift
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 24/01/25.
@@ -23,7 +23,7 @@ class TrendingService {
         let cacheKey = "trendingPosts"
 
         do {
-            // Try to load cached posts, using 'await' since the function is async
+            // Try to load cached posts
             let cachedPosts = try await cacheService.loadPostsFromCache(forKey: cacheKey)
             return cachedPosts
         } catch {
@@ -33,13 +33,17 @@ class TrendingService {
 
         // If no cached posts are found or an error occurred, fetch them from the network
         do {
+            // Construct the URL for the trending posts endpoint
             let url = try await NetworkService.shared.endpointURL("/api/v1/trends/statuses")
+            
+            // Fetch data from the network
             let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
             
-            // Cache the fetched posts for future use
+            // Cache the fetched posts for future use in a non-blocking Task
             Task {
-                try? await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
+                await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
             }
+            
             return fetchedPosts
         } catch {
             // Log the error if fetching from the network fails
