@@ -26,13 +26,13 @@ struct OAuthConfig: Sendable {
 // RegisterResponse Struct (Updated to match the correct names)
 @MainActor
 struct RegisterResponse: Codable, Sendable {
-    let id: String?
-    let name: String?
+    let id: String
+    let name: String
     let website: String?
     let vapidKey: String
-    let clientId: String // Correctly mapped from "client_id"
-    let clientSecret: String // Correctly mapped from "client_secret"
-    let redirectUri: String? // Correctly mapped from "redirect_uri"
+    let clientId: String
+    let clientSecret: String
+    let redirectUri: String
 
     enum CodingKeys: String, CodingKey {
         case id, name, website
@@ -42,7 +42,6 @@ struct RegisterResponse: Codable, Sendable {
         case redirectUri = "redirect_uri"
     }
 }
-
 
 /// Represents the response received after obtaining an access token.
 struct TokenResponse: Codable, Sendable {
