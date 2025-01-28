@@ -24,95 +24,111 @@ struct OAuthConfig: Decodable, Sendable {
 
 // MARK: - RegisterResponse Struct
 // Removed @MainActor because it's not necessary for this struct
+
 struct RegisterResponse: Decodable {
     let id: String
     let name: String
     let website: String?
-    let vapidKey: String
-    let clientId: String
-    let clientSecret: String
-    let redirectUri: String
-    
-    /// Stores any extra fields in the JSON that are not part of the known CodingKeys.
-    private(set) var unknownKeys: [String: Any]? = nil
-    
-    enum CodingKeys: String, CodingKey {
-        case id, name, website
-        case vapidKey = "vapid_key"
-        case clientId = "client_id"
-        case clientSecret = "client_secret"
-        case redirectUri = "redirect_uri"
-    }
-    
-    init(from decoder: Decoder) throws {
-        // Decode known fields
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        website = try container.decodeIfPresent(String.self, forKey: .website)
-        vapidKey = try container.decode(String.self, forKey: .vapidKey)
-        clientId = try container.decode(String.self, forKey: .clientId)
-        clientSecret = try container.decode(String.self, forKey: .clientSecret)
-        redirectUri = try container.decode(String.self, forKey: .redirectUri)
-        
-        // Decode all other keys into unknownKeys
-        let allKeysContainer = try decoder.container(keyedBy: DynamicCodingKeys.self)
-        var additionalData = [String: Any]()
-        
-        for key in allKeysContainer.allKeys {
-            // Skip the keys we already know about
-            guard CodingKeys(stringValue: key.stringValue) == nil else { continue }
-            
-            // Try various decodes
-            if let stringValue = try? allKeysContainer.decode(String.self, forKey: key) {
-                additionalData[key.stringValue] = stringValue
-                continue
-            }
-            if let intValue = try? allKeysContainer.decode(Int.self, forKey: key) {
-                additionalData[key.stringValue] = intValue
-                continue
-            }
-            if let boolValue = try? allKeysContainer.decode(Bool.self, forKey: key) {
-                additionalData[key.stringValue] = boolValue
-                continue
-            }
-            if let doubleValue = try? allKeysContainer.decode(Double.self, forKey: key) {
-                additionalData[key.stringValue] = doubleValue
-                continue
-            }
-            if let stringArray = try? allKeysContainer.decode([String].self, forKey: key) {
-                additionalData[key.stringValue] = stringArray
-                continue
-            }
-            
-            // If needed, you could handle more types or store raw JSON data here.
-            // For example:
-            // let rawData = try allKeysContainer.decodeRawData(forKey: key)
-            // additionalData[key.stringValue] = rawData
-            
-            // Otherwise, just skip it if we cannot decode a known type
-        }
-        
-        // Assign only if we actually found unknown fields
-        unknownKeys = additionalData.isEmpty ? nil : additionalData
-    }
-    
-    // Helper struct to decode any key
-    private struct DynamicCodingKeys: CodingKey {
-        var stringValue: String
-        var intValue: Int?
-        
-        init?(stringValue: String) {
-            self.stringValue = stringValue
-            self.intValue = nil
-        }
-        
-        init?(intValue: Int) {
-            self.stringValue = "\(intValue)"
-            self.intValue = intValue
-        }
-    }
+    let vapidKey: String      // Mastodon returns `vapid_key` -> vapidKey
+    let clientId: String      // Mastodon returns `client_id` -> clientId
+    let clientSecret: String  // Mastodon returns `client_secret` -> clientSecret
+    let redirectUri: String   // Mastodon returns `redirect_uri` -> redirectUri
+
+    // If Mastodon includes extra fields like `scopes`, `redirect_uris`, etc.
+    // .convertFromSnakeCase will decode them if you list them here in camelCase, e.g.:
+    // let scopes: [String]?   // Mastodon might return `scopes:["read","write","follow","push"]`
+    // let redirectUris: [String]? // `redirect_uris`
 }
+
+//struct RegisterResponse: Decodable {
+//    let id: String
+//    let name: String
+//    let website: String?
+//    let vapidKey: String
+//    let clientId: String
+//    let clientSecret: String
+//    let redirectUri: String
+//    
+//    /// Stores any extra fields in the JSON that are not part of the known CodingKeys.
+//    private(set) var unknownKeys: [String: Any]? = nil
+//    
+//    enum CodingKeys: String, CodingKey {
+//        case id, name, website
+//        case vapidKey = "vapid_key"
+//        case clientId = "client_id"
+//        case clientSecret = "client_secret"
+//        case redirectUri = "redirect_uri"
+//    }
+//    
+//    init(from decoder: Decoder) throws {
+//        // Decode known fields
+//        let container = try decoder.container(keyedBy: CodingKeys.self)
+//        id = try container.decode(String.self, forKey: .id)
+//        name = try container.decode(String.self, forKey: .name)
+//        website = try container.decodeIfPresent(String.self, forKey: .website)
+//        vapidKey = try container.decode(String.self, forKey: .vapidKey)
+//        clientId = try container.decode(String.self, forKey: .clientId)
+//        clientSecret = try container.decode(String.self, forKey: .clientSecret)
+//        redirectUri = try container.decode(String.self, forKey: .redirectUri)
+//        
+//        // Decode all other keys into unknownKeys
+//        let allKeysContainer = try decoder.container(keyedBy: DynamicCodingKeys.self)
+//        var additionalData = [String: Any]()
+//        
+//        for key in allKeysContainer.allKeys {
+//            // Skip the keys we already know about
+//            guard CodingKeys(stringValue: key.stringValue) == nil else { continue }
+//            
+//            // Try various decodes
+//            if let stringValue = try? allKeysContainer.decode(String.self, forKey: key) {
+//                additionalData[key.stringValue] = stringValue
+//                continue
+//            }
+//            if let intValue = try? allKeysContainer.decode(Int.self, forKey: key) {
+//                additionalData[key.stringValue] = intValue
+//                continue
+//            }
+//            if let boolValue = try? allKeysContainer.decode(Bool.self, forKey: key) {
+//                additionalData[key.stringValue] = boolValue
+//                continue
+//            }
+//            if let doubleValue = try? allKeysContainer.decode(Double.self, forKey: key) {
+//                additionalData[key.stringValue] = doubleValue
+//                continue
+//            }
+//            if let stringArray = try? allKeysContainer.decode([String].self, forKey: key) {
+//                additionalData[key.stringValue] = stringArray
+//                continue
+//            }
+//            
+//            // If needed, you could handle more types or store raw JSON data here.
+//            // For example:
+//            // let rawData = try allKeysContainer.decodeRawData(forKey: key)
+//            // additionalData[key.stringValue] = rawData
+//            
+//            // Otherwise, just skip it if we cannot decode a known type
+//        }
+//        
+//        // Assign only if we actually found unknown fields
+//        unknownKeys = additionalData.isEmpty ? nil : additionalData
+//    }
+//
+//    // Helper struct to decode any key
+//    private struct DynamicCodingKeys: CodingKey {
+//        var stringValue: String
+//        var intValue: Int?
+//        
+//        init?(stringValue: String) {
+//            self.stringValue = stringValue
+//            self.intValue = nil
+//        }
+//        
+//        init?(intValue: Int) {
+//            self.stringValue = "\(intValue)"
+//            self.intValue = intValue
+//        }
+//    }
+//}
 
 
 // MARK: - TokenResponse
