@@ -13,7 +13,7 @@ struct MainAppView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
 
-    // Inject the required services for TimelineViewModel and ProfileViewModel
+    // Services
     let timelineService: TimelineService
     let trendingService: TrendingService
     let postActionService: PostActionService
@@ -30,19 +30,16 @@ struct MainAppView: View {
                     locationManager: locationManager,
                     timelineViewModel: TimelineViewModel(
                         timelineService: timelineService,
-                        cacheService: cacheService, // Pass the correct CacheService
-                        networkService: networkService, // Pass the correct NetworkService
-                        trendingService: trendingService, // Pass the correct TrendingService
-                        postActionService: postActionService, // Pass the correct PostActionService
-                        locationManager: locationManager // Pass the correct LocationManager
+                        cacheService: cacheService,
+                        networkService: networkService,
+                        trendingService: trendingService,
+                        postActionService: postActionService,
+                        locationManager: locationManager
                     ),
-                    profileViewModel: ProfileViewModel(
-                        profileService: profileService,
-                        authenticationService: authViewModel.authenticationService // Pass the service directly
-                    )
+                    profileViewModel: ProfileViewModel(profileService: profileService)
                 )
-                .environmentObject(authViewModel) // Injecting authViewModel
-                .environmentObject(locationManager) // Injecting locationManager
+                .environmentObject(authViewModel)
+                .environmentObject(locationManager)
             }
             .tabItem {
                 Label("Home", systemImage: "house")
@@ -52,10 +49,7 @@ struct MainAppView: View {
             NavigationStack {
                 if let currentUser = authViewModel.currentUser {
                     ProfileView(user: currentUser)
-                        .environmentObject(ProfileViewModel(
-                            profileService: profileService,
-                            authenticationService: authViewModel.authenticationService // Pass the service directly
-                        ))
+                        .environmentObject(ProfileViewModel(profileService: profileService))
                         .environmentObject(authViewModel)
                 } else {
                     Text("Please log in to view your profile.")

@@ -16,16 +16,16 @@ class ProfileViewModel: ObservableObject {
     @Published var showAlert: Bool = false
 
     private let profileService: ProfileService
-    private let authenticationService: AuthenticationService
     private var cancellables = Set<AnyCancellable>()
 
-    init(profileService: ProfileService, authenticationService: AuthenticationService) {
+    init(profileService: ProfileService) {
         self.profileService = profileService
-        self.authenticationService = authenticationService
         
-        authenticationService.$currentUser
-            .compactMap { $0 }
+        // Subscribe to changes in the current user in AuthenticationService using the shared instance
+        AuthenticationService.shared.$currentUser
+            .compactMap { $0 } // Only proceed if currentUser is not nil
             .sink { [weak self] user in
+                // Fetch followers and following when the current user changes
                 Task {
                     await self?.fetchFollowers(for: user.id)
                     await self?.fetchFollowing(for: user.id)
@@ -57,8 +57,7 @@ class ProfileViewModel: ObservableObject {
                 updatedFields: updatedFields
             )
             
-            // Use the new update method instead of direct property access
-            authenticationService.updateAuthenticatedUser(updatedUser)
+            AuthenticationService.shared.updateAuthenticatedUser(updatedUser)
             
             showSuccess(message: "Profile updated successfully!")
         } catch {
