@@ -23,11 +23,9 @@ class ProfileViewModel: ObservableObject {
         self.profileService = profileService
         self.authenticationService = authenticationService
         
-        // Subscribe to changes in the current user
         authenticationService.$currentUser
-            .compactMap { $0 } // Only proceed if currentUser is not nil
+            .compactMap { $0 }
             .sink { [weak self] user in
-                // Fetch followers and following when the current user changes
                 Task {
                     await self?.fetchFollowers(for: user.id)
                     await self?.fetchFollowing(for: user.id)
@@ -40,8 +38,7 @@ class ProfileViewModel: ObservableObject {
         do {
             followers = try await profileService.fetchFollowers(for: accountId)
         } catch {
-            print("Error fetching followers: \(error.localizedDescription)")
-            // Handle error appropriately, possibly updating an alert state
+            handleError(error, message: "Error fetching followers")
         }
     }
 
@@ -49,18 +46,37 @@ class ProfileViewModel: ObservableObject {
         do {
             following = try await profileService.fetchFollowing(for: accountId)
         } catch {
-            print("Error fetching following: \(error.localizedDescription)")
-            // Handle error appropriately, possibly updating an alert state
+            handleError(error, message: "Error fetching following")
         }
     }
 
     func updateProfile(for accountId: String, updatedFields: [String: String]) async {
         do {
-            try await profileService.updateProfile(for: accountId, updatedFields: updatedFields)
-            // Handle successful update, possibly updating the UI
+            let updatedUser = try await profileService.updateProfile(
+                for: accountId,
+                updatedFields: updatedFields
+            )
+            
+            // Use the new update method instead of direct property access
+            authenticationService.updateAuthenticatedUser(updatedUser)
+            
+            showSuccess(message: "Profile updated successfully!")
         } catch {
-            print("Error updating profile: \(error.localizedDescription)")
-            // Handle error appropriately, possibly updating an alert state
+            handleError(error, message: "Error updating profile")
         }
+    }
+
+    private func showSuccess(message: String) {
+        alertMessage = message
+        showAlert = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            self.showAlert = false
+        }
+    }
+
+    private func handleError(_ error: Error, message: String) {
+        alertMessage = "\(message): \(error.localizedDescription)"
+        showAlert = true
+        print("\(message): \(error.localizedDescription)")
     }
 }

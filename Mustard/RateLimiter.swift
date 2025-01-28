@@ -7,7 +7,7 @@
 
 import Foundation
 
-class RateLimiter {
+actor RateLimiter {
     private let capacity: Int
     private let refillRate: Double // Tokens per second
     private var tokens: Double
@@ -20,21 +20,19 @@ class RateLimiter {
         self.lastRefillTime = Date()
     }
 
-    func tryConsume(tokens: Int = 1) -> Bool {
+    func tryConsume(count: Int = 1) -> Bool {
         refill()
-        if Double(tokens) <= self.tokens {
-            self.tokens -= Double(tokens)
-            return true
-        } else {
-            return false
-        }
+        let needed = Double(count)
+        guard tokens >= needed else { return false }
+        tokens -= needed
+        return true
     }
 
     private func refill() {
         let now = Date()
-        let timeSinceLastRefill = now.timeIntervalSince(lastRefillTime)
-        let tokensToAdd = timeSinceLastRefill * refillRate
-        self.tokens = min(Double(capacity), self.tokens + tokensToAdd)
-        self.lastRefillTime = now
+        let elapsed = now.timeIntervalSince(lastRefillTime)
+        let refillAmount = elapsed * refillRate
+        tokens = min(Double(capacity), tokens + refillAmount)
+        lastRefillTime = now
     }
 }

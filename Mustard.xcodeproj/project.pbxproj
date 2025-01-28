@@ -51,7 +51,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Backend/LocationService.swift,
-				Backend/ProfileService.swift,
 			);
 			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
 		};
@@ -59,35 +58,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Backend/LocationService.swift,
-				Backend/ProfileService.swift,
-			);
-			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
-		};
-		66292ADC2D43BF1A00883170 /* Exceptions for "ViewModels" folder in "MustardTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				ProfileViewModel.swift,
-			);
-			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
-		};
-		66292ADD2D43BF1A00883170 /* Exceptions for "ViewModels" folder in "MustardUITests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				ProfileViewModel.swift,
-			);
-			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
-		};
-		66292AEE2D440C6E00883170 /* Exceptions for "Views" folder in "MustardTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				LoginView.swift,
-			);
-			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
-		};
-		66292AEF2D440C6E00883170 /* Exceptions for "Views" folder in "MustardUITests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				LoginView.swift,
 			);
 			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
 		};
@@ -120,19 +90,11 @@
 		};
 		6687C3A72C95B567000ECC5D /* ViewModels */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				66292ADC2D43BF1A00883170 /* Exceptions for "ViewModels" folder in "MustardTests" target */,
-				66292ADD2D43BF1A00883170 /* Exceptions for "ViewModels" folder in "MustardUITests" target */,
-			);
 			path = ViewModels;
 			sourceTree = "<group>";
 		};
 		6687C3AE2C95B5CA000ECC5D /* Views */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				66292AEE2D440C6E00883170 /* Exceptions for "Views" folder in "MustardTests" target */,
-				66292AEF2D440C6E00883170 /* Exceptions for "Views" folder in "MustardUITests" target */,
-			);
 			path = Views;
 			sourceTree = "<group>";
 		};
@@ -171,7 +133,7 @@
 				6687C3A72C95B567000ECC5D /* ViewModels */,
 				6687C39B2C95B503000ECC5D /* Services */,
 				6687C34F2C95AE87000ECC5D /* Mustard */,
-				6687C37D2C95B147000ECC5D /* Modesls */,
+				6687C37D2C95B147000ECC5D /* Models */,
 				6687C34E2C95AE87000ECC5D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -186,7 +148,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		6687C37D2C95B147000ECC5D /* Modesls */ = {
+		6687C37D2C95B147000ECC5D /* Models */ = {
 			isa = PBXGroup;
 			children = (
 				6687C37E2C95B426000ECC5D /* Post.swift */,
@@ -196,7 +158,7 @@
 				66292ADE2D43CA9D00883170 /* User.swift */,
 				66292AE22D43CACE00883170 /* Config.swift */,
 			);
-			path = Modesls;
+			path = Models;
 			sourceTree = "<group>";
 		};
 		6687C3B52C95B61C000ECC5D /* Utilities */ = {

@@ -277,7 +277,8 @@ struct EditProfileView: View {
 
                 Button("Save Changes") {
                     Task {
-                        await profileViewModel.updateProfile(for: user.id, updatedFields: [
+                        // Ignore the result of the `updateProfile` call
+                        _ = await profileViewModel.updateProfile(for: user.id, updatedFields: [
                             "username": username,
                             "display_name": displayName,
                             "note": bio

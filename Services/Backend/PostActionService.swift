@@ -39,7 +39,9 @@ class PostActionService {
     func comment(postID: String, content: String) async throws {
         let body: [String: String] = ["status": content, "in_reply_to_id": postID]
         do {
-            _ = try await networkService.postData(endpoint: "/api/v1/statuses", body: body, type: Post.self)
+            // Assuming the API returns an empty response for comment action.
+            // Use `Data.self` as responseType if the API does not return any data.
+            _ = try await networkService.postData(endpoint: "/api/v1/statuses", body: body, responseType: Data.self)
             logger.info("Comment added to post \(postID) successfully.")
         } catch {
             logger.error("Failed to add comment for post \(postID): \(error.localizedDescription)")

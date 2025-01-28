@@ -20,7 +20,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
     private let authService: AuthenticationService
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "Authentication")
     
-    // Expose the authentication service publicly as a read-only property
     var authenticationService: AuthenticationService {
         authService
     }
@@ -32,23 +31,35 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         super.init()
     }
     
-    /// Authenticate the user to the specified server
-    func authenticate(to server: Server) async {
+    func authenticate(to server: ServerModel) async {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         alertError = nil
         
         authenticationTask = Task {
             logger.info("Starting authentication for server: \(server.url.absoluteString, privacy: .public)")
-            await authService.authenticate(to: server)
-            currentUser = authService.currentUser
-            isAuthenticated = authService.isAuthenticated
-            logger.info("Authentication successful for user: \(self.currentUser?.username ?? "Unknown", privacy: .public)")
+            
+            do {
+                try await authService.authenticate(to: server)
+                currentUser = authService.currentUser
+                isAuthenticated = authService.isAuthenticated
+                
+                if isAuthenticated {
+                    logger.info("Authentication successful for user: \(self.currentUser?.username ?? "Unknown", privacy: .public)")
+                } else {
+                    throw AppError(message: "Authentication failed without error")
+                }
+            } catch {
+                isAuthenticated = false
+                currentUser = nil
+                logger.error("Authentication failed: \(error.localizedDescription, privacy: .public)")
+                handleError(error)
+            }
+            
             isAuthenticating = false
         }
     }
     
-    /// Validate the current authentication status
     func validateAuthentication() async {
         isAuthenticating = true
         alertError = nil
@@ -61,7 +72,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         isAuthenticating = false
     }
     
-    /// Log out the user
     func logout() async {
         isAuthenticating = true
         alertError = nil
@@ -74,7 +84,6 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         isAuthenticating = false
     }
     
-    /// Handle errors and update the `alertError` property
     private func handleError(_ error: Error) {
         if let appError = error as? AppError {
             alertError = appError
@@ -85,17 +94,19 @@ class AuthenticationViewModel: NSObject, ObservableObject, ASWebAuthenticationPr
         }
     }
     
-    /// Provide a presentation anchor for the ASWebAuthenticationSession
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        // Attempt to get the current key window from the active window scene
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = windowScene.windows.first(where: { $0.isKeyWindow }) {
-            return window
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            logger.error("Could not get window scene.")
+            return ASPresentationAnchor()
         }
-        
-        // If no key window is found, create and return a new fallback window
-        let fallbackWindow = UIWindow(frame: UIScreen.main.bounds)
-        fallbackWindow.makeKeyAndVisible()
-        return fallbackWindow
+
+        if let window = windowScene.windows.first(where: { $0.isKeyWindow }) {
+            return window
+        } else {
+            logger.warning("No key window found, using a new window.")
+            let fallbackWindow = UIWindow(windowScene: windowScene)
+            fallbackWindow.makeKeyAndVisible()
+            return fallbackWindow
+        }
     }
 }

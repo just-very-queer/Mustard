@@ -33,7 +33,7 @@ struct MustardApp: App {
     init() {
         // Initialize the ModelContainer with your @Model types
         do {
-            container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, Server.self)
+            container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, ServerModel.self)
             print("[MustardApp] ModelContainer initialized successfully.")
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
@@ -77,7 +77,7 @@ struct MustardApp: App {
     // MARK: - Helper to Create ModelContainer
     private static func createModelContainer() -> ModelContainer {
         do {
-            let container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, Server.self)
+            let container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, ServerModel.self)
             print("[MustardApp] ModelContainer initialized successfully.")
             return container
         } catch {

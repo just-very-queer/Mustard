@@ -57,6 +57,12 @@ struct AppError: Identifiable, Error {
         case missingOrClearedCredentials
         case cacheNotFound
         case noCacheAvailable
+        case invalidAuthorizationURL
+        case operationInProgress
+        case invalidCredentials
+        case missingAuthorizationCode
+        case webAuthSessionFailed
+        case userCancelledAuth
         
         static func == (lhs: MastodonError, rhs: MastodonError) -> Bool {
             switch (lhs, rhs) {
@@ -113,6 +119,7 @@ struct AppError: Identifiable, Error {
         case requestFailed(underlyingError: Error)
         case invalidResponse(statusCode: Int)
         case decodingFailed(underlyingError: Error)
+        case networkError
         case timedOut
     }
     
@@ -251,6 +258,18 @@ struct AppError: Identifiable, Error {
             return "Cache not found."
         case .noCacheAvailable:
             return "No cache available."
+        case .invalidAuthorizationURL:
+            return "Invalid authorization URL."
+        case .operationInProgress:
+            return  "An operation is already in progress."
+        case .invalidCredentials:
+            return "Invalid credentials."
+        case .missingAuthorizationCode:
+            return "Missing authorization code."
+        case .webAuthSessionFailed:
+            return "Web authentication session failed to start."
+        case .userCancelledAuth:
+            return "User cancelled authentication."
         }
     }
     
@@ -290,6 +309,8 @@ struct AppError: Identifiable, Error {
             return "Decoding failed: \(underlyingError.localizedDescription)"
         case .timedOut:
             return "The request timed out. Please check your network connection and try again."
+        case .networkError:
+            return "A network error occurred."
         }
     }
     
@@ -390,6 +411,8 @@ struct AppError: Identifiable, Error {
                    return "Failed to decode the server's response. Please try again later."
                case .timedOut:
                    return "The request timed out. Please check your network connection and try again."
+               case .networkError:
+                   return "Network Error"
                }
            case .cache(let error):
                switch error {

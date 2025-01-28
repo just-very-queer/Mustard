@@ -7,25 +7,24 @@
 
 import Foundation
 
-@MainActor
-//OAuth Config
-struct OAuthConfig: Sendable {
+// MARK: - OAuth Config
+struct OAuthConfig: Decodable, Sendable {
     let clientId: String
     let clientSecret: String
-    let redirectUri: String // Updated name to match usage
+    let redirectUri: String
     let scope: String
 
     enum CodingKeys: String, CodingKey {
         case clientId = "client_id"
         case clientSecret = "client_secret"
-        case redirectUri = "redirect_uri" // Updated name to match usage
+        case redirectUri = "redirect_uri"
         case scope
     }
 }
 
-// RegisterResponse Struct (Updated to match the correct names)
-@MainActor
-struct RegisterResponse: Codable, Sendable {
+// MARK: - RegisterResponse Struct
+// Removed @MainActor because it's not necessary for this struct
+struct RegisterResponse: Decodable {
     let id: String
     let name: String
     let website: String?
@@ -33,7 +32,10 @@ struct RegisterResponse: Codable, Sendable {
     let clientId: String
     let clientSecret: String
     let redirectUri: String
-
+    
+    /// Stores any extra fields in the JSON that are not part of the known CodingKeys.
+    private(set) var unknownKeys: [String: Any]? = nil
+    
     enum CodingKeys: String, CodingKey {
         case id, name, website
         case vapidKey = "vapid_key"
@@ -41,17 +43,91 @@ struct RegisterResponse: Codable, Sendable {
         case clientSecret = "client_secret"
         case redirectUri = "redirect_uri"
     }
+    
+    init(from decoder: Decoder) throws {
+        // Decode known fields
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        website = try container.decodeIfPresent(String.self, forKey: .website)
+        vapidKey = try container.decode(String.self, forKey: .vapidKey)
+        clientId = try container.decode(String.self, forKey: .clientId)
+        clientSecret = try container.decode(String.self, forKey: .clientSecret)
+        redirectUri = try container.decode(String.self, forKey: .redirectUri)
+        
+        // Decode all other keys into unknownKeys
+        let allKeysContainer = try decoder.container(keyedBy: DynamicCodingKeys.self)
+        var additionalData = [String: Any]()
+        
+        for key in allKeysContainer.allKeys {
+            // Skip the keys we already know about
+            guard CodingKeys(stringValue: key.stringValue) == nil else { continue }
+            
+            // Try various decodes
+            if let stringValue = try? allKeysContainer.decode(String.self, forKey: key) {
+                additionalData[key.stringValue] = stringValue
+                continue
+            }
+            if let intValue = try? allKeysContainer.decode(Int.self, forKey: key) {
+                additionalData[key.stringValue] = intValue
+                continue
+            }
+            if let boolValue = try? allKeysContainer.decode(Bool.self, forKey: key) {
+                additionalData[key.stringValue] = boolValue
+                continue
+            }
+            if let doubleValue = try? allKeysContainer.decode(Double.self, forKey: key) {
+                additionalData[key.stringValue] = doubleValue
+                continue
+            }
+            if let stringArray = try? allKeysContainer.decode([String].self, forKey: key) {
+                additionalData[key.stringValue] = stringArray
+                continue
+            }
+            
+            // If needed, you could handle more types or store raw JSON data here.
+            // For example:
+            // let rawData = try allKeysContainer.decodeRawData(forKey: key)
+            // additionalData[key.stringValue] = rawData
+            
+            // Otherwise, just skip it if we cannot decode a known type
+        }
+        
+        // Assign only if we actually found unknown fields
+        unknownKeys = additionalData.isEmpty ? nil : additionalData
+    }
+    
+    // Helper struct to decode any key
+    private struct DynamicCodingKeys: CodingKey {
+        var stringValue: String
+        var intValue: Int?
+        
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+            self.intValue = nil
+        }
+        
+        init?(intValue: Int) {
+            self.stringValue = "\(intValue)"
+            self.intValue = intValue
+        }
+    }
 }
 
-/// Represents the response received after obtaining an access token.
+
+// MARK: - TokenResponse
 struct TokenResponse: Codable, Sendable {
-    let access_token: String
-    let token_type: String
+    let accessToken: String
+    let tokenType: String
     let scope: String
-    let created_at: Int
-    
-    /// Convenience property to access `access_token`.
-    var accessToken: String { access_token }
+    let createdAt: Int
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case tokenType = "token_type"
+        case scope
+        case createdAt = "created_at"
+    }
 }
 
 // MARK: - WeatherData
