@@ -362,15 +362,5 @@ struct AddServerView: View {
     }
 }
 
-// MARK: - Minimal Model for /api/v1/instance
-/// Represents a small subset of instance info returned by the Mastodon server.
-struct InstanceInfo: Decodable {
-    let title: String
-    let description: String
-    let thumbnail: URL?
 
-    enum CodingKeys: String, CodingKey {
-        case title, description, thumbnail
-    }
-}
 

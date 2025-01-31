@@ -63,6 +63,9 @@ struct AppError: Identifiable, Error {
         case missingAuthorizationCode
         case webAuthSessionFailed
         case userCancelledAuth
+        case handleWebAuthError
+        case authenticationCancelled
+        case invalidWebAuthResponse
         
         static func == (lhs: MastodonError, rhs: MastodonError) -> Bool {
             switch (lhs, rhs) {
@@ -270,6 +273,12 @@ struct AppError: Identifiable, Error {
             return "Web authentication session failed to start."
         case .userCancelledAuth:
             return "User cancelled authentication."
+        case .handleWebAuthError:
+            return "Failed to handle web authentication error."
+        case .authenticationCancelled:
+            return "Authentication cancelled."
+        case .invalidWebAuthResponse:
+            return "Invalid web authentication response."
         }
     }
     

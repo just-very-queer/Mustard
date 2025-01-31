@@ -71,6 +71,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		6656FCA72D4CC31100785335 /* Effects */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Effects;
+			sourceTree = "<group>";
+		};
 		6687C34F2C95AE87000ECC5D /* Mustard */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -128,6 +133,7 @@
 		6687C3442C95AE87000ECC5D = {
 			isa = PBXGroup;
 			children = (
+				6656FCA72D4CC31100785335 /* Effects */,
 				6687C3B52C95B61C000ECC5D /* Utilities */,
 				6687C3AE2C95B5CA000ECC5D /* Views */,
 				6687C3A72C95B567000ECC5D /* ViewModels */,
@@ -185,6 +191,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				6656FCA72D4CC31100785335 /* Effects */,
 				6687C34F2C95AE87000ECC5D /* Mustard */,
 				6687C39B2C95B503000ECC5D /* Services */,
 				6687C3A72C95B567000ECC5D /* ViewModels */,

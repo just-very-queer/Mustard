@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" 
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-
-    <!-- General App Configuration -->
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleExecutable</key>
@@ -14,35 +11,27 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Mustard</string>
+    <string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
-
-    <!-- Launch Screen / Storyboard Reference -->
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
-
-    <!-- Supported Device Capabilities -->
     <key>UIRequiredDeviceCapabilities</key>
     <array>
         <string>arm64</string>
     </array>
-
-    <!-- Supported Interface Orientations (iPhone) -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
-
-    <!-- Supported Interface Orientations (iPad) -->
     <key>UISupportedInterfaceOrientations~ipad</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
@@ -50,8 +39,6 @@
         <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
-
-    <!-- URL Schemes for OAuth Callback (required for ASWebAuthenticationSession) -->
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -59,33 +46,22 @@
             <string>MustardOAuth</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <!-- The primary scheme for "mustard://oauth-callback" -->
                 <string>mustard</string>
-
-                <!-- Additional schemes are optional; remove if not needed -->
-                <string>mustard-social</string>
-                <string>mustard-cloud</string>
             </array>
         </dict>
     </array>
-
-    <!-- App Transport Security: 
-         Allows connecting to custom Mastodon instances via HTTPS, 
-         possibly disabling certificate transparency if needed. 
-         Adjust to your production security policy. -->
     <key>NSAppTransportSecurity</key>
     <dict>
-        <key>NSAllowsArbitraryLoads</key>
-        <true/>
         <key>NSExceptionDomains</key>
         <dict>
-            <!-- Example domains for Mastodon servers; add or remove as necessary -->
             <key>mastodon.social</key>
             <dict>
                 <key>NSIncludesSubdomains</key>
                 <true/>
                 <key>NSExceptionAllowsInsecureHTTPLoads</key>
                 <false/>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <true/>
                 <key>NSRequiresCertificateTransparency</key>
                 <false/>
             </dict>
@@ -95,6 +71,8 @@
                 <true/>
                 <key>NSExceptionAllowsInsecureHTTPLoads</key>
                 <false/>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <true/>
                 <key>NSRequiresCertificateTransparency</key>
                 <false/>
             </dict>
@@ -104,13 +82,13 @@
                 <true/>
                 <key>NSExceptionAllowsInsecureHTTPLoads</key>
                 <false/>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <true/>
                 <key>NSRequiresCertificateTransparency</key>
                 <false/>
             </dict>
         </dict>
     </dict>
-
-    <!-- Privacy Descriptions for Required Permissions -->
     <key>NSPhotoLibraryUsageDescription</key>
     <string>This app requires access to your photo library to upload images to Mastodon.</string>
     <key>NSCameraUsageDescription</key>
@@ -119,21 +97,15 @@
     <string>This app requires access to your microphone to record audio for posts.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>This app uses your location to display localized trending posts and weather updates.</string>
-
-    <!-- Universal Links for Deep Linking or Alternate OAuth flows (optional) -->
     <key>com.apple.developer.associated-domains</key>
     <array>
         <string>applinks:mastodon.social</string>
         <string>applinks:mastodon.cloud</string>
         <string>applinks:mstdn.social</string>
     </array>
-
-    <!-- Enable Keychain Access for Secure Token Storage -->
     <key>keychain-access-groups</key>
     <array>
-        <!-- Replace com.yourcompany.Mustard with your actual identifier -->
         <string>$(AppIdentifierPrefix)com.yourcompany.Mustard</string>
     </array>
-
 </dict>
 </plist>

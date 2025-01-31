@@ -79,14 +79,13 @@ struct HomeView: View {
                     FullScreenImageView(imageURL: imageURL, isPresented: $isShowingFullScreenImage)
                 }
             }
-        }
-        .onAppear {
-            if authViewModel.isAuthenticated {
-                Task {
+            .refreshable {
+                if authViewModel.isAuthenticated {
                     await initializeData()
                 }
             }
         }
+        
     }
 
     // MARK: - Weather Header
@@ -202,7 +201,7 @@ struct HomeView: View {
         ToolbarItem(placement: .navigationBarTrailing) {
             Button {
                 Task {
-                    await authViewModel.logout()
+                    authViewModel.logout()
                 }
             } label: {
                 Image(systemName: "arrow.backward.circle.fill")
@@ -272,3 +271,4 @@ struct PostView: View {
         .cornerRadius(12)
     }
 }
+
