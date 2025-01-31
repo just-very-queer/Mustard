@@ -77,7 +77,7 @@ struct SettingsView: View {
                     title: Text("Log Out"),
                     message: Text("Are you sure you want to log out?"),
                     primaryButton: .destructive(Text("Log Out")) {
-                        Task { await authViewModel.logout() }
+                        Task { authViewModel.logout() }
                     },
                     secondaryButton: .cancel()
                 )

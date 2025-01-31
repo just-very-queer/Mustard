@@ -39,20 +39,20 @@ struct LoginView: View {
             .sheet(isPresented: $showServerList) {
                 ServerListView(
                     onSelect: { server in
-                        // Indicate that authentication is in progress
                         isAuthenticating = true
                         Task {
+                            // Perform the authentication asynchronously
                             print("Authenticate called with server: \(server.name)")
-                            // Remove the $ prefix here
-                            await authViewModel.authenticate(to: server)
+                            authViewModel.authenticate(to: server)
                             print("isAuthenticated: \(authViewModel.isAuthenticated)")
                             print("alertError: \(String(describing: authViewModel.alertError))")
-
-                            // Reset isAuthenticating state after authentication attempt
+                            
                             isAuthenticating = false
-
+                            
                             if authViewModel.isAuthenticated {
                                 print("Authentication successful, proceed to main app")
+                                // Dismiss the sheet if authentication is successful
+                                showServerList = false
                             } else {
                                 print("Authentication failed")
                                 authenticationFailed = true
@@ -78,6 +78,11 @@ struct LoginView: View {
             }
             .navigationTitle("Login")
             .disabled(isAuthenticating)
+            .onAppear {
+                // Reset authentication state on appearance if needed
+                isAuthenticating = false
+                authenticationFailed = false
+            }
         }
     }
 }

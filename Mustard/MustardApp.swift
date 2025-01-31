@@ -13,10 +13,11 @@ import SwiftData
 struct MustardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-    // MARK: - Services
+       // MARK: - Services
     static private let networkService = NetworkService.shared // Now static
     private let cacheService = CacheService()
-    private let authenticationService = AuthenticationService()
+       // Directly using the shared instance
+    private let authenticationService = AuthenticationService.shared // This is totally unnecessary, as we are already calling shared in AuthenticationViewModel file.
     private let timelineService: TimelineService
     private let trendingService: TrendingService
     private let postActionService: PostActionService
@@ -39,10 +40,9 @@ struct MustardApp: App {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // Initialize the AuthenticationService
-        let authViewModelInstance = AuthenticationViewModel(authenticationService: authenticationService)
-        _authViewModel = StateObject(wrappedValue: authViewModelInstance)
-
+        // Initialize the AuthenticationViewModel using the shared AuthenticationService instance
+        _authViewModel = StateObject(wrappedValue: AuthenticationViewModel())
+        
         // Initialize other services using the static networkService
         timelineService = TimelineService(networkService: Self.networkService, cacheService: cacheService)
         trendingService = TrendingService(networkService: Self.networkService, cacheService: cacheService)
@@ -51,27 +51,27 @@ struct MustardApp: App {
     }
 
     var body: some Scene {
-            WindowGroup {
-                // Inject dependencies into MainAppView
-                if authViewModel.isAuthenticated {
-                    MainAppView(
-                        timelineService: timelineService,
-                        trendingService: trendingService,
-                        postActionService: postActionService,
-                        profileService: profileService,
-                        cacheService: cacheService,
-                        networkService: MustardApp.networkService // Pass the networkService directly
-                    )
+        WindowGroup {
+            // Inject dependencies into MainAppView
+            if authViewModel.isAuthenticated {
+                MainAppView(
+                    timelineService: timelineService,
+                    trendingService: trendingService,
+                    postActionService: postActionService,
+                    profileService: profileService,
+                    cacheService: cacheService,
+                    networkService: MustardApp.networkService // Pass the networkService directly
+                )
+                .environmentObject(authViewModel)
+                .environmentObject(locationManager)
+                .modelContainer(container)
+            } else {
+                LoginView()
                     .environmentObject(authViewModel)
                     .environmentObject(locationManager)
                     .modelContainer(container)
-                } else {
-                    LoginView()
-                        .environmentObject(authViewModel)
-                        .environmentObject(locationManager)
-                        .modelContainer(container)
-                }
             }
+        }
     }
 
     // MARK: - Helper to Create ModelContainer
