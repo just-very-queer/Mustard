@@ -9,23 +9,28 @@ import Foundation
 import SwiftData
 
 @Model
-final class Account: Identifiable, Codable, Equatable {
+class Account: Identifiable, Codable, Equatable {
     @Attribute(.unique) var id: String
     var username: String
-    var display_name: String? // Nullable `display_name` from API
+    var display_name: String?
     var avatar: URL
     var acct: String
-    var url: URL // Profile URL
+    var url: URL
     var accessToken: String? = nil
-    var followers_count: Int? // Number of followers
-    var following_count: Int? // Number of following
-    var statuses_count: Int? // Number of posts/statuses
-    var last_status_at: String? // Last status date as a string
-    var isBot: Bool? // Indicates if the account is a bot
-    var isLocked: Bool? // Indicates if the account is locked
-    var note: String? // Bio or note
-    var header: URL? // Profile header image
-    var header_static: URL? // Static version of the header image
+    var followers_count: Int?
+    var following_count: Int?
+    var statuses_count: Int?
+    var last_status_at: String?
+    var isBot: Bool?
+    var isLocked: Bool?
+    var note: String?
+    var header: URL?
+    var header_static: URL?
+    
+    // Added properties to match User model
+    var discoverable: Bool?
+    var indexable: Bool?
+    var suspended: Bool?
 
     // Computed property to derive instance URL from the profile URL
     var instanceURL: URL? {
@@ -50,7 +55,10 @@ final class Account: Identifiable, Codable, Equatable {
         isLocked: Bool? = nil,
         note: String? = nil,
         header: URL? = nil,
-        header_static: URL? = nil
+        header_static: URL? = nil,
+        discoverable: Bool? = nil, // New
+        indexable: Bool? = nil, // New
+        suspended: Bool? = nil // New
     ) {
         self.id = id
         self.username = username
@@ -68,11 +76,14 @@ final class Account: Identifiable, Codable, Equatable {
         self.note = note
         self.header = header
         self.header_static = header_static
+        self.discoverable = discoverable
+        self.indexable = indexable
+        self.suspended = suspended
     }
 
     // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
-        case id, username, acct, avatar, url, accessToken, note, header, header_static
+        case id, username, acct, avatar, url, accessToken, note, header, header_static, discoverable, indexable, suspended
         case display_name = "display_name"
         case followers_count = "followers_count"
         case following_count = "following_count"
@@ -100,6 +111,9 @@ final class Account: Identifiable, Codable, Equatable {
         self.note = try container.decodeIfPresent(String.self, forKey: .note)
         self.header = try container.decodeIfPresent(URL.self, forKey: .header)
         self.header_static = try container.decodeIfPresent(URL.self, forKey: .header_static)
+        self.discoverable = try container.decodeIfPresent(Bool.self, forKey: .discoverable)
+        self.indexable = try container.decodeIfPresent(Bool.self, forKey: .indexable)
+        self.suspended = try container.decodeIfPresent(Bool.self, forKey: .suspended)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -120,6 +134,9 @@ final class Account: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(note, forKey: .note)
         try container.encodeIfPresent(header, forKey: .header)
         try container.encodeIfPresent(header_static, forKey: .header_static)
+        try container.encodeIfPresent(discoverable, forKey: .discoverable)
+        try container.encodeIfPresent(indexable, forKey: .indexable)
+        try container.encodeIfPresent(suspended, forKey: .suspended)
     }
 
     // MARK: - Equatable Conformance
@@ -139,7 +156,10 @@ final class Account: Identifiable, Codable, Equatable {
             lhs.isLocked == rhs.isLocked &&
             lhs.note == rhs.note &&
             lhs.header == rhs.header &&
-            lhs.header_static == rhs.header_static
+            lhs.header_static == rhs.header_static &&
+            lhs.discoverable == rhs.discoverable &&
+            lhs.indexable == rhs.indexable &&
+            lhs.suspended == rhs.suspended
     }
 }
 

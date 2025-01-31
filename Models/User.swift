@@ -5,11 +5,10 @@
 //  Created by VAIBHAV SRIVASTAVA on 24/01/25.
 //
 
-import SwiftData
 import Foundation
+import SwiftData
 
 // MARK: - Source
-
 /// Represents the source data of a user's profile, containing privacy settings and other metadata.
 struct Source: Codable {
     let privacy: String?
@@ -17,16 +16,15 @@ struct Source: Codable {
     let language: String?
     let note: String?
     let fields: [Field]
-    let follow_requests_count: Int?
+    let followRequestsCount: Int?
 
     enum CodingKeys: String, CodingKey {
         case privacy, sensitive, language, note, fields
-        case follow_requests_count = "follow_requests_count"
+        case followRequestsCount = "follow_requests_count"
     }
 }
 
 // MARK: - Field
-
 /// Represents a custom profile field for a user.
 struct Field: Codable {
     let name: String
@@ -67,17 +65,14 @@ struct Field: Codable {
 }
 
 // MARK: - Role
-
 /// Represents a user's role with associated permissions.
 struct Role: Codable, Identifiable {
     let id: String
     let name: String
     let permissions: String
-    // Add other necessary properties if any
 }
 
 // MARK: - Emoji
-
 /// Represents a custom emoji, including URLs to its static and animated versions.
 struct Emoji: Codable, Identifiable {
     let shortcode: String
@@ -97,13 +92,12 @@ struct Emoji: Codable, Identifiable {
 }
 
 // MARK: - User
-
 /// Represents a user in the app, conforming to Identifiable, Codable, and Hashable protocols.
 struct User: Identifiable, Codable, Hashable {
     let id: String
     let username: String
     let acct: String
-    let display_name: String?
+    let display_name: String?  // Keep the key as 'display_name' for API compatibility
     let locked: Bool
     let bot: Bool
     let discoverable: Bool?
@@ -127,13 +121,21 @@ struct User: Identifiable, Codable, Hashable {
     let emojis: [Emoji]
     let roles: [Role]?
     let fields: [Field]
-    
 
-    // MARK: - CodingKeys
     enum CodingKeys: String, CodingKey {
-        case id, username, acct, locked, bot, discoverable, indexable, group, note, url, avatar, avatar_static, header, header_static, followers_count, following_count, statuses_count, last_status_at, suspended, hide_collections, noindex, source, emojis, roles, fields
-        case display_name = "display_name"
+        case id, username, acct, locked, bot, discoverable, indexable, group, note, url, avatar, source, emojis, roles, fields
+        case display_name = "display_name"  // Map 'display_name' from API to 'display_name' in User model
         case created_at = "created_at"
+        case avatar_static = "avatar_static"
+        case header_static = "header_static"
+        case followers_count = "followers_count"
+        case following_count = "following_count"
+        case statuses_count = "statuses_count"
+        case last_status_at = "last_status_at"
+        case suspended
+        case hide_collections = "hide_collections"
+        case noindex
+        case header
     }
 
     // MARK: - Initializer
@@ -241,12 +243,44 @@ struct User: Identifiable, Codable, Hashable {
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         try container.encode(dateFormatter.string(from: created_at), forKey: .created_at)
     }
-    
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-    
+
     static func == (lhs: User, rhs: User) -> Bool {
         return lhs.id == rhs.id
+    }
+}
+
+extension User {
+    init(from account: Account) {
+        self.id = account.id
+        self.username = account.username
+        self.acct = account.acct
+        self.display_name = account.display_name
+        self.locked = account.isLocked ?? false
+        self.bot = account.isBot ?? false
+        self.discoverable = account.discoverable
+        self.indexable = true // Assuming this is true by default or set by your logic
+        self.group = false // Assuming it's not a group user by default
+        self.created_at = Date() // This can be updated as per your logic if you have a creation date
+        self.note = account.note
+        self.url = account.url.absoluteString
+        self.avatar = account.avatar.absoluteString
+        self.avatar_static = account.avatar.absoluteString // Update based on actual data
+        self.header = account.header?.absoluteString
+        self.header_static = account.header_static?.absoluteString
+        self.followers_count = account.followers_count ?? 0
+        self.following_count = account.following_count ?? 0
+        self.statuses_count = account.statuses_count ?? 0
+        self.last_status_at = account.last_status_at
+        self.suspended = account.suspended ?? false
+        self.hide_collections = false // Default to false or based on your logic
+        self.noindex = false // Default to false
+        self.source = nil // Add if needed, based on your logic
+        self.emojis = [] // Add emojis if needed
+        self.roles = [] // Add roles if needed
+        self.fields = [] // Add fields if needed
     }
 }

@@ -27,10 +27,10 @@ struct HomeView: View {
     init(
         authViewModel: AuthenticationViewModel,
         locationManager: LocationManager,
-        timelineViewModel: TimelineViewModel,
+        timelineViewModel: TimelineViewModel, // Pass the timelineViewModel here
         profileViewModel: ProfileViewModel
     ) {
-        _timelineViewModel = StateObject(wrappedValue: timelineViewModel)
+        _timelineViewModel = StateObject(wrappedValue: timelineViewModel)  // Initialize timelineViewModel as a StateObject
         _profileViewModel = StateObject(wrappedValue: profileViewModel)
     }
 
@@ -54,7 +54,7 @@ struct HomeView: View {
             .navigationTitle("Home")
             .task {
                 if authViewModel.isAuthenticated {
-                    await initializeData()
+                    await initializeData()  // Async data initialization
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .didUpdateLocation)) { notification in
@@ -85,7 +85,6 @@ struct HomeView: View {
                 }
             }
         }
-        
     }
 
     // MARK: - Weather Header
@@ -214,12 +213,16 @@ struct HomeView: View {
 
     // MARK: - Helper Functions
     private func initializeData() async {
-        await timelineViewModel.fetchTimeline()
-        await timelineViewModel.fetchTopPosts()
+        // Ensure that timelineViewModel is initialized properly
+        await timelineViewModel.fetchMoreTimeline()  // Correct async method call
+        await timelineViewModel.fetchTopPosts()  // Correct async method call
+
+        // If location is available, fetch weather as well
         if let location = locationManager.userLocation {
             await timelineViewModel.fetchWeather(for: location)
         }
     }
+
 
     private func loadMorePostsIfNeeded(currentPost: Post) {
         guard currentPost == timelineViewModel.posts.last, !isRequestingMore else { return }
@@ -255,20 +258,4 @@ struct WeatherBarView: View {
     }
 }
 
-// MARK: - PostView
-struct PostView: View {
-    let post: Post
-    @ObservedObject var viewModel: TimelineViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(post.content)
-                .font(.body)
-                .lineLimit(3)
-        }
-        .padding()
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(12)
-    }
-}
 

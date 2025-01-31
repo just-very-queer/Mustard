@@ -28,7 +28,7 @@ final class NetworkService {
     private let keychainService = "MustardKeychain"
     
     /// JSONDecoder configured with `.convertFromSnakeCase` and appropriate date decoding strategies.
-    private let jsonDecoder: JSONDecoder = {
+    let jsonDecoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         // Date decoding strategy can be customized if needed
@@ -235,57 +235,54 @@ final class NetworkService {
     ///   - config: The `OAuthConfig` containing client credentials.
     ///   - instanceURL: The base URL of the Mastodon instance.
     /// - Throws: `AppError` if the exchange fails or decoding the response fails.
-    func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
-        let body: [String: String] = [
-            "grant_type": "authorization_code",
-            "code": code,
-            "client_id": config.clientId,
-            "client_secret": config.clientSecret,
-            "redirect_uri": config.redirectUri,
-            "scope": config.scope
-        ]
-        
-        let tokenEndpointURL = instanceURL.appendingPathComponent("/oauth/token")
-        var request = URLRequest(url: tokenEndpointURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        
-        // Encode the body as URL-encoded form data
-        request.httpBody = body.compactMap { (key, value) in
-            guard let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-                return nil
+    func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws -> TokenResponse {
+            let body = [
+                "grant_type": "authorization_code",
+                "code": code,
+                "client_id": config.clientId,
+                "client_secret": config.clientSecret,
+                "redirect_uri": config.redirectUri,
+                "scope": config.scope
+            ]
+            let requestURL = instanceURL.appendingPathComponent("/oauth/token")
+            var request = URLRequest(url: requestURL)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+            request.httpBody = body.compactMap { (key, value) in
+                guard let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                    return nil
+                }
+                return "\(key)=\(encodedValue)"
+            }.joined(separator: "&").data(using: .utf8)
+
+            logger.info("Exchanging authorization code for access token at \(requestURL.absoluteString)")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                let responseBody = String(data: data, encoding: .utf8) ?? ""
+                logger.error("Failed to exchange authorization code. Status: \(statusCode), Body: \(responseBody)")
+                throw AppError(mastodon: .failedToExchangeCode)
             }
-            return "\(key)=\(encodedValue)"
-        }.joined(separator: "&").data(using: .utf8)
-        
-        logger.info("Exchanging authorization code for access token at \(tokenEndpointURL.absoluteString)")
-        
-        // Perform the network request
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        // Validate the HTTP response
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let responseBody = String(data: data, encoding: .utf8) ?? ""
-            logger.error("Failed to exchange authorization code. Status: \(statusCode), Body: \(responseBody)")
-            throw AppError(mastodon: .failedToExchangeCode)
+
+            // Decode the TokenResponse
+            do {
+                let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
+
+                // Log the access token for debugging
+                logger.debug("Received access token: \(tokenResponse.accessToken)")
+                
+                return tokenResponse
+                
+            } catch {
+                logger.error("Failed to decode TokenResponse: \(error.localizedDescription)")
+                let responseBody = String(data: data, encoding: .utf8) ?? ""
+                logger.debug("Response body for debugging: \(responseBody)")
+                throw AppError(type: .mastodon(.decodingError), underlyingError: error)
+            }
         }
-        
-        // Decode the TokenResponse
-        do {
-            let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
-            logger.info("Successfully exchanged authorization code for access token.")
-            
-            // Save the access token in Keychain
-            try await KeychainHelper.shared.save(tokenResponse.accessToken, service: keychainService, account: "accessToken")
-            tokenCreationDate = Date() // Now this line will work as tokenCreationDate is declared
-        } catch {
-            logger.error("Failed to decode TokenResponse: \(error.localizedDescription)")
-            let responseBody = String(data: data, encoding: .utf8) ?? ""
-            logger.debug("Response body for debugging: \(responseBody)")
-            throw AppError(type: .mastodon(.decodingError), underlyingError: error)
-        }
-    }
     
     /// Fetches the currently authenticated user's profile via `/api/v1/accounts/verify_credentials`.
     ///
@@ -537,3 +534,4 @@ final class NetworkService {
         }
     }
 }
+

@@ -66,6 +66,8 @@ struct AppError: Identifiable, Error {
         case handleWebAuthError
         case authenticationCancelled
         case invalidWebAuthResponse
+        case unknownClient
+        case invalidTokenResponse
         
         static func == (lhs: MastodonError, rhs: MastodonError) -> Bool {
             switch (lhs, rhs) {
@@ -279,6 +281,10 @@ struct AppError: Identifiable, Error {
             return "Authentication cancelled."
         case .invalidWebAuthResponse:
             return "Invalid web authentication response."
+        case .unknownClient:
+            return "Unknown client."
+        case .invalidTokenResponse:
+            return "Invalid token response."
         }
     }
     

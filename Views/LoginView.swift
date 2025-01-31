@@ -24,7 +24,7 @@ struct LoginView: View {
                 // Apply GlowEffect as a background with conditional visibility
                 if showGlow {
                     GlowEffect()
-                        .ignoresSafeArea()
+                        .edgesIgnoringSafeArea(.all) // Make sure the effect covers the whole screen
                         .onAppear {
                             // Start a timer to stop the glow after 2 seconds
                             Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
@@ -62,25 +62,22 @@ struct LoginView: View {
                 .sheet(isPresented: $showServerList) {
                     ServerListView(
                         onSelect: { server in
+                            // Indicate that authentication is in progress
                             isAuthenticating = true
                             Task {
+                                // Use the logger here
                                 logger.debug("Authenticate called with server: \(server.name)")
                                 do {
                                     try await authViewModel.authenticate(to: server)
+                                    // Authentication was successful, dismiss the sheet
                                     showServerList = false
                                     logger.debug("isAuthenticated: \(authViewModel.isAuthenticated)")
                                 } catch {
+                                    // Handle authentication failure
                                     logger.error("Authentication failed: \(error.localizedDescription)")
-                                    isAuthenticating = false
+                                    authViewModel.alertError = AppError(message: "Authentication failed", underlyingError: error)
                                 }
-                                
                                 isAuthenticating = false
-                                
-                                if authViewModel.isAuthenticated {
-                                    logger.info("Authentication successful, proceed to main app")
-                                } else {
-                                    logger.error("Authentication failed")
-                                }
                             }
                         },
                         onCancel: {
@@ -115,3 +112,4 @@ struct LoginView: View {
         }
     }
 }
+

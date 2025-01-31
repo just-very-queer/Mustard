@@ -25,15 +25,14 @@ class TimelineViewModel: ObservableObject {
     private let locationManager: LocationManager
     private var cancellables = Set<AnyCancellable>()
     private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "TimelineViewModel")
-    private let weatherAPIKeyBase64 = "OTk2NTdjOTNhN2E5M2JlYTJkZTdiZjkzZTMyMTkxMDQy=" //
+    private let weatherAPIKeyBase64 = "OTk2NTdjOTNhN2E5M2JlYTJkZTdiZjkzZTMyMTkxMDQy="
 
     private var weatherFetchTask: Task<Void, Never>?
     private var weatherFetchOnce: Bool = false
     private let cacheService: CacheService
     private let networkService: NetworkService
-    private let cacheKey = "timeline"
 
-    init(timelineService: TimelineService,cacheService: CacheService, networkService: NetworkService ,trendingService: TrendingService, postActionService: PostActionService, locationManager: LocationManager) {
+    init(timelineService: TimelineService, cacheService: CacheService, networkService: NetworkService, trendingService: TrendingService, postActionService: PostActionService, locationManager: LocationManager) {
         self.timelineService = timelineService
         self.trendingService = trendingService
         self.postActionService = postActionService
@@ -41,11 +40,9 @@ class TimelineViewModel: ObservableObject {
         self.networkService = networkService
         self.locationManager = locationManager
         setupSubscriptions()
-        
     }
 
     private func setupSubscriptions() {
-        // Subscribe to authentication success
         NotificationCenter.default.publisher(for: .didAuthenticate)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -55,7 +52,6 @@ class TimelineViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Subscribe to location updates
         locationManager.locationPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] location in
@@ -68,100 +64,23 @@ class TimelineViewModel: ObservableObject {
     }
 
     func initializeData() async {
-        // Fetch data sequentially
-        await fetchTimeline(useCache: false)
-        await fetchTopPosts()
-
-        // Fetch weather once during initialization
-        if let location = self.locationManager.userLocation, !self.weatherFetchOnce {
-            await self.fetchWeather(for: location)
-            self.weatherFetchOnce = true
-        }
-    }
-    
-    /// Fetch the timeline
-    func fetchTimeline(useCache: Bool = true) async {
-        guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
-        
-        let cacheKey = "timeline"
 
-        if useCache {
-            do {
-                // Attempt to load posts from the cache
-                let cachedPosts = try await cacheService.loadPostsFromCache(forKey: cacheKey)
-                
-                // Perform a background refresh of the timeline
-                Task {
-                    await backgroundRefreshTimeline()
-                }
-                
-                // Update the `posts` with cached data and exit
-                posts = cachedPosts
-                return
-            } catch let error as AppError {
-                // Handle specific cache errors
-                if case .mastodon(.cacheNotFound) = error.type {
-                    logger.info("Timeline cache not found on disk. Fetching from network.")
-                } else {
-                    logger.error("Error loading timeline from cache: \(error.localizedDescription)")
-                    handleError(error)
-                    return
-                }
-            } catch {
-                // Handle other cache errors
-                logger.error("Error loading timeline from cache: \(error.localizedDescription)")
-                handleError(error)
-                return
-            }
-        }
-
-        // Fetch from the network if cache is not used or not found
         do {
-            // Fetch base URL and access token for debugging
-            let baseURL = try await KeychainHelper.shared.read(service: "MustardKeychain", account: "baseURL")
-            let accessToken = try await KeychainHelper.shared.read(service: "MustardKeychain", account: "accessToken")
-            logger.debug("Using baseURL: \(baseURL ?? "nil")")
-            logger.debug("Using accessToken: \(accessToken ?? "nil")")
-            
-            // Construct the API endpoint and fetch the timeline
-            let url = try await networkService.endpointURL("/api/v1/timelines/home")
-            let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
-            
-            // Cache the fetched posts in a background task
-            Task {
-                await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
+            posts = try await timelineService.fetchTimeline(useCache: true)
+            topPosts = try await trendingService.fetchTrendingPosts()
+
+            if let location = locationManager.userLocation, !weatherFetchOnce {
+                await fetchWeather(for: location)
+                weatherFetchOnce = true
             }
-            
-            // Update the `posts` with the fetched data
-            posts = fetchedPosts
         } catch {
-            // Handle network fetch errors
-            logger.error("Failed to fetch timeline: \(error.localizedDescription)")
+            logger.error("Failed to initialize data: \(error.localizedDescription)")
             handleError(error)
         }
     }
-    /// Background refresh of the timeline
-        private func backgroundRefreshTimeline() async {
-            do {
-                let url = try await networkService.endpointURL("/api/v1/timelines/home")
-                let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
 
-                // Cache the fetched posts in a background task
-                Task {
-                    await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
-                }
-
-                // Update the `posts` on the main actor
-                await MainActor.run {
-                    self.posts = fetchedPosts
-                }
-            } catch {
-                logger.error("Failed to refresh timeline: \(error.localizedDescription)")
-            }
-        }
-    
     func fetchMoreTimeline() async {
         guard !isFetchingMore else { return }
         isFetchingMore = true
@@ -186,7 +105,6 @@ class TimelineViewModel: ObservableObject {
     }
 
     func fetchWeather(for location: CLLocation) async {
-        // Cancel any ongoing fetch tasks
         weatherFetchTask?.cancel()
 
         weatherFetchTask = Task { [weak self] in
@@ -229,7 +147,6 @@ class TimelineViewModel: ObservableObject {
                     )
                 }
 
-                // Decode the weather response
                 let weatherResponse = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
                 let weatherData = WeatherData(
                     temperature: weatherResponse.main.temp,
@@ -237,13 +154,11 @@ class TimelineViewModel: ObservableObject {
                     cityName: weatherResponse.name
                 )
 
-                // Update the weather on the main thread
                 await MainActor.run {
                     self.weather = weatherData
                 }
 
             } catch {
-                // Handle decoding or network errors
                 logger.error("Weather fetch failed: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     if let appError = error as? AppError {
@@ -295,6 +210,11 @@ class TimelineViewModel: ObservableObject {
     private func handleError(_ error: Error) {
         if let appError = error as? AppError {
             alertError = appError
+            if case .mastodon(.unknownClient) = appError.type {
+                Task {
+                    try? await AuthenticationService.shared.clearCredentials()
+                }
+            }
         } else {
             alertError = AppError(type: .generic("An error occurred."), underlyingError: error)
         }

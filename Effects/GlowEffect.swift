@@ -13,13 +13,14 @@ struct GlowEffect: View {
 
     var body: some View {
         ZStack {
-            EffectNoBlur(gradientStops: gradientStops, width: 6)
-            Effect(gradientStops: gradientStops, width: 9, blur: 4)
-            Effect(gradientStops: gradientStops, width: 11, blur: 12)
-            Effect(gradientStops: gradientStops, width: 15, blur: 15)
+            // Each effect layer is now offset differently to simulate a glowing border
+            EffectNoBlur(gradientStops: gradientStops, width: 6, xOffset: 0, yOffset: 0)
+            Effect(gradientStops: gradientStops, width: 9, blur: 4, xOffset: -2, yOffset: 4)
+            Effect(gradientStops: gradientStops, width: 11, blur: 12, xOffset: 6, yOffset: -6)
+            Effect(gradientStops: gradientStops, width: 15, blur: 15, xOffset: -8, yOffset: -8)
         }
         .onAppear {
-            // Start a timer to update the gradient stops
+            // Start a timer to update the gradient stops every 0.4 seconds
             timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
                 withAnimation(.easeInOut(duration: 0.8)) {
                     gradientStops = GlowEffect.generateGradientStops()
@@ -50,6 +51,8 @@ struct Effect: View {
     var gradientStops: [Gradient.Stop]
     var width: CGFloat
     var blur: CGFloat
+    var xOffset: CGFloat
+    var yOffset: CGFloat
 
     var body: some View {
         ZStack {
@@ -65,7 +68,7 @@ struct Effect: View {
                     width: UIScreen.main.bounds.width,
                     height: UIScreen.main.bounds.height
                 )
-                .padding(.top, -17)
+                .offset(x: xOffset, y: yOffset) // Offset to simulate border thickness
                 .blur(radius: blur)
         }
     }
@@ -74,6 +77,8 @@ struct Effect: View {
 struct EffectNoBlur: View {
     var gradientStops: [Gradient.Stop]
     var width: CGFloat
+    var xOffset: CGFloat
+    var yOffset: CGFloat
 
     var body: some View {
         ZStack {
@@ -89,7 +94,7 @@ struct EffectNoBlur: View {
                     width: UIScreen.main.bounds.width,
                     height: UIScreen.main.bounds.height
                 )
-                .padding(.top, -26)
+                .offset(x: xOffset, y: yOffset) // Offset to simulate border thickness
         }
     }
 }
@@ -108,4 +113,8 @@ extension Color {
         
         self.init(red: r, green: g, blue: b)
     }
+}
+
+#Preview {
+    GlowEffect()
 }

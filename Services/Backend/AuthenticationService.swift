@@ -40,9 +40,13 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     // MARK: - Authentication Flow
 
     func authenticate(to server: ServerModel) async throws {
-        // Prevents concurrent authentication attempts
-        guard !isAuthenticating else { throw AppError(mastodon: .operationInProgress) }
-        isAuthenticating = true
+        // Prevents concurrent authentication attempts by ensuring only one authentication can happen at a time
+        guard !isAuthenticating else {
+            throw AppError(mastodon: .operationInProgress)
+        }
+
+        isAuthenticating = true // Set to true immediately after the guard
+        
         alertError = nil
 
         // Resets `isAuthenticating` to `false` when the function exits, even if an error occurs.
@@ -53,17 +57,18 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         do {
             let config = try await obtainOAuthConfig(for: server)
             let authorizationCode = try await startWebAuthSession(config: config, instanceURL: server.url)
-            
+
             // Ensure that we only proceed if the authorization code is successfully received
             if authorizationCode.isEmpty {
-                 throw AppError(mastodon: .missingAuthorizationCode)
+                throw AppError(mastodon: .missingAuthorizationCode)
             }
-            
+
             try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
             try await saveInstanceURL(server.url)
             try await fetchAndUpdateUser(instanceURL: server.url)
             self.isAuthenticated = true
             logger.info("Authentication successful")
+            
         } catch {
             self.isAuthenticated = false
             self.alertError = AppError(message: "Authentication failed", underlyingError: error)
@@ -97,6 +102,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     // Registers the app with the Mastodon server and saves the new credentials.
     private func registerNewOAuthApp(with server: ServerModel) async throws -> OAuthConfig {
         logger.info("Registering new OAuth app with server: \(server.url.absoluteString, privacy: .public)")
+
         let newConfig = try await networkService.registerOAuthApp(instanceURL: server.url)
 
         guard !newConfig.clientId.isEmpty, !newConfig.clientSecret.isEmpty else {
@@ -104,10 +110,38 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             throw AppError(mastodon: .invalidCredentials)
         }
 
+        // 🔥 Ensure credentials are saved before returning
         try await KeychainHelper.shared.save(newConfig.clientId, service: keychainService, account: "clientID")
         try await KeychainHelper.shared.save(newConfig.clientSecret, service: keychainService, account: "clientSecret")
+
+        // Hardcoded API ID to prevent "Unknown Client" error
+        let mastodonAPIClientID = "titan.Test.Learn.mastdon.Mustard"
+        
+        // If an "Unknown Client" error was encountered, retry registration with a known bundle identifier
+        if let previousError = alertError, case .mastodon(.unknownClient) = previousError.type {
+            alertError = nil // Clear previous error
+            try await authenticateWithHardcodedClientID(server: server, mastodonAPIClientID: mastodonAPIClientID)
+        }
+
         logger.info("Successfully registered and saved new OAuth app")
         return newConfig
+    }
+
+    private func authenticateWithHardcodedClientID(server: ServerModel, mastodonAPIClientID: String) async throws {
+        logger.info("Authenticating with hardcoded Mastodon API Client ID: \(mastodonAPIClientID)")
+        let config = OAuthConfig(clientId: mastodonAPIClientID, clientSecret: "", redirectUri: "mustard://oauth-callback", scope: "read write follow push")
+        
+        let authorizationCode = try await startWebAuthSession(config: config, instanceURL: server.url)
+
+        if authorizationCode.isEmpty {
+            throw AppError(mastodon: .missingAuthorizationCode)
+        }
+
+        try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
+        try await saveInstanceURL(server.url)
+        try await fetchAndUpdateUser(instanceURL: server.url)
+        self.isAuthenticated = true
+        logger.info("Authentication successful with hardcoded Client ID")
     }
 
     // MARK: - Token Management and User Information
@@ -124,13 +158,6 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         currentUser = user
         NotificationCenter.default.post(name: .didAuthenticate, object: user)
         logger.info("Current user fetched and updated: \(user.username)")
-    }
-
-    // MARK: - User Update
-
-    func updateAuthenticatedUser(_ user: User) {
-        currentUser = user
-        logger.info("Updated authenticated user: \(user.username, privacy: .public)")
     }
 
     // MARK: - ASWebAuthenticationSession Handling
@@ -223,11 +250,55 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     // MARK: - Token Exchange
 
     private func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
-        try await networkService.exchangeAuthorizationCode(code, config: config, instanceURL: instanceURL)
-        // Update token creation date after successful exchange
-        tokenCreationDate = Date()
-    }
+        let body: [String: String] = [
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": config.clientId,
+            "client_secret": config.clientSecret,
+            "redirect_uri": config.redirectUri,
+            "scope": config.scope
+        ]
 
+        let tokenEndpointURL = instanceURL.appendingPathComponent("/oauth/token")
+        var request = URLRequest(url: tokenEndpointURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        request.httpBody = body.compactMap { (key, value) in
+            guard let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                return nil
+            }
+            return "\(key)=\(encodedValue)"
+        }.joined(separator: "&").data(using: .utf8)
+
+        logger.info("Exchanging authorization code for access token at \(tokenEndpointURL.absoluteString)")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            logger.error("Failed to exchange authorization code. Status: \(statusCode), Body: \(responseBody)")
+            throw AppError(mastodon: .failedToExchangeCode)
+        }
+
+        do {
+            let tokenResponse = try networkService.jsonDecoder.decode(TokenResponse.self, from: data)
+            // Log the access token for debugging
+            logger.debug("Received access token: \(tokenResponse.accessToken)")
+
+            // Save the access token in Keychain
+            try await KeychainHelper.shared.save(tokenResponse.accessToken, service: keychainService, account: "accessToken")
+            tokenCreationDate = Date()
+            logger.info("Successfully exchanged authorization code for access token and saved to Keychain.")
+        } catch {
+            logger.error("Failed to decode TokenResponse: \(error.localizedDescription)")
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            logger.debug("Response body for debugging: \(responseBody)")
+            throw AppError(type: .mastodon(.decodingError), underlyingError: error)
+        }
+    }
+    
     // MARK: - Authentication State Validation
     func validateAuthentication() async {
         do {
@@ -286,3 +357,4 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         }
     }
 }
+

@@ -21,6 +21,9 @@ final class Post: Identifiable, Codable, Equatable {
     var favouritesCount: Int
     var repliesCount: Int
     var mediaAttachments: [MediaAttachment]
+    
+    // MARK: - Relationship (Replies)
+    var replies: [Post] = []
 
     // MARK: - Initializer
     init(
@@ -33,7 +36,8 @@ final class Post: Identifiable, Codable, Equatable {
         isReblogged: Bool = false,
         reblogsCount: Int = 0,
         favouritesCount: Int = 0,
-        repliesCount: Int = 0
+        repliesCount: Int = 0,
+        replies: [Post] = []
     ) {
         self.id = id
         self.content = content
@@ -45,11 +49,12 @@ final class Post: Identifiable, Codable, Equatable {
         self.favouritesCount = favouritesCount
         self.repliesCount = repliesCount
         self.mediaAttachments = mediaAttachments
+        self.replies = replies
     }
 
     // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
-        case id, content, createdAt, account, mediaAttachments
+        case id, content, createdAt, account, mediaAttachments, replies
         case isFavourited, isReblogged, reblogsCount, favouritesCount, repliesCount
     }
 
@@ -65,6 +70,7 @@ final class Post: Identifiable, Codable, Equatable {
         self.favouritesCount = try container.decode(Int.self, forKey: .favouritesCount)
         self.repliesCount = try container.decode(Int.self, forKey: .repliesCount)
         self.mediaAttachments = try container.decode([MediaAttachment].self, forKey: .mediaAttachments)
+        self.replies = try container.decodeIfPresent([Post].self, forKey: .replies) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -79,6 +85,7 @@ final class Post: Identifiable, Codable, Equatable {
         try container.encode(favouritesCount, forKey: .favouritesCount)
         try container.encode(repliesCount, forKey: .repliesCount)
         try container.encode(mediaAttachments, forKey: .mediaAttachments)
+        try container.encode(replies, forKey: .replies)
     }
 
     // MARK: - Equatable Conformance
@@ -93,5 +100,6 @@ final class Post: Identifiable, Codable, Equatable {
             lhs.favouritesCount == rhs.favouritesCount &&
             lhs.repliesCount == rhs.repliesCount &&
             lhs.mediaAttachments == rhs.mediaAttachments
+        // Omit comparison of 'replies' to avoid infinite loop
     }
 }

@@ -30,27 +30,20 @@ class TimelineService {
                 }
                 return cachedPosts
             } catch let error as AppError {
-                // Check for the specific error type using `if case`
                 if case .mastodon(.cacheNotFound) = error.type {
                     logger.info("Timeline cache not found on disk. Fetching from network.")
                 } else {
                     logger.error("Error loading timeline from cache: \(error.localizedDescription)")
-                    throw error // Re-throw other errors
+                    throw error
                 }
             } catch {
                 logger.error("Error loading timeline from cache: \(error.localizedDescription)")
-                throw error // Re-throw other errors
+                throw error
             }
         }
 
         // Fetch from network if not using cache or cache not found
         do {
-            // Print base URL and access token for debugging
-            let baseURL = try await KeychainHelper.shared.read(service: "MustardKeychain", account: "baseURL")
-            let accessToken = try await KeychainHelper.shared.read(service: "MustardKeychain", account: "accessToken")
-            print("Using baseURL: \(baseURL ?? "nil")")
-            print("Using accessToken: \(accessToken ?? "nil")")
-
             let url = try await NetworkService.shared.endpointURL("/api/v1/timelines/home")
             let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
             // Use Task to perform cache operation concurrently
@@ -63,7 +56,7 @@ class TimelineService {
             throw error
         }
     }
-    
+
     func fetchMoreTimeline(page: Int) async throws -> [Post] {
         var endpoint = "/api/v1/timelines/home"
         if page > 1 {
