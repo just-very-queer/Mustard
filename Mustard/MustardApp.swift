@@ -2,7 +2,8 @@
 //  MustardApp.swift
 //  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 14/09/24.
+//  Created by Vaibhav Srivastava on 14/09/24.
+//  Copyright © 2024 Mustard. All rights reserved.
 //
 
 import SwiftUI
@@ -13,26 +14,26 @@ import SwiftData
 struct MustardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-       // MARK: - Services
-    static private let networkService = NetworkService.shared // Now static
+    // MARK: - Services
+    static private let networkService = NetworkService.shared
     private let cacheService = CacheService()
-       // Directly using the shared instance
-    private let authenticationService = AuthenticationService.shared // This is totally unnecessary, as we are already calling shared in AuthenticationViewModel file.
-    private let timelineService: TimelineService
-    private let trendingService: TrendingService
-    private let postActionService: PostActionService
-    private let profileService: ProfileService
 
     // MARK: - ViewModels
-    @StateObject private var authViewModel: AuthenticationViewModel
+    @StateObject private var authViewModel = AuthenticationViewModel()
     @StateObject private var locationManager = LocationManager()
 
     // MARK: - SwiftData container
     let container: ModelContainer
 
+    // MARK: - Services
+    @State private var timelineService: TimelineService!
+    @State private var trendingService: TrendingService!
+    @State private var postActionService: PostActionService!
+    @State private var profileService: ProfileService!
+
     // MARK: - Initialization
     init() {
-        // Initialize the ModelContainer with your @Model types
+        // Initialize ModelContainer
         do {
             container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, ServerModel.self)
             print("[MustardApp] ModelContainer initialized successfully.")
@@ -40,65 +41,55 @@ struct MustardApp: App {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // Initialize the AuthenticationViewModel using the shared AuthenticationService instance
-        _authViewModel = StateObject(wrappedValue: AuthenticationViewModel())
-        
-        // Initialize other services using the static networkService
-        timelineService = TimelineService(networkService: Self.networkService, cacheService: cacheService)
-        trendingService = TrendingService(networkService: Self.networkService, cacheService: cacheService)
-        postActionService = PostActionService(networkService: Self.networkService)
-        profileService = ProfileService(networkService: Self.networkService)
+        // Initialize services with proper dependencies
+        let postActionService = PostActionService(networkService: MustardApp.networkService)
+        let trendingService = TrendingService(networkService: MustardApp.networkService, cacheService: cacheService)
+        let timelineService = TimelineService(
+            networkService: MustardApp.networkService,
+            cacheService: cacheService,
+            postActionService: postActionService,
+            locationManager: LocationManager(),
+            trendingService: trendingService
+        )
+
+        _timelineService = State(initialValue: timelineService)
+        _trendingService = State(initialValue: trendingService)
+        _postActionService = State(initialValue: postActionService)
+        _profileService = State(initialValue: ProfileService(networkService: MustardApp.networkService))
     }
 
     var body: some Scene {
         WindowGroup {
-            // Inject dependencies into MainAppView
-            if authViewModel.isAuthenticated {
-                MainAppView(
-                    timelineService: timelineService,
-                    trendingService: trendingService,
-                    postActionService: postActionService,
-                    profileService: profileService,
-                    cacheService: cacheService,
-                    networkService: MustardApp.networkService // Pass the networkService directly
-                )
-                .environmentObject(authViewModel)
-                .environmentObject(locationManager)
-                .modelContainer(container)
-            } else {
-                LoginView()
-                    .environmentObject(authViewModel)
-                    .environmentObject(locationManager)
-                    .modelContainer(container)
+            Group {
+                switch authViewModel.authState {
+                case .unauthenticated:
+                    LoginView()
+                case .authenticating:
+                    ProgressView("Authenticating...")
+                case .authenticated:
+                    MainAppView(
+                        timelineService: timelineService,
+                        trendingService: trendingService,
+                        postActionService: postActionService,
+                        profileService: profileService,
+                        cacheService: cacheService,
+                        networkService: MustardApp.networkService
+                    )
+                }
             }
-        }
-    }
-
-    // MARK: - Helper to Create ModelContainer
-    private static func createModelContainer() -> ModelContainer {
-        do {
-            let container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, ServerModel.self)
-            print("[MustardApp] ModelContainer initialized successfully.")
-            return container
-        } catch {
-            fatalError("Failed to initialize ModelContainer: \(error)")
+            .environmentObject(authViewModel)
+            .environmentObject(locationManager)
+            .modelContainer(container)
         }
     }
 }
 
-/// AppDelegate class to handle application-level events, such as OAuth callbacks.
+// MARK: - AppDelegate
 class AppDelegate: NSObject, UIApplicationDelegate {
-    // MARK: - Logger
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "AppDelegate")
+    let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AppDelegate")
 
-    func application(
-        _ app: UIApplication,
-        open url: URL,
-        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
-    ) -> Bool {
-        // Log the received OAuth callback URL for debugging
+    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         logger.info("Received OAuth callback URL: \(url.absoluteString, privacy: .public)")
-
         NotificationCenter.default.post(
             name: .didReceiveOAuthCallback,
             object: nil,
@@ -107,3 +98,4 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 }
+

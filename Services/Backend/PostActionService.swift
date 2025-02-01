@@ -10,7 +10,7 @@ import OSLog
 
 class PostActionService {
     private let networkService: NetworkService
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "PostActionService")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "PostActionService")
 
     init(networkService: NetworkService) {
         self.networkService = networkService

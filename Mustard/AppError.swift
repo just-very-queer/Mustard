@@ -68,6 +68,7 @@ struct AppError: Identifiable, Error {
         case invalidWebAuthResponse
         case unknownClient
         case invalidTokenResponse
+        case tokenExpired
         
         static func == (lhs: MastodonError, rhs: MastodonError) -> Bool {
             switch (lhs, rhs) {
@@ -92,9 +93,27 @@ struct AppError: Identifiable, Error {
                  (.failedToRegisterOAuthApp, .failedToRegisterOAuthApp),
                  (.failedToExchangeCode, .failedToExchangeCode),
                  (.failedToStreamTimeline, .failedToStreamTimeline),
-                 (.invalidAuthorizationCode, .invalidAuthorizationCode):
+                 (.invalidAuthorizationCode, .invalidAuthorizationCode),
+                 (.authError, .authError),
+                 (.rateLimitExceeded, .rateLimitExceeded),
+                 (.missingOrClearedCredentials, .missingOrClearedCredentials),
+                 (.cacheNotFound, .cacheNotFound),
+                 (.noCacheAvailable, .noCacheAvailable),
+                 (.invalidAuthorizationURL, .invalidAuthorizationURL),
+                 (.operationInProgress, .operationInProgress),
+                 (.invalidCredentials, .invalidCredentials),
+                 (.missingAuthorizationCode, .missingAuthorizationCode),
+                 (.webAuthSessionFailed, .webAuthSessionFailed),
+                 (.userCancelledAuth, .userCancelledAuth),
+                 (.handleWebAuthError, .handleWebAuthError),
+                 (.authenticationCancelled, .authenticationCancelled),
+                 (.invalidWebAuthResponse, .invalidWebAuthResponse),
+                 (.unknownClient, .unknownClient),
+                 (.invalidTokenResponse, .invalidTokenResponse),
+                 (.tokenExpired, .tokenExpired):
                 return true
-            case (.serverError(let lhsStatus), .serverError(let rhsStatus)):
+            case (.serverError(let lhsStatus), .serverError(let rhsStatus)),
+                 (.unknown(let lhsStatus), .unknown(let rhsStatus)):
                 return lhsStatus == rhsStatus
             case (.networkError(let lhsMessage), .networkError(let rhsMessage)):
                 return lhsMessage == rhsMessage
@@ -285,6 +304,8 @@ struct AppError: Identifiable, Error {
             return "Unknown client."
         case .invalidTokenResponse:
             return "Invalid token response."
+        case .tokenExpired:
+            return "Token expired."
         }
     }
     
@@ -346,106 +367,105 @@ struct AppError: Identifiable, Error {
         }
     }
     
-    
     var isRecoverable: Bool {
-           switch type {
-           case .generic, .authentication, .weather, .other:
-               return true
-           case .mastodon(let error):
-               switch error {
-               case .missingCredentials, .networkError, .cacheNotFound:
-                   return true
-               default:
-                   return false
-               }
-           case .network(let error):
-               switch error {
-               case .requestFailed, .timedOut:
-                   return true // Network issues are often recoverable
-               default:
-                   return false
-               }
-           case .cache(let error):
-               switch error {
-               case .noCacheAvailable, .notFound:
-                   return true // Cache misses are recoverable
-               default:
-                   return false // Other cache errors might not be recoverable
-               }
-           }
-       }
-
-       var recoverySuggestion: String? {
-           switch type {
-           case .generic:
-               return "Please try again."
-           case .mastodon(let error):
-               switch error {
-               case .missingCredentials:
-                   return "Please verify your login credentials."
-               case .networkError:
-                   return "Please check your internet connection and try again."
-               case .missingOrClearedCredentials:
-                   return "Credentials are missing or have been cleared. Please re-enter your credentials."
-               case .cacheNotFound:
-                   return "Cache data not found. Trying to fetch from network."
-               case .noCacheAvailable:
-                   return "Cache data not available. Trying to fetch from network."
-               default:
-                   return nil
-               }
-           case .authentication(let authError):
-               switch authError {
-               case .invalidAuthorizationCode:
-                   return "Please check your authorization code and try again."
-               case .webAuthSessionFailed:
-                   return "Ensure that web authentication is available and try again."
-               case .noAuthorizationCode:
-                   return "Authorization code was not received. Please try logging in again."
-               case .unknown:
-                   return "An unexpected authentication error occurred."
-               }
-           case .weather(let error):
-               switch error {
-               case .invalidKey:
-                   return "Please check your weather API key."
-               case .invalidURL:
-                   return "Please check the weather API URL."
-               case .badResponse:
-                   return "Please try again later. If the issue persists, check the API service status."
-               }
-           case .network(let error):
-               switch error {
-               case .invalidURL:
-                   return "The URL is invalid. Please check the URL and try again."
-               case .requestFailed:
-                   return "The network request failed. Please check your connection and try again."
-               case .invalidResponse:
-                   return "Received an invalid response from the server. Please try again later."
-               case .decodingFailed:
-                   return "Failed to decode the server's response. Please try again later."
-               case .timedOut:
-                   return "The request timed out. Please check your network connection and try again."
-               case .networkError:
-                   return "Network Error"
-               }
-           case .cache(let error):
-               switch error {
-               case .noCacheAvailable:
-                   return "Cache is not available. Try refreshing the data."
-               case .notFound:
-                   return "Requested data not found in cache. Try fetching it again."
-               case .encodingFailed:
-                   return "Failed to encode data for caching. Check the data format and try again."
-               case .decodingFailed:
-                   return "Failed to decode data from cache. Try refreshing the data."
-               case .saveFailed:
-                   return "Failed to save data to cache. Check storage availability and permissions."
-               case .deleteFailed:
-                   return "Failed to delete data from cache. Check permissions and try again."
-               }
-           case .other(let msg):
-               return "An error occurred: \(msg). Please try again."
-           }
+        switch type {
+        case .generic, .authentication, .weather, .other:
+            return true
+        case .mastodon(let error):
+            switch error {
+            case .missingCredentials, .networkError, .cacheNotFound:
+                return true
+            default:
+                return false
+            }
+        case .network(let error):
+            switch error {
+            case .requestFailed, .timedOut:
+                return true
+            default:
+                return false
+            }
+        case .cache(let error):
+            switch error {
+            case .noCacheAvailable, .notFound:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+    
+    var recoverySuggestion: String? {
+        switch type {
+        case .generic:
+            return "Please try again."
+        case .mastodon(let error):
+            switch error {
+            case .missingCredentials:
+                return "Please verify your login credentials."
+            case .networkError:
+                return "Please check your internet connection and try again."
+            case .missingOrClearedCredentials:
+                return "Credentials are missing or have been cleared. Please re-enter your credentials."
+            case .cacheNotFound:
+                return "Cache data not found. Trying to fetch from network."
+            case .noCacheAvailable:
+                return "Cache data not available. Trying to fetch from network."
+            default:
+                return nil
+            }
+        case .authentication(let authError):
+            switch authError {
+            case .invalidAuthorizationCode:
+                return "Please check your authorization code and try again."
+            case .webAuthSessionFailed:
+                return "Ensure that web authentication is available and try again."
+            case .noAuthorizationCode:
+                return "Authorization code was not received. Please try logging in again."
+            case .unknown:
+                return "An unexpected authentication error occurred."
+            }
+        case .weather(let error):
+            switch error {
+            case .invalidKey:
+                return "Please check your weather API key."
+            case .invalidURL:
+                return "Please check the weather API URL."
+            case .badResponse:
+                return "Please try again later. If the issue persists, check the API service status."
+            }
+        case .network(let error):
+            switch error {
+            case .invalidURL:
+                return "The URL is invalid. Please check the URL and try again."
+            case .requestFailed:
+                return "The network request failed. Please check your connection and try again."
+            case .invalidResponse:
+                return "Received an invalid response from the server. Please try again later."
+            case .decodingFailed:
+                return "Failed to decode the server's response. Please try again later."
+            case .timedOut:
+                return "The request timed out. Please check your network connection and try again."
+            case .networkError:
+                return "Network Error"
+            }
+        case .cache(let error):
+            switch error {
+            case .noCacheAvailable:
+                return "Cache is not available. Try refreshing the data."
+            case .notFound:
+                return "Requested data not found in cache. Try fetching it again."
+            case .encodingFailed:
+                return "Failed to encode data for caching. Check the data format and try again."
+            case .decodingFailed:
+                return "Failed to decode data from cache. Try refreshing the data."
+            case .saveFailed:
+                return "Failed to save data to cache. Check storage availability and permissions."
+            case .deleteFailed:
+                return "Failed to delete data from cache. Check permissions and try again."
+            }
+        case .other(let msg):
+            return "An error occurred: \(msg). Please try again."
+        }
     }
 }

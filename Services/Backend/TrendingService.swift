@@ -11,15 +11,15 @@ import OSLog
 class TrendingService {
     private let networkService: NetworkService
     private let cacheService: CacheService
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "TrendingService")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "TrendingService")
 
     init(networkService: NetworkService, cacheService: CacheService) {
         self.networkService = networkService
         self.cacheService = cacheService
     }
 
-    /// Fetches trending posts, either from cache or by making a network request.
-    func fetchTrendingPosts() async throws -> [Post] {
+    // Fetch trending posts (used in TimelineService to get the top posts)
+    func fetchTopPosts() async throws -> [Post] {
         let cacheKey = "trendingPosts"
 
         do {
@@ -28,7 +28,7 @@ class TrendingService {
             return cachedPosts
         } catch {
             // Log the error as info since it might just be a cache miss
-            logger.info("Cache miss for trending posts or error loading from cache: \(error.localizedDescription)")
+            logger.info("Cache miss for top posts or error loading from cache: \(error.localizedDescription)")
         }
 
         // If no cached posts are found or an error occurred, fetch them from the network
@@ -47,8 +47,9 @@ class TrendingService {
             return fetchedPosts
         } catch {
             // Log the error if fetching from the network fails
-            logger.error("Failed to fetch trending posts: \(error.localizedDescription)")
+            logger.error("Failed to fetch top posts: \(error.localizedDescription)")
             throw error
         }
     }
 }
+

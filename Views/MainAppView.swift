@@ -29,12 +29,7 @@ struct MainAppView: View {
                     authViewModel: authViewModel,
                     locationManager: locationManager,
                     timelineViewModel: TimelineViewModel(
-                        timelineService: timelineService,
-                        cacheService: cacheService,
-                        networkService: networkService,
-                        trendingService: trendingService,
-                        postActionService: postActionService,
-                        locationManager: locationManager
+                        timelineService: timelineService
                     ),
                     profileViewModel: ProfileViewModel(profileService: profileService)
                 )
@@ -73,5 +68,25 @@ struct MainAppView: View {
                 Label("Settings", systemImage: "gearshape")
             }
         }
+    }
+}
+
+struct MainAppView_Previews: PreviewProvider {
+    static var previews: some View {
+        let networkService = NetworkService()
+        let cacheService = CacheService()
+        let locationManager = LocationManager()
+        let trendingService = TrendingService(networkService: networkService, cacheService: cacheService)
+        let postActionService = PostActionService(networkService: networkService)
+        MainAppView(
+            timelineService: TimelineService(networkService: networkService, cacheService: cacheService, postActionService: postActionService, locationManager: locationManager, trendingService: trendingService),
+            trendingService: trendingService,
+            postActionService: postActionService,
+            profileService: ProfileService(networkService: networkService),
+            cacheService: cacheService,
+            networkService: networkService
+        )
+        .environmentObject(AuthenticationViewModel())
+        .environmentObject(locationManager)
     }
 }

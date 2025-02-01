@@ -13,7 +13,7 @@ import CoreLocation
 struct HomeView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
-    @StateObject private var timelineViewModel: TimelineViewModel
+    @ObservedObject var timelineViewModel: TimelineViewModel
     @StateObject private var profileViewModel: ProfileViewModel
 
     // MARK: - State Variables
@@ -21,16 +21,16 @@ struct HomeView: View {
     @State private var isShowingFullScreenImage = false
     @State private var selectedImageURL: URL?
 
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "HomeView")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "HomeView")
 
     // MARK: - Initializer
     init(
         authViewModel: AuthenticationViewModel,
         locationManager: LocationManager,
-        timelineViewModel: TimelineViewModel, // Pass the timelineViewModel here
+        timelineViewModel: TimelineViewModel,
         profileViewModel: ProfileViewModel
     ) {
-        _timelineViewModel = StateObject(wrappedValue: timelineViewModel)  // Initialize timelineViewModel as a StateObject
+        _timelineViewModel = ObservedObject(wrappedValue: timelineViewModel)
         _profileViewModel = StateObject(wrappedValue: profileViewModel)
     }
 
@@ -39,7 +39,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     // Weather Header
-                    if authViewModel.isAuthenticated {
+                    if authViewModel.authState == .authenticated {
                         weatherHeader
                     }
 
@@ -53,12 +53,12 @@ struct HomeView: View {
             }
             .navigationTitle("Home")
             .task {
-                if authViewModel.isAuthenticated {
-                    await initializeData()  // Async data initialization
+                if authViewModel.authState == .authenticated {
+                    await initializeData()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .didUpdateLocation)) { notification in
-                if authViewModel.isAuthenticated, let location = notification.userInfo?["location"] as? CLLocation {
+                if authViewModel.authState == .authenticated, let location = notification.userInfo?["location"] as? CLLocation {
                     Task {
                         await timelineViewModel.fetchWeather(for: location)
                     }
@@ -80,7 +80,7 @@ struct HomeView: View {
                 }
             }
             .refreshable {
-                if authViewModel.isAuthenticated {
+                if authViewModel.authState == .authenticated {
                     await initializeData()
                 }
             }
@@ -94,7 +94,7 @@ struct HomeView: View {
                 WeatherBarView(weather: weather)
                     .padding(.top)
                     .transition(.opacity)
-            } else if authViewModel.isAuthenticated {
+            } else if authViewModel.authState == .authenticated {
                 Button(action: {
                     locationManager.requestLocationPermission()
                 }) {
@@ -213,22 +213,19 @@ struct HomeView: View {
 
     // MARK: - Helper Functions
     private func initializeData() async {
-        // Ensure that timelineViewModel is initialized properly
-        await timelineViewModel.fetchMoreTimeline()  // Correct async method call
-        await timelineViewModel.fetchTopPosts()  // Correct async method call
+        timelineViewModel.fetchMoreTimeline()
+        await timelineViewModel.fetchTopPosts()
 
-        // If location is available, fetch weather as well
         if let location = locationManager.userLocation {
             await timelineViewModel.fetchWeather(for: location)
         }
     }
 
-
     private func loadMorePostsIfNeeded(currentPost: Post) {
         guard currentPost == timelineViewModel.posts.last, !isRequestingMore else { return }
         isRequestingMore = true
         Task {
-            await timelineViewModel.fetchMoreTimeline()
+            timelineViewModel.fetchMoreTimeline()
             isRequestingMore = false
         }
     }

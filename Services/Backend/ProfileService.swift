@@ -10,7 +10,7 @@ import OSLog
 
 class ProfileService {
     private let networkService: NetworkService
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "ProfileService")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "ProfileService")
 
     init(networkService: NetworkService) {
         self.networkService = networkService

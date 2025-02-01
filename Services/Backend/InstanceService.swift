@@ -76,7 +76,7 @@ struct InstanceList: Decodable {
 }
 
 struct InstanceService {
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "InstanceService")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "InstanceService")
 
     // **WARNING: DO NOT DO THIS IN A PRODUCTION APP**
     // Hardcoding the API token is a security risk.

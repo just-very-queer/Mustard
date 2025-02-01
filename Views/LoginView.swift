@@ -16,7 +16,7 @@ struct LoginView: View {
     @State private var showServerList: Bool = false
     @State private var showGlow = false
 
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "LoginView")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "LoginView")
 
     var body: some View {
         NavigationView {
@@ -64,19 +64,12 @@ struct LoginView: View {
                         onSelect: { server in
                             // Indicate that authentication is in progress
                             isAuthenticating = true
+                            authViewModel.selectedServer = server // Set the selected server
+                            showServerList = false
+
+                            // Trigger authentication directly
                             Task {
-                                // Use the logger here
-                                logger.debug("Authenticate called with server: \(server.name)")
-                                do {
-                                    try await authViewModel.authenticate(to: server)
-                                    // Authentication was successful, dismiss the sheet
-                                    showServerList = false
-                                    logger.debug("isAuthenticated: \(authViewModel.isAuthenticated)")
-                                } catch {
-                                    // Handle authentication failure
-                                    logger.error("Authentication failed: \(error.localizedDescription)")
-                                    authViewModel.alertError = AppError(message: "Authentication failed", underlyingError: error)
-                                }
+                                await authViewModel.authenticate()
                                 isAuthenticating = false
                             }
                         },
@@ -107,9 +100,34 @@ struct LoginView: View {
                     withAnimation {
                         showGlow = true
                     }
+                    
+                    // Register for keyboard notifications
+                    NotificationCenter.default.addObserver(
+                        forName: UIResponder.keyboardWillChangeFrameNotification,
+                        object: nil,
+                        queue: .main) { notification in
+                            self.keyboardWillChangeFrame(notification: notification)
+                    }
+                }
+                .onDisappear {
+                    // Unregister for keyboard notifications when the view disappears
+                    NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
                 }
             }
         }
     }
-}
 
+    // MARK: - Keyboard Frame Change Handling
+    func keyboardWillChangeFrame(notification: Notification) {
+        guard let userInfo = notification.userInfo,
+            let endFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+
+        if endFrame.origin.y >= UIScreen.main.bounds.height {
+            // Keyboard is not visible
+            logger.debug("Keyboard is not visible.")
+        } else {
+            // Keyboard is visible
+            logger.debug("Keyboard is visible.")
+        }
+    }
+}

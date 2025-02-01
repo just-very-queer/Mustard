@@ -17,10 +17,10 @@ final class KeychainHelper: @unchecked Sendable { // Marking explicitly to avoid
 
     // MARK: - Private Properties
     /// A dedicated serial dispatch queue for Keychain operations to ensure thread safety.
-    private let keychainQueue = DispatchQueue(label: "com.yourcompany.Mustard.KeychainQueue", attributes: .concurrent)
+    private let keychainQueue = DispatchQueue(label: "titan.mustard.app.ao.KeychainQueue", attributes: .concurrent)
     
     /// Logger for structured and categorized logging.
-    private let logger = OSLog(subsystem: "com.yourcompany.Mustard", category: "KeychainHelper")
+    private let logger = OSLog(subsystem: "titan.mustard.app.ao", category: "KeychainHelper")
 
     /// Private initializer to enforce the singleton pattern.
     private init() {}

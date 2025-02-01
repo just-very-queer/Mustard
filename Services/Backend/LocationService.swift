@@ -15,7 +15,7 @@ import OSLog
 
 struct PostLocationManager {
     // MARK: - Properties
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "PostLocationManager")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "PostLocationManager")
     
     /// Decodes geo-coordinates from a Mastodon post's content.
     /// Assumes that the post content contains coordinates in a recognizable format.
@@ -76,7 +76,7 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     private let manager = CLLocationManager()
 
     // Logger for debugging
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "LocationManager")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "LocationManager")
 
     // Publisher to emit location updates
     var locationPublisher: AnyPublisher<CLLocation, Never> {

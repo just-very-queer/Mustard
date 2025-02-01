@@ -138,7 +138,7 @@ struct PostView: View {
 
                         Button(action: {
                             Task {
-                                try await viewModel.comment(on: post, content: commentText)
+                                await viewModel.comment(on: post, content: commentText)
                                 commentText = ""
                             }
                         }) {

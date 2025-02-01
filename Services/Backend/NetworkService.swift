@@ -15,15 +15,15 @@ import CoreLocation
 
 /// A service responsible for all network requests in the Mustard app, including
 /// Mastodon API calls, OAuth flows, and general fetch/post actions.
-final class NetworkService {
+public class NetworkService {
     // MARK: - Singleton Instance
     
     /// Shared singleton instance of `NetworkService`.
-    static let shared = NetworkService()
+    public static let shared = NetworkService()
     
     // MARK: - Private Properties
     
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "NetworkService")
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "NetworkService")
     private let rateLimiter = RateLimiter(capacity: 40, refillRate: 1.0) // 40 requests per second
     private let keychainService = "MustardKeychain"
     
@@ -52,7 +52,7 @@ final class NetworkService {
     // MARK: - Initialization
     
     /// Private initializer to enforce singleton pattern.
-    private init() {
+    public init() {
         // Additional setup if needed
     }
     
@@ -236,53 +236,56 @@ final class NetworkService {
     ///   - instanceURL: The base URL of the Mastodon instance.
     /// - Throws: `AppError` if the exchange fails or decoding the response fails.
     func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws -> TokenResponse {
-            let body = [
-                "grant_type": "authorization_code",
-                "code": code,
-                "client_id": config.clientId,
-                "client_secret": config.clientSecret,
-                "redirect_uri": config.redirectUri,
-                "scope": config.scope
-            ]
-            let requestURL = instanceURL.appendingPathComponent("/oauth/token")
-            var request = URLRequest(url: requestURL)
-            request.httpMethod = "POST"
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let body = [
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": config.clientId,
+            "client_secret": config.clientSecret,
+            "redirect_uri": config.redirectUri,
+            "scope": config.scope
+        ]
+        let requestURL = instanceURL.appendingPathComponent("/oauth/token")
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-            request.httpBody = body.compactMap { (key, value) in
-                guard let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-                    return nil
-                }
-                return "\(key)=\(encodedValue)"
-            }.joined(separator: "&").data(using: .utf8)
-
-            logger.info("Exchanging authorization code for access token at \(requestURL.absoluteString)")
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                let responseBody = String(data: data, encoding: .utf8) ?? ""
-                logger.error("Failed to exchange authorization code. Status: \(statusCode), Body: \(responseBody)")
-                throw AppError(mastodon: .failedToExchangeCode)
+        request.httpBody = body.compactMap { (key, value) in
+            guard let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+                return nil
             }
+            return "\(key)=\(encodedValue)"
+        }.joined(separator: "&").data(using: .utf8)
 
-            // Decode the TokenResponse
-            do {
-                let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
+        logger.info("Exchanging authorization code for access token at \(requestURL.absoluteString)")
 
-                // Log the access token for debugging
-                logger.debug("Received access token: \(tokenResponse.accessToken)")
-                
-                return tokenResponse
-                
-            } catch {
-                logger.error("Failed to decode TokenResponse: \(error.localizedDescription)")
-                let responseBody = String(data: data, encoding: .utf8) ?? ""
-                logger.debug("Response body for debugging: \(responseBody)")
-                throw AppError(type: .mastodon(.decodingError), underlyingError: error)
-            }
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            logger.error("Failed to exchange authorization code. Status: \(statusCode), Body: \(responseBody)")
+            throw AppError(mastodon: .failedToExchangeCode)
         }
+
+        // Decode the TokenResponse
+        do {
+            let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
+
+            // Log the access token for debugging
+            logger.debug("Received access token: \(tokenResponse.accessToken)")
+
+            // Save expiresIn to the keychain
+            try await KeychainHelper.shared.save(String(tokenResponse.expiresIn), service: keychainService, account: "expiresIn")
+
+            return tokenResponse
+
+        } catch {
+            logger.error("Failed to decode TokenResponse: \(error.localizedDescription)")
+            let responseBody = String(data: data, encoding: .utf8) ?? ""
+            logger.debug("Response body for debugging: \(responseBody)")
+            throw AppError(type: .mastodon(.decodingError), underlyingError: error)
+        }
+    }
     
     /// Fetches the currently authenticated user's profile via `/api/v1/accounts/verify_credentials`.
     ///
@@ -290,6 +293,9 @@ final class NetworkService {
     /// - Returns: A `User` object representing the current user.
     /// - Throws: `AppError` if fetching the user fails.
     func fetchCurrentUser(instanceURL: URL? = nil) async throws -> User {
+        let accessToken = try await KeychainHelper.shared.read(service: keychainService, account: "accessToken")
+        logger.debug("Access token: \(String(describing: accessToken))") // Log for debugging
+
         let userFetchURL: URL
         if let customURL = instanceURL {
             userFetchURL = customURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
@@ -300,6 +306,9 @@ final class NetworkService {
             }
             userFetchURL = baseURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
         }
+        
+        var request = URLRequest(url: userFetchURL)
+        request.setValue("Bearer \(String(describing: accessToken))", forHTTPHeaderField: "Authorization")
         
         // Reuse the fetchData function to get the current user
         let user: User = try await fetchData(url: userFetchURL, method: "GET", type: User.self)

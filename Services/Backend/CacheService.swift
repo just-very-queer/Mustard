@@ -9,8 +9,8 @@ import Foundation
 import OSLog
 
 actor CacheService {
-    private let logger = Logger(subsystem: "com.yourcompany.Mustard", category: "CacheService")
-    private let cacheDirectoryName = "com.yourcompany.Mustard.datacache"
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "CacheService")
+    private let cacheDirectoryName = "titan.mustard.app.ao.datacache"
     private let fileManager = FileManager.default
 
     /// Caches posts to disk asynchronously.
