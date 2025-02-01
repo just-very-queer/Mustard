@@ -53,7 +53,7 @@ struct TokenResponse: Codable, Sendable {
         case tokenType = "token_type"
         case scope
         case createdAt = "created_at"
-        case expiresIn = "expires_in" // Fix: Corrected key name
+        case expiresIn = "expires_in"
     }
 }
 // MARK: - WeatherData

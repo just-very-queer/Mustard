@@ -62,15 +62,12 @@ struct LoginView: View {
                 .sheet(isPresented: $showServerList) {
                     ServerListView(
                         onSelect: { server in
-                            // Indicate that authentication is in progress
-                            isAuthenticating = true
-                            authViewModel.selectedServer = server // Set the selected server
+                            authViewModel.selectedServer = server
                             showServerList = false
 
-                            // Trigger authentication directly
-                            Task {
-                                await authViewModel.authenticate()
-                                isAuthenticating = false
+                            // Introduce a small delay
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                authViewModel.prepareAuthentication()
                             }
                         },
                         onCancel: {
@@ -114,6 +111,12 @@ struct LoginView: View {
                     NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
                 }
             }
+            
+            // Show progress view if authenticating
+            if authViewModel.authState == .authenticating {
+                ProgressView("Authenticating...")
+                    .progressViewStyle(CircularProgressViewStyle())
+            }
         }
     }
 
@@ -131,3 +134,4 @@ struct LoginView: View {
         }
     }
 }
+

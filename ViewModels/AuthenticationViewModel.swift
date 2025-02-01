@@ -21,6 +21,7 @@ class AuthenticationViewModel: ObservableObject {
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AuthenticationViewModel")
     private var authService = AuthenticationService.shared
     private var cancellables = Set<AnyCancellable>()
+    private var authTask: Task<Void, Never>? // Task to handle authentication
 
     // MARK: - Initializer
     init() {
@@ -52,38 +53,53 @@ class AuthenticationViewModel: ObservableObject {
 
     // MARK: - Public Methods
 
+    /// Prepares for authentication by updating the state and starting the authentication process.
+    func prepareAuthentication() {
+        authState = .authenticating // Indicate authentication is starting
+        Task {
+            await authenticate()
+        }
+    }
+
     /// Authenticates the user.
     func authenticate() async {
-        // Ensure authentication is not already in progress
-        guard authState != .authenticating else {
-            alertError = AppError(message: "Authentication is already in progress.")
+        // Ensure only one authentication task runs at a time
+        if let existingTask = authTask {
+            await existingTask.value // Wait for the existing task to complete
             return
         }
 
-        // Update state to indicate authentication is in progress
-        authState = .authenticating
+        // Create a new task for authentication
+        authTask = Task {
+            defer { authTask = nil } // Clear the task when done
 
-        do {
-            // Use the selectedServer for authentication
-            guard let server = selectedServer else {
-                alertError = AppError(message: "No server selected.")
+            // Indicate that authentication is in progress
+            authState = .authenticating
+
+            do {
+                // Use the selectedServer for authentication
+                guard let server = selectedServer else {
+                    alertError = AppError(message: "No server selected.")
+                    authState = .unauthenticated
+                    return
+                }
+                try await authService.authenticate(to: server)
+                logger.info("Authentication successful")
+                authState = .authenticated // Update to authenticated state
+            } catch let error as AppError {
+                // Handle known errors
+                logger.error("Authentication failed: \(error.localizedDescription)")
+                alertError = error
                 authState = .unauthenticated
-                return
+            } catch {
+                // Handle unknown errors
+                logger.error("Unknown error during authentication: \(error.localizedDescription)")
+                alertError = AppError(message: "Authentication failed due to an unknown error.")
+                authState = .unauthenticated
             }
-            try await authService.authenticate(to: server)
-            logger.info("Authentication successful")
-            authState = .authenticated
-        } catch let error as AppError {
-            // Handle known errors
-            logger.error("Authentication failed: \(error.localizedDescription)")
-            alertError = error
-            authState = .unauthenticated
-        } catch {
-            // Handle unknown errors
-            logger.error("Unknown error during authentication: \(error.localizedDescription)")
-            alertError = AppError(message: "Authentication failed due to an unknown error.")
-            authState = .unauthenticated
         }
+
+        await authTask?.value // Wait for the task to complete
     }
 
     /// Logs out the current user.
@@ -91,13 +107,6 @@ class AuthenticationViewModel: ObservableObject {
         Task {
             await authService.logout()
             authState = .unauthenticated
-        }
-    }
-    
-    func prepareAuthentication() {
-        authState = .authenticating
-        Task {
-            await authenticate()
         }
     }
 }

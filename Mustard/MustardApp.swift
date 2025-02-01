@@ -7,8 +7,8 @@
 //
 
 import SwiftUI
-import OSLog
 import SwiftData
+import OSLog
 
 @main
 struct MustardApp: App {
@@ -62,10 +62,8 @@ struct MustardApp: App {
         WindowGroup {
             Group {
                 switch authViewModel.authState {
-                case .unauthenticated:
+                case .unauthenticated, .authenticating:
                     LoginView()
-                case .authenticating:
-                    ProgressView("Authenticating...")
                 case .authenticated:
                     MainAppView(
                         timelineService: timelineService,

@@ -67,7 +67,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
                 throw AppError(mastodon: .missingAuthorizationCode)
             }
 
-            try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
+            let tokenResponse = try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
             try await saveInstanceURL(server.url)
             try await fetchAndUpdateUser(instanceURL: server.url)
 
@@ -89,9 +89,9 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         }
 
         // Reset isAuthenticating only after the authentication process is complete (success or failure)
-         do {
-             isAuthenticating = false
-         }
+        do {
+            isAuthenticating = false
+        }
     }
     
     // MARK: - OAuth Configuration Handling
@@ -139,7 +139,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     /// - Parameter config: The OAuth configuration to be used
     /// - Parameter instanceURL: The URL of the Mastodon instance
     /// - Throws: An error if token exchange fails or response can't be decoded
-    private func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws {
+    func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws -> TokenResponse {
         let body: [String: String] = [
             "grant_type": "authorization_code",
             "code": code,
@@ -189,16 +189,24 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             logger.debug("Raw response data (IMMEDIATELY): \(String(data: data, encoding: .utf8) ?? "Invalid data")")
 
             // 2. Attempt decoding in a separate block
-            let decodedResponse = try networkService.jsonDecoder.decode(TokenResponse.self, from: data)
+            let jsonDecoder = JSONDecoder()
+            jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase  // Automatically convert snake_case to camelCase
+            
+            let decodedResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
 
             // 3. Log successful decoding
             logger.debug("Successfully decoded TokenResponse. Access Token: \(decodedResponse.accessToken), Expires In: \(decodedResponse.expiresIn)")
-            try await saveTokenResponse(decodedResponse)
+
+            // 4. Save the expiresIn to the keychain for later use
+            try await KeychainHelper.shared.save(String(decodedResponse.expiresIn), service: keychainService, account: "expiresIn")
+
+            // 5. Return the decoded TokenResponse
+            return decodedResponse
 
         } catch let decodingError as DecodingError {
             logger.error("Decoding error: \(decodingError)")
 
-            // 4. Provide more context for specific DecodingError cases
+            // 6. Provide more context for specific DecodingError cases
             switch decodingError {
             case .dataCorrupted(let context):
                 logger.error("Data corrupted: \(context.debugDescription)")
@@ -212,7 +220,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
                 logger.error("Unknown decoding error")
             }
 
-            // 5. Re-throw a custom error with more context if needed
+            // 7. Re-throw a custom error with more context if needed
             throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
             
         } catch {
@@ -222,7 +230,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             throw AppError(type: .mastodon(.decodingError), underlyingError: error)
         }
     }
-    
+
     
     private func saveTokenResponse(_ response: TokenResponse) async throws {
         try await KeychainHelper.shared.save(response.accessToken, service: keychainService, account: "accessToken")
@@ -337,7 +345,6 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             }
         }
     }
-
 
     
     private func handleWebAuthError(_ error: Error, continuation: CheckedContinuation<String, Error>) {
