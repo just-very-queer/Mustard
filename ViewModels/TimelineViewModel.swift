@@ -11,32 +11,50 @@ import Combine
 import CoreLocation
 
 @MainActor
-class TimelineViewModel: ObservableObject {
+class TimelineViewModel: ObservableObject, @preconcurrency TimelineSchedule { // Conform to TimelineSchedule, remove @preconcurrency
     @Published var posts: [Post] = []
     @Published var topPosts: [Post] = []
     @Published var weather: WeatherData?
-    @Published var isLoading = false
     @Published var isFetchingMore = false
     @Published var alertError: AppError?
 
-    private let timelineService: TimelineService
-    private var cancellables = Set<AnyCancellable>()
+    private var _isLoading: Bool = false  // Backing stored property
+    var isLoading: Bool {   // Computed property
+        get { return _isLoading }
+        set { _isLoading = newValue }
+    }
 
-    init(timelineService: TimelineService) {
+    private let timelineService: TimelineService
+    private let weatherService: WeatherService
+    private let locationManager: LocationManager
+    private var cancellables = Set<AnyCancellable>()
+    private var weatherFetchOnce: Bool = false
+
+    // Conforming to the TimelineSchedule protocol
+    //No need for this as it's already defined in the protocal, we only need to define it once
+
+    //    var timelinePosts: [Post] {
+    //        get { return posts }
+    //        set { posts = newValue }
+    //    }
+    //
+    //    var error: AppError? {
+    //        get { return alertError }
+    //        set { alertError = newValue }
+    //    }
+
+    init(timelineService: TimelineService, weatherService: WeatherService, locationManager: LocationManager) {
         self.timelineService = timelineService
+        self.weatherService = weatherService
+        self.locationManager = locationManager
         setupSubscriptions()
+        setupLocationListener()
     }
 
     private func setupSubscriptions() {
         timelineService.timelinePostsPublisher
             .sink { [weak self] posts in
                 self?.posts = posts
-            }
-            .store(in: &cancellables)
-
-        timelineService.weatherPublisher
-            .sink { [weak self] weather in
-                self?.weather = weather
             }
             .store(in: &cancellables)
 
@@ -57,6 +75,35 @@ class TimelineViewModel: ObservableObject {
                 self?.alertError = error
             }
             .store(in: &cancellables)
+
+        weatherService.$weather
+            .receive(on: RunLoop.main)
+            .sink { [weak self] weather in
+                self?.weather = weather
+            }
+            .store(in: &cancellables)
+
+        weatherService.$error
+            .receive(on: RunLoop.main)
+            .sink { [weak self] error in
+                if let error = error, error.isRecoverable {
+                    self?.alertError = error
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private func setupLocationListener() {
+        locationManager.locationPublisher
+            .debounce(for: .seconds(10), scheduler: DispatchQueue.main)
+            .sink { [weak self] (location: CLLocation) in
+                guard let self = self, !self.weatherFetchOnce else { return }
+                Task {
+                    await self.weatherService.fetchWeather(for: location)
+                    self.weatherFetchOnce = true
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func initializeData() async {
@@ -71,14 +118,12 @@ class TimelineViewModel: ObservableObject {
         timelineService.refreshTimeline()
     }
 
-    // Fetch top posts from TimelineService
     func fetchTopPosts() async {
         await timelineService.fetchTopPosts()
     }
 
-    // Fetch weather from TimelineService
     func fetchWeather(for location: CLLocation) async {
-         await timelineService.fetchWeather(for: location)
+        await weatherService.fetchWeather(for: location)
     }
 
     func toggleLike(on post: Post) async {
@@ -107,4 +152,10 @@ class TimelineViewModel: ObservableObject {
 }
 
 
+// Assuming `TimelineSchedule` is a protocol that expects these properties or similar ones
 
+protocol TimelineSchedule: AnyObject { // Add AnyObject to require it to be a class
+    var posts: [Post] { get set }  //Changed from timelinePosts to posts
+    var isLoading: Bool { get set }
+    var alertError: AppError? { get set } // Changed from error to alertError
+}

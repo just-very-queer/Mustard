@@ -103,7 +103,7 @@ struct User: Identifiable, Codable, Hashable {
     let discoverable: Bool?
     let indexable: Bool?
     let group: Bool
-    let created_at: Date
+    let created_at: Date?
     let note: String?
     let url: String
     let avatar: String?
@@ -139,37 +139,6 @@ struct User: Identifiable, Codable, Hashable {
     }
 
     // MARK: - Initializer
-    init(id: String, username: String, acct: String, display_name: String?, locked: Bool, bot: Bool, discoverable: Bool?, indexable: Bool?, group: Bool, created_at: Date, note: String?, url: String, avatar: String?, avatar_static: String?, header: String?, header_static: String?, followers_count: Int, following_count: Int, statuses_count: Int, last_status_at: String?, suspended: Bool?, hide_collections: Bool?, noindex: Bool?, source: Source?, emojis: [Emoji], roles: [Role]?, fields: [Field]) {
-        self.id = id
-        self.username = username
-        self.acct = acct
-        self.display_name = display_name
-        self.locked = locked
-        self.bot = bot
-        self.discoverable = discoverable
-        self.indexable = indexable
-        self.group = group
-        self.created_at = created_at
-        self.note = note
-        self.url = url
-        self.avatar = avatar
-        self.avatar_static = avatar_static
-        self.header = header
-        self.header_static = header_static
-        self.followers_count = followers_count
-        self.following_count = following_count
-        self.statuses_count = statuses_count
-        self.last_status_at = last_status_at
-        self.suspended = suspended
-        self.hide_collections = hide_collections
-        self.noindex = noindex
-        self.source = source
-        self.emojis = emojis
-        self.roles = roles
-        self.fields = fields
-    }
-
-    // MARK: - Decoder
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -199,6 +168,7 @@ struct User: Identifiable, Codable, Hashable {
         roles = try container.decodeIfPresent([Role].self, forKey: .roles)
         fields = try container.decode([Field].self, forKey: .fields)
 
+        // Decode created_at properly using a date formatter
         let createdAtString = try container.decode(String.self, forKey: .created_at)
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -241,7 +211,7 @@ struct User: Identifiable, Codable, Hashable {
 
         let dateFormatter = ISO8601DateFormatter()
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        try container.encode(dateFormatter.string(from: created_at), forKey: .created_at)
+        try container.encode(dateFormatter.string(from: created_at!), forKey: .created_at)
     }
 
     func hash(into hasher: inout Hasher) {

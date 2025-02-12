@@ -21,6 +21,7 @@ struct MustardApp: App {
     // MARK: - ViewModels
     @StateObject private var authViewModel = AuthenticationViewModel()
     @StateObject private var locationManager = LocationManager()
+    @State private var weatherService: WeatherService! // Add WeatherService
 
     // MARK: - SwiftData container
     let container: ModelContainer
@@ -41,6 +42,9 @@ struct MustardApp: App {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
+        // Initialize weatherService before using it in any other services
+        let weatherService = WeatherService()
+
         // Initialize services with proper dependencies
         let postActionService = PostActionService(networkService: MustardApp.networkService)
         let trendingService = TrendingService(networkService: MustardApp.networkService, cacheService: cacheService)
@@ -52,10 +56,12 @@ struct MustardApp: App {
             trendingService: trendingService
         )
 
+        // Initialize all other services
         _timelineService = State(initialValue: timelineService)
         _trendingService = State(initialValue: trendingService)
         _postActionService = State(initialValue: postActionService)
         _profileService = State(initialValue: ProfileService(networkService: MustardApp.networkService))
+        _weatherService = State(initialValue: weatherService) // Initialize WeatherService state
     }
 
     var body: some Scene {
@@ -71,7 +77,8 @@ struct MustardApp: App {
                         postActionService: postActionService,
                         profileService: profileService,
                         cacheService: cacheService,
-                        networkService: MustardApp.networkService
+                        networkService: MustardApp.networkService,
+                        weatherService: weatherService // Pass WeatherService instance
                     )
                 }
             }

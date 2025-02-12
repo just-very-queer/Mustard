@@ -14,7 +14,7 @@ import SwiftData
 struct PostData: Codable {
     let id: String
     let content: String
-    let created_at: String // API returns this as a String
+    let created_at: String? // Keep as String for manual parsing
     let account: AccountData
     let media_attachments: [MediaAttachmentData]
     let favourited: Bool?
@@ -31,16 +31,26 @@ struct PostData: Codable {
 
     /// Converts `PostData` to the app's `Post` model.
     func toPost(instanceURL: URL) -> Post? {
-        guard let createdDate = ISO8601DateFormatter().date(from: created_at) else {
-            print("Invalid date format for post \(id)")
-            return nil
+        let dateFormatter = ISO8601DateFormatter()
+        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        // Decode createdAt safely
+        let createdDate: Date
+        if let createdAtString = created_at,
+           let parsedDate = dateFormatter.date(from: createdAtString) {
+            createdDate = parsedDate
+        } else {
+            print("Invalid or missing date format for post \(id), defaulting to current date.")
+            createdDate = Date() // Default value if key is missing or invalid
         }
+
         let acc = account.toAccount(instanceURL: instanceURL)
         let attachments = media_attachments.map { $0.toMediaAttachment() }
+
         return Post(
             id: id,
             content: content,
-            createdAt: createdDate,
+            createdAt: createdDate, // Always valid
             account: acc,
             mediaAttachments: attachments,
             isFavourited: favourited ?? false,

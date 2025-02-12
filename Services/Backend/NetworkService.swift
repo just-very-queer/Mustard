@@ -8,7 +8,6 @@
 //
 
 import Foundation
-import AuthenticationServices
 import OSLog
 import SwiftUI
 import CoreLocation
@@ -30,8 +29,8 @@ public class NetworkService {
     /// JSONDecoder configured with `.convertFromSnakeCase` and appropriate date decoding strategies.
     let jsonDecoder: JSONDecoder = {
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        // Date decoding strategy can be customized if needed
+      //  decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601  //Handles ISO8601 Dates
         return decoder
     }()
     
@@ -228,94 +227,6 @@ public class NetworkService {
         }
     }
     
-    /// Exchanges the authorization code for an access token with the Mastodon instance.
-    ///
-    /// - Parameters:
-    ///   - code: The authorization code received from the OAuth callback.
-    ///   - config: The `OAuthConfig` containing client credentials.
-    ///   - instanceURL: The base URL of the Mastodon instance.
-    /// - Throws: `AppError` if the exchange fails or decoding the response fails.
-    func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws -> TokenResponse {
-        let body = [
-            "grant_type": "authorization_code",
-            "code": code,
-            "client_id": config.clientId,
-            "client_secret": config.clientSecret,
-            "redirect_uri": config.redirectUri,
-            "scope": config.scope
-        ]
-        let requestURL = instanceURL.appendingPathComponent("/oauth/token")
-        var request = URLRequest(url: requestURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-
-        request.httpBody = body.compactMap { (key, value) in
-            guard let encodedValue = value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-                return nil
-            }
-            return "\(key)=\(encodedValue)"
-        }.joined(separator: "&").data(using: .utf8)
-
-        logger.info("Exchanging authorization code for access token at \(requestURL.absoluteString)")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let responseBody = String(data: data, encoding: .utf8) ?? ""
-            logger.error("Failed to exchange authorization code. Status: \(statusCode), Body: \(responseBody)")
-            throw AppError(mastodon: .failedToExchangeCode)
-        }
-
-        // Decode the TokenResponse
-        do {
-            let tokenResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
-
-            // Log the access token for debugging
-            logger.debug("Received access token: \(tokenResponse.accessToken)")
-
-            // Save expiresIn to the keychain
-            try await KeychainHelper.shared.save(String(tokenResponse.expiresIn), service: keychainService, account: "expiresIn")
-
-            return tokenResponse
-
-        } catch {
-            logger.error("Failed to decode TokenResponse: \(error.localizedDescription)")
-            let responseBody = String(data: data, encoding: .utf8) ?? ""
-            logger.debug("Response body for debugging: \(responseBody)")
-            throw AppError(type: .mastodon(.decodingError), underlyingError: error)
-        }
-    }
-    
-    /// Fetches the currently authenticated user's profile via `/api/v1/accounts/verify_credentials`.
-    ///
-    /// - Parameter instanceURL: Optional URL to override the base URL from Keychain.
-    /// - Returns: A `User` object representing the current user.
-    /// - Throws: `AppError` if fetching the user fails.
-    func fetchCurrentUser(instanceURL: URL? = nil) async throws -> User {
-        let accessToken = try await KeychainHelper.shared.read(service: keychainService, account: "accessToken")
-        logger.debug("Access token: \(String(describing: accessToken))") // Log for debugging
-
-        let userFetchURL: URL
-        if let customURL = instanceURL {
-            userFetchURL = customURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
-        } else {
-            guard let baseURLString = try await KeychainHelper.shared.read(service: keychainService, account: "baseURL"),
-                  let baseURL = URL(string: baseURLString) else {
-                throw AppError(mastodon: .missingCredentials)
-            }
-            userFetchURL = baseURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
-        }
-        
-        var request = URLRequest(url: userFetchURL)
-        request.setValue("Bearer \(String(describing: accessToken))", forHTTPHeaderField: "Authorization")
-        
-        // Reuse the fetchData function to get the current user
-        let user: User = try await fetchData(url: userFetchURL, method: "GET", type: User.self)
-        logger.info("Successfully fetched current user: \(user.username, privacy: .public)")
-        return user
-    }
-    
     // MARK: - Helper Methods
     
     /// Constructs a full URL from a path and optional override base URL.
@@ -471,12 +382,46 @@ public class NetworkService {
         }
     }
     
+    /// Fetches the currently authenticated user's profile via `/api/v1/accounts/verify_credentials`.
+    ///
+    /// - Parameter instanceURL: Optional URL to override the base URL from Keychain.
+    /// - Returns: A `User` object representing the current user.
+    /// - Throws: `AppError` if fetching the user fails.
+    func fetchCurrentUser(instanceURL: URL? = nil) async throws -> User {
+        // Retrieve the access token from Keychain
+        guard let accessToken = try await KeychainHelper.shared.read(service: keychainService, account: "accessToken") else {
+            throw AppError(mastodon: .missingCredentials)
+        }
+        logger.debug("Access token: \(String(describing: accessToken))") // Log for debugging
+
+        // Determine the correct URL to fetch the current user's profile
+        let userFetchURL: URL
+        if let customURL = instanceURL {
+            userFetchURL = customURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
+        } else {
+            guard let baseURLString = try await KeychainHelper.shared.read(service: keychainService, account: "baseURL"),
+                  let baseURL = URL(string: baseURLString) else {
+                throw AppError(mastodon: .missingCredentials)
+            }
+            userFetchURL = baseURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
+        }
+
+        // Build the request and set the Authorization header
+        var request = URLRequest(url: userFetchURL)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        // Reuse fetchData method to get the current user details
+        let user: User = try await fetchData(url: userFetchURL, method: "GET", type: User.self)
+        logger.info("Successfully fetched current user: \(user.username, privacy: .public)")
+        return user
+    }
+    
     // MARK: - Logging Methods
     
     /// Logs the details of a `URLRequest`.
     ///
     /// - Parameter request: The `URLRequest` to log.
-    private func logRequest(_ request: URLRequest) {
+    func logRequest(_ request: URLRequest) {
         logger.info("Request → \(request.url?.absoluteString ?? "Unknown URL") [\(request.httpMethod ?? "GET")]")
         if let headers = request.allHTTPHeaderFields, !headers.isEmpty {
             logger.debug("Request Headers: \(headers)")

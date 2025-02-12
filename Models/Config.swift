@@ -45,8 +45,8 @@ struct TokenResponse: Codable, Sendable {
     let accessToken: String
     let tokenType: String
     let scope: String
-    let createdAt: Int
-    let expiresIn: Int
+    let createdAt: Int?
+    let expiresIn: Int? // Now optional
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"

@@ -27,7 +27,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     // MARK: - Private Properties
     
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AuthenticationService")
-    private let keychainService = "\(Bundle.main.bundleIdentifier ?? "com.yourcompany").MustardKeychain"
+    private let keychainService = "MustardKeychain"
     private let networkService = NetworkService.shared
     private var webAuthSession: ASWebAuthenticationSession?
     private var cancellables = Set<AnyCancellable>()
@@ -67,7 +67,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
                 throw AppError(mastodon: .missingAuthorizationCode)
             }
 
-            let tokenResponse = try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
+            _ = try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
             try await saveInstanceURL(server.url)
             try await fetchAndUpdateUser(instanceURL: server.url)
 
@@ -148,7 +148,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             "redirect_uri": config.redirectUri,
             "scope": config.scope
         ]
-        
+
         let tokenEndpointURL = instanceURL.appendingPathComponent("/oauth/token")
         var request = URLRequest(url: tokenEndpointURL)
         request.httpMethod = "POST"
@@ -157,56 +157,62 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
             .joined(separator: "&")
             .data(using: .utf8)
-        
+
         logger.info("Exchanging authorization code at \(tokenEndpointURL.absoluteString)")
-        
+
         let (data, response) = try await URLSession.shared.data(for: request)
-        
+
         // Capture and log raw response data for debugging
         logger.debug("Raw response data (before validation): \(String(data: data, encoding: .utf8) ?? "Invalid data")")
         logger.debug("HTTP response (before validation): \(response)")
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AppError(mastodon: .networkError(message: "Network Error"))
         }
-        
+
         guard httpResponse.statusCode == 200 else {
             // Decode the error response directly as a dictionary and handle it generically
             if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
                let errorMessage = errorResponse["error_description"] ?? errorResponse["error"] {
                 logger.error("Token exchange failed. Status code: \(httpResponse.statusCode), Error: \(errorMessage)")
-                throw AppError(mastodon: .oauthError(message: errorMessage)) // Mapping the decoded message to oauthError
+                throw AppError(mastodon: .oauthError(message: errorMessage))
             } else {
                 let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
                 logger.error("Token exchange failed. Status code: \(httpResponse.statusCode), Response body: \(responseBody)")
                 throw AppError(mastodon: .oauthError(message: "Token exchange failed. Status code: \(httpResponse.statusCode), Response body: \(responseBody)"))
             }
         }
-        
+
         // Isolate decoding and error handling for better diagnostics
         do {
-            // 1. Log the raw data immediately
             logger.debug("Raw response data (IMMEDIATELY): \(String(data: data, encoding: .utf8) ?? "Invalid data")")
 
-            // 2. Attempt decoding in a separate block
-            let jsonDecoder = JSONDecoder()
-            jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase  // Automatically convert snake_case to camelCase
-            
-            let decodedResponse = try jsonDecoder.decode(TokenResponse.self, from: data)
+            // Use the NetworkService's pre-configured decoder
+            let decodedResponse = try networkService.jsonDecoder.decode(TokenResponse.self, from: data)
 
-            // 3. Log successful decoding
-            logger.debug("Successfully decoded TokenResponse. Access Token: \(decodedResponse.accessToken), Expires In: \(decodedResponse.expiresIn)")
+            logger.debug("Successfully decoded TokenResponse. Access Token: \(decodedResponse.accessToken), Expires In: \(decodedResponse.expiresIn ?? -1)") // Handle optional expiresIn
 
-            // 4. Save the expiresIn to the keychain for later use
-            try await KeychainHelper.shared.save(String(decodedResponse.expiresIn), service: keychainService, account: "expiresIn")
+            // Store the access token and expiration securely
+            print("Attempting to save accessToken to Keychain") // Debugging print
+            try await KeychainHelper.shared.save(decodedResponse.accessToken, service: keychainService, account: "accessToken")
+            print("Successfully saved accessToken to Keychain") // Debugging print
 
-            // 5. Return the decoded TokenResponse
+            if let expiresIn = decodedResponse.expiresIn {
+                print("Attempting to save expiresIn to Keychain") // Debugging print
+                try await KeychainHelper.shared.save(String(expiresIn), service: keychainService, account: "expiresIn")
+                print("Successfully saved expiresIn to Keychain") // Debugging print
+            } else {
+                // If expiresIn is not provided, delete any existing value in the keychain
+                print("expiresIn not provided; deleting existing expiresIn from Keychain") // Debugging print
+                try await KeychainHelper.shared.delete(service: keychainService, account: "expiresIn")
+                logger.info("OAuth token does not expire; 'expires_in' not provided.")
+            }
+
             return decodedResponse
 
         } catch let decodingError as DecodingError {
             logger.error("Decoding error: \(decodingError)")
-
-            // 6. Provide more context for specific DecodingError cases
+            
             switch decodingError {
             case .dataCorrupted(let context):
                 logger.error("Data corrupted: \(context.debugDescription)")
@@ -220,7 +226,6 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
                 logger.error("Unknown decoding error")
             }
 
-            // 7. Re-throw a custom error with more context if needed
             throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
             
         } catch {
@@ -231,10 +236,9 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         }
     }
 
-    
     private func saveTokenResponse(_ response: TokenResponse) async throws {
         try await KeychainHelper.shared.save(response.accessToken, service: keychainService, account: "accessToken")
-        try await KeychainHelper.shared.save(String(response.createdAt), service: keychainService, account: "createdAt")
+        try await KeychainHelper.shared.save(String(response.createdAt!), service: keychainService, account: "createdAt")
         logger.info("Successfully saved token information")
     }
     
@@ -277,18 +281,18 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     }
     
     private func verifyCredentials() async throws {
-        async let baseURL = KeychainHelper.shared.read(service: keychainService, account: "baseURL")
-        async let token = KeychainHelper.shared.read(service: keychainService, account: "accessToken")
-        
-        guard let baseURL = try await baseURL, let token = try await token, !baseURL.isEmpty, !token.isEmpty else {
-            throw AppError(mastodon: .missingCredentials)
-        }
-        
-        // Ensure fetchCurrentUser uses the token from Keychain
-        currentUser = try await networkService.fetchCurrentUser(instanceURL: URL(string: baseURL)!)
-        
-        // Update isAuthenticated after successfully fetching the current user
-        isAuthenticated = true
+       guard let baseURL = try await KeychainHelper.shared.read(service: keychainService, account: "baseURL"),
+             let token = try await KeychainHelper.shared.read(service: keychainService, account: "accessToken"),
+             !baseURL.isEmpty,
+             !token.isEmpty else {
+           throw AppError(mastodon: .missingCredentials)
+       }
+
+       // Ensure fetchCurrentUser uses the token from Keychain
+       currentUser = try await networkService.fetchCurrentUser(instanceURL: URL(string: baseURL)!)
+
+       // Update isAuthenticated after successfully fetching the current user
+       isAuthenticated = true
     }
     
     // MARK: - Web Auth Session
@@ -299,7 +303,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             .flatMap { $0.windows }
             .first { $0.isKeyWindow } ?? ASPresentationAnchor()
     }
-    
+
     func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             var components = URLComponents(url: instanceURL.appendingPathComponent("/oauth/authorize"), resolvingAgainstBaseURL: false)!
@@ -346,7 +350,6 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         }
     }
 
-    
     private func handleWebAuthError(_ error: Error, continuation: CheckedContinuation<String, Error>) {
         if let authError = error as? ASWebAuthenticationSessionError, authError.code == .canceledLogin {
             continuation.resume(throwing: AppError(mastodon: .userCancelledAuth))
@@ -354,7 +357,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             continuation.resume(throwing: error)
         }
     }
-    
+
     // MARK: - User Management
     
     private func saveInstanceURL(_ url: URL) async throws {

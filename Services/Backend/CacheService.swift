@@ -1,8 +1,8 @@
 //
-//  CacheService.swift
-//  Mustard
+//  CacheService.swift
+//  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 24/01/25.
+//  Created by VAIBHAV SRIVASTAVA on 24/01/25.
 //
 
 import Foundation
@@ -31,6 +31,13 @@ actor CacheService {
     func loadPostsFromCache(forKey key: String) async throws -> [Post] {
         let fileURL = getCacheFileURL(for: key)
 
+        // Check if the file exists before attempting to load
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+            logger.error("Cache file for \(key) not found at path: \(fileURL.path)")
+            // Throw a more specific error.  This is important!
+            throw AppError(type: .mastodon(.cacheNotFound), underlyingError: nil)
+        }
+
         do {
             let data = try Data(contentsOf: fileURL)
             let decoder = JSONDecoder()
@@ -42,7 +49,9 @@ actor CacheService {
             return posts
         } catch {
             logger.error("Failed to decode posts from cache: \(error.localizedDescription)")
-            throw AppError(mastodon: .decodingError, underlyingError: error)
+             // It's generally a good idea to delete corrupted cache files.
+            try? FileManager.default.removeItem(at: fileURL)
+            throw AppError(type: .mastodon(.decodingError), underlyingError: error)
         }
     }
 
@@ -58,6 +67,7 @@ actor CacheService {
             logger.error("Failed to clear cache: \(error.localizedDescription)")
         }
     }
+
 
     // MARK: - Helper Methods
 

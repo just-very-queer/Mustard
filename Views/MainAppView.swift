@@ -20,31 +20,57 @@ struct MainAppView: View {
     let profileService: ProfileService
     let cacheService: CacheService
     let networkService: NetworkService
+    let weatherService: WeatherService
+
+    /// Hold a single source of truth for your TimelineViewModel so it’s reused
+    @StateObject private var timelineViewModel: TimelineViewModel
+
+    /// Custom initializer to inject everything we need:
+    init(
+        timelineService: TimelineService,
+        trendingService: TrendingService,
+        postActionService: PostActionService,
+        profileService: ProfileService,
+        cacheService: CacheService,
+        networkService: NetworkService,
+        weatherService: WeatherService
+    ) {
+        self.timelineService = timelineService
+        self.trendingService = trendingService
+        self.postActionService = postActionService
+        self.profileService = profileService
+        self.cacheService = cacheService
+        self.networkService = networkService
+        self.weatherService = weatherService
+
+        // Initialize the ViewModel
+        _timelineViewModel = StateObject(
+            wrappedValue: TimelineViewModel(
+                timelineService: timelineService,
+                weatherService: weatherService,
+                locationManager: LocationManager() // or pass a placeholder; can be replaced later
+            )
+        )
+    }
 
     var body: some View {
         TabView {
-            // Home Tab
+
+            // MARK: - Home Tab
             NavigationStack {
-                HomeView(
-                    authViewModel: authViewModel,
-                    locationManager: locationManager,
-                    timelineViewModel: TimelineViewModel(
-                        timelineService: timelineService
-                    ),
-                    profileViewModel: ProfileViewModel(profileService: profileService)
-                )
-                .environmentObject(authViewModel)
-                .environmentObject(locationManager)
+                /// Use a custom “TimelineScreen” (or any custom name) instead of SwiftUI's TimelineView.
+                TimelineScreen(viewModel: timelineViewModel)
+                    .navigationTitle("Timeline")
             }
             .tabItem {
                 Label("Home", systemImage: "house")
             }
 
-            // Profile Tab
+            // MARK: - Profile Tab
             NavigationStack {
                 if let currentUser = authViewModel.currentUser {
+                    // Only pass 'currentUser' if ProfileView expects it and does not need 'viewModel'
                     ProfileView(user: currentUser)
-                        .environmentObject(ProfileViewModel(profileService: profileService))
                         .environmentObject(authViewModel)
                 } else {
                     Text("Please log in to view your profile.")
@@ -58,35 +84,16 @@ struct MainAppView: View {
                 Label("Profile", systemImage: "person.circle")
             }
 
-            // Settings Tab
+            // MARK: - Settings Tab
             NavigationStack {
                 SettingsView()
-                    .environmentObject(authViewModel)
-                    .environmentObject(locationManager)
             }
             .tabItem {
                 Label("Settings", systemImage: "gearshape")
             }
         }
-    }
-}
-
-struct MainAppView_Previews: PreviewProvider {
-    static var previews: some View {
-        let networkService = NetworkService()
-        let cacheService = CacheService()
-        let locationManager = LocationManager()
-        let trendingService = TrendingService(networkService: networkService, cacheService: cacheService)
-        let postActionService = PostActionService(networkService: networkService)
-        MainAppView(
-            timelineService: TimelineService(networkService: networkService, cacheService: cacheService, postActionService: postActionService, locationManager: locationManager, trendingService: trendingService),
-            trendingService: trendingService,
-            postActionService: postActionService,
-            profileService: ProfileService(networkService: networkService),
-            cacheService: cacheService,
-            networkService: networkService
-        )
-        .environmentObject(AuthenticationViewModel())
+        // Make sure environment objects are available throughout:
+        .environmentObject(authViewModel)
         .environmentObject(locationManager)
     }
 }

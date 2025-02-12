@@ -361,6 +361,3 @@ struct AddServerView: View {
         return try JSONDecoder().decode(InstanceInfo.self, from: data)
     }
 }
-
-
-

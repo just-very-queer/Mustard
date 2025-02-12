@@ -23,10 +23,7 @@ class TimelineService {
     @Published private(set) var timelinePosts: [Post] = []
     var timelinePostsPublisher: Published<[Post]>.Publisher { $timelinePosts }
 
-    @Published private(set) var weather: WeatherData?
-    var weatherPublisher: Published<WeatherData?>.Publisher { $weather }
-
-    @Published private(set) var isLoading: Bool = false
+    @Published private(set)  var isLoading: Bool = false
     var isLoadingPublisher: Published<Bool>.Publisher { $isLoading }
 
     @Published private(set) var isFetchingMore: Bool = false
@@ -34,51 +31,54 @@ class TimelineService {
 
     @Published private(set) var error: AppError?
     var errorPublisher: Published<AppError?>.Publisher { $error }
-    
+
     @Published private(set) var topPosts: [Post] = []  // Make sure this is a property and not a method
 
-    private let weatherAPIKeyBase64 = "OTk2NTdjOTNhN2E5M2JlYTJkZTdiZjkzZTMyMTkxMDQy="
-    private var weatherFetchOnce: Bool = false
+    init(
+        networkService: NetworkService,
+        cacheService: CacheService,
+        postActionService: PostActionService,
+        locationManager: LocationManager,
+        trendingService: TrendingService
+    ) {
+        self.networkService = networkService
+        self.cacheService = cacheService
+        self.postActionService = postActionService
+        self.locationManager = locationManager
+        self.trendingService = trendingService
 
-    init(networkService: NetworkService,
-            cacheService: CacheService,
-            postActionService: PostActionService,
-            locationManager: LocationManager,
-            trendingService: TrendingService) { // Add TrendingService type here
-
-           self.networkService = networkService
-           self.cacheService = cacheService
-           self.postActionService = postActionService
-           self.locationManager = locationManager
-           self.trendingService = trendingService
-
-           setupLocationListener()
-       }
+        setupLocationListener()
+    }
 
     // MARK: - Location Listener
     private func setupLocationListener() {
         locationManager.locationPublisher
             .debounce(for: .seconds(10), scheduler: DispatchQueue.main)
             .sink { [weak self] location in
-                guard let self = self, !self.weatherFetchOnce else { return }
-                Task { await self.fetchWeather(for: location) }
+                guard let self = self else { return }
+                self.handleLocationUpdate(location) // Call the new method to handle location updates
             }
             .store(in: &cancellables)
     }
 
+    private func handleLocationUpdate(_ location: CLLocation) {
+        // Handle the location update logic here
+        print("Location updated: \(location)")
+    }
+    
     // MARK: - Timeline Data Methods
     func initializeTimelineData() {
         isLoading = true
         Task {
             do {
                 let posts = try await fetchTimeline(useCache: true)
+                if posts.isEmpty {
+                    // If no posts were found in cache, fetch from network
+                    throw AppError(message: "No cached posts found, fetching from network", underlyingError: nil)
+                }
                 await MainActor.run {
                     self.timelinePosts = posts
                     self.isLoading = false
-                }
-                if let location = locationManager.userLocation, !weatherFetchOnce {
-                    await fetchWeather(for: location)
-                    weatherFetchOnce = true
                 }
             } catch {
                 await MainActor.run {
@@ -88,7 +88,7 @@ class TimelineService {
             }
         }
     }
-
+    
     func fetchMoreTimelinePosts() {
         guard !isFetchingMore else { return }
         isFetchingMore = true
@@ -127,32 +127,35 @@ class TimelineService {
     }
 
     // MARK: - Network Operations
+    
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
         let cacheKey = "timeline"
-
         if useCache {
             do {
+                // Check if the cache exists and can be loaded
                 let cachedPosts = try await cacheService.loadPostsFromCache(forKey: cacheKey)
-                Task { try await backgroundRefreshTimeline() }
                 return cachedPosts
             } catch let error as AppError {
-                if case .mastodon(.cacheNotFound) = error.type {
+                if case .mastodon(.cacheNotFound) = error.type { // Check for specific cache not found error
                     logger.info("Timeline cache not found. Fetching from network.")
+                    // Proceed to fetch from network below
                 } else {
                     logger.error("Cache error: \(error.localizedDescription)")
-                    throw error
+                    throw error // Re-throw other cache errors
                 }
             }
         }
 
+        // Fetch from the network (this part was already there, just moved here)
         do {
             let url = try await NetworkService.shared.endpointURL("/api/v1/timelines/home")
             let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
+            // Cache the posts after fetching from the network
             Task { await cacheService.cachePosts(fetchedPosts, forKey: cacheKey) }
             return fetchedPosts
         } catch {
             logger.error("Network error: \(error.localizedDescription)")
-            throw error
+            throw error // Re-throw network errors
         }
     }
 
@@ -195,55 +198,6 @@ class TimelineService {
         }
     }
 
-    // MARK: - Weather Implementation
-    func fetchWeather(for location: CLLocation) async {
-        guard let apiKey = decodeAPIKey(weatherAPIKeyBase64) else {
-            await handleWeatherError(.weather(.invalidKey))
-            return
-        }
-
-        let urlString = "https://api.openweathermap.org/data/2.5/weather?lat=\(location.coordinate.latitude)&lon=\(location.coordinate.longitude)&units=metric&appid=\(apiKey)"
-        guard let url = URL(string: urlString) else {
-            await handleWeatherError(.weather(.invalidURL))
-            return
-        }
-
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-                let errorDescription = HTTPURLResponse.localizedString(forStatusCode: statusCode)
-                throw AppError(type: .weather(.badResponse),
-                             underlyingError: NSError(domain: "HTTPError", code: statusCode,
-                                                    userInfo: [NSLocalizedDescriptionKey: errorDescription]))
-            }
-
-            let weatherResponse = try JSONDecoder().decode(OpenWeatherResponse.self, from: data)
-            let weatherData = WeatherData(
-                temperature: weatherResponse.main.temp,
-                description: weatherResponse.weather.first?.description ?? "Clear",
-                cityName: weatherResponse.name
-            )
-            
-            await MainActor.run { self.weather = weatherData }
-        } catch {
-            logger.error("Weather fetch failed: \(error.localizedDescription)")
-            await handleWeatherError(.weather(.badResponse), error: error)
-        }
-    }
-
-    private func handleWeatherError(_ type: AppError.ErrorType, error: Error? = nil) async {
-        await MainActor.run {
-            self.error = AppError(type: type, underlyingError: error)
-        }
-    }
-
-    // MARK: - Utility Methods
-    private func decodeAPIKey(_ base64Key: String) -> String? {
-        guard let data = Data(base64Encoded: base64Key) else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
     // MARK: - Post Actions
     func toggleLike(for post: Post) async throws {
         try await postActionService.toggleLike(postID: post.id)
@@ -272,15 +226,11 @@ class TimelineService {
     
     func fetchTopPosts() async {
         do {
-            // Call the TrendingService to fetch the top (trending) posts
-            let trendingPosts = try await trendingService.fetchTopPosts()  // Call the fetchTopPosts method from TrendingService
-            
-            // Once the posts are fetched, update the topPosts property
+            let trendingPosts = try await trendingService.fetchTopPosts()
             await MainActor.run {
-                self.topPosts = trendingPosts  // Update the topPosts property
+                self.topPosts = trendingPosts
             }
         } catch {
-            // Handle the error gracefully and log it
             logger.error("Failed to fetch top posts: \(error.localizedDescription)")
             await MainActor.run {
                 self.error = AppError(message: "Failed to fetch top posts", underlyingError: error)
@@ -298,4 +248,5 @@ class TimelineService {
         }
     }
 }
+
 

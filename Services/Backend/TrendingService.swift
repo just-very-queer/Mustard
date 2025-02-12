@@ -18,37 +18,57 @@ class TrendingService {
         self.cacheService = cacheService
     }
 
-    // Fetch trending posts (used in TimelineService to get the top posts)
+    /// Fetch trending posts (used in TimelineService to get the top posts)
     func fetchTopPosts() async throws -> [Post] {
         let cacheKey = "trendingPosts"
 
+        // First, try fetching from cache
         do {
-            // Try to load cached posts
             let cachedPosts = try await cacheService.loadPostsFromCache(forKey: cacheKey)
             return cachedPosts
         } catch {
-            // Log the error as info since it might just be a cache miss
             logger.info("Cache miss for top posts or error loading from cache: \(error.localizedDescription)")
         }
 
-        // If no cached posts are found or an error occurred, fetch them from the network
+        // If cache is unavailable, fetch from the network
         do {
-            // Construct the URL for the trending posts endpoint
             let url = try await NetworkService.shared.endpointURL("/api/v1/trends/statuses")
             
-            // Fetch data from the network
+            // Configure a JSONDecoder that matches Mastodon API date format
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601  // Ensuring proper date decoding
+
             let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
-            
-            // Cache the fetched posts for future use in a non-blocking Task
+
+            // Cache the fetched posts for future use
             Task {
                 await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
             }
-            
+
             return fetchedPosts
+        } catch let decodingError as DecodingError {
+            logger.error("Decoding error while fetching top posts: \(decodingError)")
+            handleDecodingError(decodingError)
+            throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
         } catch {
-            // Log the error if fetching from the network fails
             logger.error("Failed to fetch top posts: \(error.localizedDescription)")
-            throw error
+            throw AppError(message: "Failed to fetch top posts", underlyingError: error)
+        }
+    }
+
+    /// Logs and categorizes decoding errors
+    private func handleDecodingError(_ error: DecodingError) {
+        switch error {
+        case .dataCorrupted(let context):
+            logger.error("Data corrupted: \(context.debugDescription)")
+        case .keyNotFound(let key, let context):
+            logger.error("Key '\(key.stringValue)' not found: \(context.debugDescription)")
+        case .valueNotFound(let type, let context):
+            logger.error("Value of type '\(type)' not found: \(context.debugDescription)")
+        case .typeMismatch(let type, let context):
+            logger.error("Type '\(type)' mismatch: \(context.debugDescription)")
+        @unknown default:
+            logger.error("Unknown decoding error")
         }
     }
 }
