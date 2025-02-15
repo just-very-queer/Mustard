@@ -19,32 +19,38 @@ struct PostView: View {
         VStack(alignment: .leading, spacing: 10) {
             // MARK: - User Header (Twitter-like)
             HStack {
-                NavigationLink(destination: ProfileView(user: User(from: post.account))) {
-                    AsyncImage(url: post.account.avatar) { phase in
-                        switch phase {
-                        case .empty:
-                            ProgressView()
-                        case .success(let image):
-                            image.resizable()
-                                .scaledToFill()
-                                .frame(width: 40, height: 40)
-                                .clipShape(Circle())
-                        case .failure:
-                            Image(systemName: "person.crop.circle.fill")
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 40, height: 40)
-                                .foregroundColor(.gray)
-                        @unknown default:
-                            EmptyView()
+                // Use optional chaining and nil-coalescing here
+                if let account = post.account {
+                    NavigationLink(destination: ProfileView(user: User(from: account))) {
+                        AsyncImage(url: account.avatar) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                            case .success(let image):
+                                image.resizable()
+                                    .scaledToFill()
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(Circle())
+                            case .failure:
+                                Image(systemName: "person.crop.circle.fill")
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 40, height: 40)
+                                    .foregroundColor(.gray)
+                            @unknown default:
+                                EmptyView()
+                            }
                         }
                     }
                 }
 
+
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(post.account.display_name ?? post.account.username)
+                    // Use optional chaining and nil-coalescing for display_name
+                    Text(post.account?.display_name ?? post.account?.username ?? "Unknown User")
                         .font(.headline)
-                    Text("@\(post.account.username)")
+                    // Use optional chaining for username
+                    Text("@\(post.account?.username ?? "")")
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
@@ -62,6 +68,7 @@ struct PostView: View {
                 .padding([.leading, .trailing])
 
             // MARK: - Media Attachments
+            // Correctly handle optional media attachments.
             if let mediaURL = post.mediaAttachments.first?.url {
                 AsyncImage(url: mediaURL) { phase in
                     switch phase {
@@ -120,12 +127,12 @@ struct PostView: View {
                         .font(.headline)
                         .padding(.leading, 10)
 
-                    if post.replies.isEmpty {
+                    if ((post.replies?.isEmpty) != nil) {
                         Text("No comments yet.")
                             .foregroundColor(.gray)
                             .padding(.leading, 10)
                     } else {
-                        ForEach(post.replies) { reply in
+                        ForEach(post.replies!) { reply in
                             ReplyView(reply: reply)
                         }
                     }
@@ -161,32 +168,39 @@ struct PostView: View {
 
         var body: some View {
             HStack(alignment: .top, spacing: 10) {
-                AsyncImage(url: reply.account.avatar) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                    case .success(let image):
-                        image.resizable()
-                            .scaledToFill()
-                            .frame(width: 30, height: 30)
-                            .clipShape(Circle())
-                    case .failure:
-                        Image(systemName: "person.crop.circle.fill")
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 30, height: 30)
-                            .foregroundColor(.gray)
-                    @unknown default:
-                        EmptyView()
+                // Safely unwrap the optional account
+                if let account = reply.account {
+                    AsyncImage(url: account.avatar) { phase in
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                        case .success(let image):
+                            image.resizable()
+                                .scaledToFill()
+                                .frame(width: 30, height: 30)
+                                .clipShape(Circle())
+                        case .failure:
+                            Image(systemName: "person.crop.circle.fill")
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 30, height: 30)
+                                .foregroundColor(.gray)
+                        @unknown default:
+                            EmptyView()
+                        }
                     }
-                }
 
-                VStack(alignment: .leading) {
-                    Text(reply.account.display_name ?? reply.account.username)
-                        .font(.subheadline)
-                        .bold()
-                    Text(reply.content)
-                        .font(.body)
+                    VStack(alignment: .leading) {
+                        // Use optional chaining and nil-coalescing
+                        Text(account.display_name ?? account.username)
+                            .font(.subheadline)
+                            .bold()
+                        Text(reply.content)
+                            .font(.body)
+                    }
+                } else {
+                    // Handle the case where reply.account is nil
+                    Text("Unknown User") // Or some other placeholder
                 }
             }
             .padding(.horizontal, 10)

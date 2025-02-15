@@ -1,5 +1,5 @@
 //
-//  Server.swift
+//  ServerModel.swift
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 30/12/24.

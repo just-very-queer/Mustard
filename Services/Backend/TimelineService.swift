@@ -1,4 +1,3 @@
-//
 //  TimelineService.swift
 //  Mustard
 //
@@ -23,7 +22,7 @@ class TimelineService {
     @Published private(set) var timelinePosts: [Post] = []
     var timelinePostsPublisher: Published<[Post]>.Publisher { $timelinePosts }
 
-    @Published private(set)  var isLoading: Bool = false
+    @Published private(set) var isLoading: Bool = false
     var isLoadingPublisher: Published<Bool>.Publisher { $isLoading }
 
     @Published private(set) var isFetchingMore: Bool = false
@@ -32,7 +31,7 @@ class TimelineService {
     @Published private(set) var error: AppError?
     var errorPublisher: Published<AppError?>.Publisher { $error }
 
-    @Published private(set) var topPosts: [Post] = []  // Make sure this is a property and not a method
+    @Published private(set) var topPosts: [Post] = []
 
     init(
         networkService: NetworkService,
@@ -56,13 +55,12 @@ class TimelineService {
             .debounce(for: .seconds(10), scheduler: DispatchQueue.main)
             .sink { [weak self] location in
                 guard let self = self else { return }
-                self.handleLocationUpdate(location) // Call the new method to handle location updates
+                self.handleLocationUpdate(location)
             }
             .store(in: &cancellables)
     }
 
     private func handleLocationUpdate(_ location: CLLocation) {
-        // Handle the location update logic here
         print("Location updated: \(location)")
     }
     
@@ -72,30 +70,30 @@ class TimelineService {
         Task {
             do {
                 let posts = try await fetchTimeline(useCache: true)
-                if posts.isEmpty {
-                    // If no posts were found in cache, fetch from network
-                    throw AppError(message: "No cached posts found, fetching from network", underlyingError: nil)
-                }
                 await MainActor.run {
                     self.timelinePosts = posts
                     self.isLoading = false
                 }
             } catch {
                 await MainActor.run {
-                    self.error = error as? AppError ?? AppError(message: "Failed to initialize timeline data.", underlyingError: error)
+                    self.error = error as? AppError ?? AppError(
+                        message: "Failed to initialize timeline.",
+                        underlyingError: error
+                    )
                     self.isLoading = false
                 }
+                logger.error("Initialize timeline error: \(error.localizedDescription)")
             }
         }
     }
-    
+
     func fetchMoreTimelinePosts() {
         guard !isFetchingMore else { return }
         isFetchingMore = true
-        let nextPage = (timelinePosts.count / 20) + 1
+        
         Task {
             do {
-                let newPosts = try await fetchMoreTimeline(page: nextPage)
+                let newPosts = try await fetchMoreTimeline()
                 await MainActor.run {
                     if !newPosts.isEmpty {
                         self.timelinePosts.append(contentsOf: newPosts)
@@ -104,9 +102,13 @@ class TimelineService {
                 }
             } catch {
                 await MainActor.run {
-                    self.error = error as? AppError ?? AppError(message: "Failed to fetch more timeline posts.", underlyingError: error)
+                    self.error = error as? AppError ?? AppError(
+                        message: "Failed to fetch more posts",
+                        underlyingError: error
+                    )
                     self.isFetchingMore = false
                 }
+                logger.error("Fetch more error: \(error.localizedDescription)")
             }
         }
     }
@@ -120,81 +122,95 @@ class TimelineService {
                 }
             } catch {
                 await MainActor.run {
-                    self.error = error as? AppError ?? AppError(message: "Failed to refresh timeline.", underlyingError: error)
+                    self.error = error as? AppError ?? AppError(
+                        message: "Refresh failed",
+                        underlyingError: error
+                    )
                 }
+                logger.error("Refresh error: \(error.localizedDescription)")
             }
         }
     }
 
     // MARK: - Network Operations
-    
     func fetchTimeline(useCache: Bool) async throws -> [Post] {
         let cacheKey = "timeline"
+        
         if useCache {
             do {
-                // Check if the cache exists and can be loaded
                 let cachedPosts = try await cacheService.loadPostsFromCache(forKey: cacheKey)
-                return cachedPosts
-            } catch let error as AppError {
-                if case .mastodon(.cacheNotFound) = error.type { // Check for specific cache not found error
-                    logger.info("Timeline cache not found. Fetching from network.")
-                    // Proceed to fetch from network below
-                } else {
-                    logger.error("Cache error: \(error.localizedDescription)")
-                    throw error // Re-throw other cache errors
+                if !cachedPosts.isEmpty {
+                    logger.info("Loaded \(cachedPosts.count) posts from cache")
+                    return cachedPosts
                 }
-            }
-        }
-
-        // Fetch from the network (this part was already there, just moved here)
-        do {
-            let url = try await NetworkService.shared.endpointURL("/api/v1/timelines/home")
-            let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
-            // Cache the posts after fetching from the network
-            Task { await cacheService.cachePosts(fetchedPosts, forKey: cacheKey) }
-            return fetchedPosts
-        } catch {
-            logger.error("Network error: \(error.localizedDescription)")
-            throw error // Re-throw network errors
-        }
-    }
-
-    func fetchMoreTimeline(page: Int) async throws -> [Post] {
-        var endpoint = "/api/v1/timelines/home"
-        if page > 1 {
-            do {
-                let cachedPosts = try await cacheService.loadPostsFromCache(forKey: "timeline")
-                if let lastID = cachedPosts.last?.id {
-                    endpoint += "?max_id=\(lastID)"
-                }
+                logger.info("Empty cache, falling back to network")
             } catch {
                 logger.error("Cache error: \(error.localizedDescription)")
             }
         }
 
-        let url = try await NetworkService.shared.endpointURL(endpoint)
-        let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
+        do {
+            let fetchedPosts = try await networkService.request(
+                endpoint: "/api/v1/timelines/home",
+                method: .get,
+                responseType: [Post].self
+            )
+            
+            Task {
+                await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
+                logger.info("Cached \(fetchedPosts.count) posts")
+            }
+            
+            return fetchedPosts
+        } catch {
+            logger.error("Network error: \(error.localizedDescription)")
+            throw error
+        }
+    }
+    
+    func fetchMoreTimeline() async throws -> [Post] {
+        var endpoint = "/api/v1/timelines/home"
+        
+        if let lastPostID = timelinePosts.last?.id {
+            endpoint += "?max_id=\(lastPostID)"
+        }
+
+        let fetchedPosts = try await networkService.request(
+            endpoint: endpoint,
+            method: .get,
+            responseType: [Post].self
+        )
 
         if !fetchedPosts.isEmpty {
             Task {
-                do {
-                    let updatedPosts = (try await cacheService.loadPostsFromCache(forKey: "timeline")) + fetchedPosts
-                    await cacheService.cachePosts(updatedPosts, forKey: "timeline")
-                } catch {
-                    logger.error("Cache update error: \(error.localizedDescription)")
-                }
+                let updatedPosts = self.timelinePosts + fetchedPosts
+                await cacheService.cachePosts(updatedPosts, forKey: "timeline")
+                logger.info("Updated cache with \(fetchedPosts.count) new posts")
             }
         }
+        
         return fetchedPosts
     }
 
     func backgroundRefreshTimeline() async throws {
         do {
-            let url = try await NetworkService.shared.endpointURL("/api/v1/timelines/home")
-            let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
-            Task { await cacheService.cachePosts(fetchedPosts, forKey: "timeline") }
+            let fetchedPosts = try await networkService.request(
+                endpoint: "/api/v1/timelines/home",
+                method: .get,
+                responseType: [Post].self
+            )
+            
+            await MainActor.run {
+                self.timelinePosts = fetchedPosts
+            }
+            
+            Task {
+                await cacheService.cachePosts(fetchedPosts, forKey: "timeline")
+                logger.info("Background refresh cached \(fetchedPosts.count) posts")
+            }
         } catch {
             logger.error("Background refresh failed: \(error.localizedDescription)")
+            throw error
         }
     }
 
@@ -231,10 +247,13 @@ class TimelineService {
                 self.topPosts = trendingPosts
             }
         } catch {
-            logger.error("Failed to fetch top posts: \(error.localizedDescription)")
             await MainActor.run {
-                self.error = AppError(message: "Failed to fetch top posts", underlyingError: error)
+                self.error = AppError(
+                    message: "Top posts fetch failed",
+                    underlyingError: error
+                )
             }
+            logger.error("Top posts error: \(error.localizedDescription)")
         }
     }
 
@@ -248,5 +267,3 @@ class TimelineService {
         }
     }
 }
-
-

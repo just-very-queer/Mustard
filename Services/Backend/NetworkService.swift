@@ -27,12 +27,35 @@ public class NetworkService {
     private let keychainService = "MustardKeychain"
     
     /// JSONDecoder configured with `.convertFromSnakeCase` and appropriate date decoding strategies.
-    let jsonDecoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-      //  decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .iso8601  //Handles ISO8601 Dates
-        return decoder
-    }()
+        let jsonDecoder: JSONDecoder = {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase  // This is the key fix!
+            decoder.dateDecodingStrategy = .custom { decoder in  // More robust date handling
+                let container = try decoder.singleValueContainer()
+                let dateString = try container.decode(String.self)
+
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let date = formatter.date(from: dateString) {
+                    return date
+                }
+                //Handle the case of date with no fractional seconds
+                formatter.formatOptions = [.withInternetDateTime]
+                if let date = formatter.date(from:dateString){
+                    return date
+                }
+                throw DecodingError.dataCorruptedError(in: container,
+                                                       debugDescription: "Invalid date format: \(dateString)")
+            }
+            return decoder
+        }()
+
+        // Inside NetworkService, add this for consistent date formatting:
+        static let iso8601DateFormatter: ISO8601DateFormatter = {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]  //.withFractionalSeconds is crucial
+            return formatter
+        }()
     
     /// JSONEncoder configured with `.convertToSnakeCase` and ISO8601 date encoding.
     private let jsonEncoder: JSONEncoder = {
@@ -131,6 +154,40 @@ public class NetworkService {
         // Perform the network request and decode the response
         return try await performRequest(request: request, responseType: responseType)
     }
+    
+    
+    /// Generic request function to perform API calls and decode responses.
+        ///
+        /// - Parameters:
+        ///   - endpoint: The API endpoint path (e.g., "/api/v1/timelines/home").
+        ///   - method: HTTP method for the request (e.g., .get, .post).
+        ///   - responseType: The expected Decodable type for the response.
+        /// - Returns: Decoded response of type `T`.
+        /// - Throws: `AppError` if request fails, rate limit is exceeded, or decoding fails.
+        func request<T: Decodable>(
+            endpoint: String,
+            method: HTTPMethod,
+            responseType: T.Type
+        ) async throws -> T {
+            // Ensure rate limiting
+            guard await rateLimiter.tryConsume() else {
+                throw AppError(type: .mastodon(.rateLimitExceeded))
+            }
+
+            // Retrieve access token from Keychain
+            guard let accessToken = await fetchAccessToken() else {
+                throw AppError(mastodon: .missingCredentials)
+            }
+
+            // Construct the full URL
+            let url = try await endpointURL(endpoint)
+
+            // Build the URLRequest
+            let request = try buildRequest(url: url, method: method.rawValue, accessToken: accessToken)
+
+            // Perform the network request and decode the response
+            return try await performRequest(request: request, responseType: responseType)
+        }
     
     /// Performs a POST action (e.g., liking or reblogging a post) without expecting a decoded response.
     ///
@@ -489,3 +546,10 @@ public class NetworkService {
     }
 }
 
+
+enum HTTPMethod: String {
+       case get = "GET"
+       case post = "POST"
+       case put = "PUT"
+       case delete = "DELETE"
+}

@@ -31,13 +31,13 @@ struct PostData: Codable {
 
     /// Converts `PostData` to the app's `Post` model.
     func toPost(instanceURL: URL) -> Post? {
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+       // let dateFormatter = ISO8601DateFormatter() This is best placed in the network service.
+        //dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds] //No need of this now
 
         // Decode createdAt safely
         let createdDate: Date
         if let createdAtString = created_at,
-           let parsedDate = dateFormatter.date(from: createdAtString) {
+           let parsedDate = NetworkService.iso8601DateFormatter.date(from: createdAtString) { //Use Centralised Date
             createdDate = parsedDate
         } else {
             print("Invalid or missing date format for post \(id), defaulting to current date.")
@@ -162,14 +162,14 @@ struct EmojiData: Codable {
     let visible_in_picker: Bool?
 
     func toEmoji() -> Emoji {
-           return Emoji(
-               shortcode: shortcode,
-               url: URL(string: url)!,
-               staticURL: URL(string: static_url)!,
-               visibleInPicker: visible_in_picker ?? true,
-               category: nil
-           )
-       }
+        return Emoji(
+            shortcode: shortcode,
+            url: URL(string: url)!,
+            staticURL: URL(string: static_url)!,
+            visibleInPicker: visible_in_picker ?? true,
+            category: nil
+        )
+    }
 }
 
 struct FieldData: Codable {
@@ -178,12 +178,11 @@ struct FieldData: Codable {
     let verified_at: String?
 
     func toField() -> Field {
-        // Parse `verified_at` into a `Date` using ISO8601DateFormatter
-        let dateFormatter = ISO8601DateFormatter()
-        dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let verifiedDate = dateFormatter.date(from: verified_at ?? "")
-
-        // Use the explicit initializer for `Field`
+        // Use centralized date formatter for verification date
+        let verifiedDate = verified_at.flatMap {
+            NetworkService.iso8601DateFormatter.date(from: $0)
+        }
+        
         return Field(
             name: name,
             value: value,
@@ -191,4 +190,3 @@ struct FieldData: Codable {
         )
     }
 }
-

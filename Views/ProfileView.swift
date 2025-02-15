@@ -11,6 +11,8 @@ struct ProfileView: View {
     let user: User
     @EnvironmentObject var profileViewModel: ProfileViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
+    
+    // State to show sheets
     @State private var showFollowers = false
     @State private var showFollowing = false
     @State private var showEditProfile = false
@@ -19,56 +21,67 @@ struct ProfileView: View {
         ScrollView {
             VStack(spacing: 20) {
                 ProfileHeaderView(user: user)
-
-                if let bio = user.note {
+                
+                if let bio = user.note, !bio.isEmpty {
                     Text(HTMLUtils.convertHTMLToPlainText(html: bio))
                         .font(.body)
                         .padding(.horizontal)
                 }
-
-                ProfileStatsView(user: user)
-
-                ProfileActionsView(
-                    showFollowers: $showFollowers,
-                    showFollowing: $showFollowing,
-                    showEditProfile: $showEditProfile
-                )
+                
+                // Tappable stats view: tapping the Followers or Following count opens the corresponding sheet
+                ProfileStatsView(user: user,
+                                 onFollowersTapped: { showFollowers.toggle() },
+                                 onFollowingTapped: { showFollowing.toggle() })
+                
+                // Actions view: Only the Edit Profile button is needed here (visible only if current user)
+                ProfileActionsView(user: user,
+                                   showEditProfile: $showEditProfile)
+                
+                // Segmented control for additional profile content (Posts, Replies, Media, About)
+                ProfileContentView(user: user)
             }
             .padding()
         }
         .navigationTitle("Profile")
+        // Inject environment objects explicitly into the sheet views
         .sheet(isPresented: $showFollowers) {
-            if let currentUserId = authViewModel.currentUser?.id {
-                FollowersListView(profileViewModel: profileViewModel, userId: currentUserId)
+            if let _ = authViewModel.currentUser?.id {
+                FollowersListView(userId: user.id)  // Remove profileViewModel parameter
+                    .environmentObject(profileViewModel)  // Inject via environment
+                    .environmentObject(authViewModel)
             }
         }
         .sheet(isPresented: $showFollowing) {
-            if let currentUserId = authViewModel.currentUser?.id {
-                FollowingListView(profileViewModel: profileViewModel, userId: currentUserId)
+            if let _ = authViewModel.currentUser?.id {
+                FollowingListView(userId: user.id)  // Remove profileViewModel parameter
+                    .environmentObject(profileViewModel)  // Inject via environment
+                    .environmentObject(authViewModel)
             }
         }
         .sheet(isPresented: $showEditProfile) {
             EditProfileView(user: user)
                 .environmentObject(profileViewModel)
+                .environmentObject(authViewModel)
         }
     }
 }
 
-// MARK: - Profile Header View
+// MARK: - ProfileHeaderView
+
 struct ProfileHeaderView: View {
     let user: User
 
     var body: some View {
         HStack {
-            AsyncImage(url: URL(string: user.avatar!)) { phase in
+            AsyncImage(url: URL(string: user.avatar ?? "")) { phase in
                 switch phase {
                 case .empty:
                     ProgressView()
                 case .success(let image):
                     image.resizable()
-                         .scaledToFill()
-                         .frame(width: 100, height: 100)
-                         .clipShape(Circle())
+                        .scaledToFill()
+                        .frame(width: 100, height: 100)
+                        .clipShape(Circle())
                 case .failure:
                     Image(systemName: "person.crop.circle.fill")
                         .resizable()
@@ -95,89 +108,144 @@ struct ProfileHeaderView: View {
     }
 }
 
-// MARK: - Profile Stats View
+// MARK: - ProfileStatsView with Tappable Counts
+
 struct ProfileStatsView: View {
     let user: User
+    var onFollowersTapped: () -> Void
+    var onFollowingTapped: () -> Void
 
     var body: some View {
         HStack {
             VStack {
                 Text("Posts")
-                Text("\(user.statuses_count)")
+                Text("\(user.statuses_count ?? 0)")
                     .font(.title)
             }
             Spacer()
             VStack {
                 Text("Followers")
-                Text("\(user.followers_count)")
+                Text("\(user.followers_count ?? 0)")
                     .font(.title)
+                    .onTapGesture {
+                        onFollowersTapped()
+                    }
             }
             Spacer()
             VStack {
                 Text("Following")
-                Text("\(user.following_count)")
+                Text("\(user.following_count ?? 0)")
                     .font(.title)
+                    .onTapGesture {
+                        onFollowingTapped()
+                    }
             }
         }
         .padding()
     }
 }
 
-// MARK: - Profile Actions View
+// MARK: - ProfileActionsView (Edit Profile Only)
+
 struct ProfileActionsView: View {
-    @Binding var showFollowers: Bool
-    @Binding var showFollowing: Bool
+    let user: User
     @Binding var showEditProfile: Bool
+    @EnvironmentObject var authViewModel: AuthenticationViewModel
 
     var body: some View {
-        VStack(spacing: 10) {
-            Button(action: { showFollowers.toggle() }) {
-                Text("View Followers")
-                    .foregroundColor(.blue)
-            }
-
-            Button(action: { showFollowing.toggle() }) {
-                Text("View Following")
-                    .foregroundColor(.blue)
-            }
-
+        // Only show the Edit Profile button if viewing your own profile.
+        if authViewModel.currentUser?.id == user.id {
             Button(action: { showEditProfile.toggle() }) {
                 Text("Edit Profile")
                     .foregroundColor(.blue)
             }
+            .padding(.top)
         }
-        .padding(.top)
     }
 }
 
-// MARK: - Followers List View
+// MARK: - ProfileContentView (Segmented Tabs)
+
+struct ProfileContentView: View {
+    let user: User
+    @State private var selectedTab = 0
+
+    var body: some View {
+        VStack {
+            Picker("", selection: $selectedTab) {
+                Text("Posts").tag(0)
+                Text("Posts & Replies").tag(1)
+                Text("Media").tag(2)
+                Text("About").tag(3)
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding()
+
+            Group {
+                if selectedTab == 0 {
+                    UserPostsView(user: user)
+                } else if selectedTab == 1 {
+                    UserPostsAndRepliesView(user: user)
+                } else if selectedTab == 2 {
+                    UserMediaView(user: user)
+                } else if selectedTab == 3 {
+                    UserAboutView(user: user)
+                }
+            }
+            .padding()
+        }
+    }
+}
+
+// MARK: - Placeholder Views for Tab Content
+
+struct UserPostsView: View {
+    let user: User
+    var body: some View {
+        Text("User Posts for \(user.username)")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct UserPostsAndRepliesView: View {
+    let user: User
+    var body: some View {
+        Text("Posts & Replies for \(user.username)")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct UserMediaView: View {
+    let user: User
+    var body: some View {
+        Text("Media for \(user.username)")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct UserAboutView: View {
+    let user: User
+    var body: some View {
+        Text("About \(user.username)")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - FollowersListView (Updated)
+
 struct FollowersListView: View {
-    @ObservedObject var profileViewModel: ProfileViewModel
+    @EnvironmentObject var profileViewModel: ProfileViewModel  // Use EnvironmentObject
     let userId: String
 
     var body: some View {
         NavigationView {
-            List(profileViewModel.followers) { follower in
-                NavigationLink(destination: ProfileView(user: follower)) {
+            List(profileViewModel.followers, id: \.id) { follower in
+                NavigationLink(
+                    destination: ProfileView(user: follower)  // Remove manual environment injection
+                ) {
                     HStack {
-                        AsyncImage(url: URL(string: follower.avatar!)) { phase in
-                            switch phase {
-                            case .empty:
-                                ProgressView()
-                            case .success(let image):
-                                image.resizable()
-                                     .scaledToFill()
-                                     .frame(width: 50, height: 50)
-                                     .clipShape(Circle())
-                            case .failure:
-                                Image(systemName: "person.crop.circle.fill")
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 50, height: 50)
-                                    .foregroundColor(.gray)
-                            @unknown default:
-                                EmptyView()
-                            }
+                        AsyncImage(url: URL(string: follower.avatar ?? "")) { phase in
+                            // ... (keep existing AsyncImage code)
                         }
                         VStack(alignment: .leading) {
                             Text(follower.display_name ?? follower.username)
@@ -190,46 +258,30 @@ struct FollowersListView: View {
                 }
             }
             .navigationTitle("Followers")
-            .task {
-                await profileViewModel.fetchFollowers(for: userId)
-            }
         }
     }
 }
 
-// MARK: - Following List View
+// MARK: - FollowingListView (Updated)
+
 struct FollowingListView: View {
-    @ObservedObject var profileViewModel: ProfileViewModel
+    @EnvironmentObject var profileViewModel: ProfileViewModel  // Use EnvironmentObject
     let userId: String
 
     var body: some View {
         NavigationView {
-            List(profileViewModel.following) { user in
-                NavigationLink(destination: ProfileView(user: user)) {
+            List(profileViewModel.following, id: \.id) { followingUser in
+                NavigationLink(
+                    destination: ProfileView(user: followingUser)  // Remove manual environment injection
+                ) {
                     HStack {
-                        AsyncImage(url: URL(string: user.avatar!)) { phase in
-                            switch phase {
-                            case .empty:
-                                ProgressView()
-                            case .success(let image):
-                                image.resizable()
-                                     .scaledToFill()
-                                     .frame(width: 50, height: 50)
-                                     .clipShape(Circle())
-                            case .failure:
-                                Image(systemName: "person.crop.circle.fill")
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 50, height: 50)
-                                    .foregroundColor(.gray)
-                            @unknown default:
-                                EmptyView()
-                            }
+                        AsyncImage(url: URL(string: followingUser.avatar ?? "")) { phase in
+                            // ... (keep existing AsyncImage code)
                         }
                         VStack(alignment: .leading) {
-                            Text(user.display_name ?? user.username)
+                            Text(followingUser.display_name ?? followingUser.username)
                                 .font(.headline)
-                            Text("@\(user.username)")
+                            Text("@\(followingUser.username)")
                                 .font(.subheadline)
                                 .foregroundColor(.gray)
                         }
@@ -237,22 +289,17 @@ struct FollowingListView: View {
                 }
             }
             .navigationTitle("Following")
-            .task {
-                await profileViewModel.fetchFollowing(for: userId)
-            }
         }
     }
 }
 
-// MARK: - Edit Profile View
 struct EditProfileView: View {
+    let user: User
     @EnvironmentObject var profileViewModel: ProfileViewModel
     @Environment(\.dismiss) var dismiss
     @State private var username: String
     @State private var displayName: String
     @State private var bio: String
-
-    let user: User
 
     init(user: User) {
         self.user = user
@@ -263,33 +310,26 @@ struct EditProfileView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
-                TextField("Username", text: $username)
-                    .padding()
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                TextField("Display Name", text: $displayName)
-                    .padding()
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                TextEditor(text: $bio)
-                    .padding()
-                    .frame(height: 100)
-                    .border(Color.gray, width: 1)
-
-                Button("Save Changes") {
-                    Task {
-                        // Ignore the result of the `updateProfile` call
-                        _ = await profileViewModel.updateProfile(for: user.id, updatedFields: [
-                            "username": username,
-                            "display_name": displayName,
-                            "note": bio
-                        ])
-                        dismiss()
+            Form {
+                Section(header: Text("Profile Information")) {
+                    TextField("Username", text: $username)
+                    TextField("Display Name", text: $displayName)
+                    TextEditor(text: $bio)
+                        .frame(height: 100)
+                }
+                Section {
+                    Button("Save Changes") {
+                        Task {
+                            await profileViewModel.updateProfile(for: user.id, updatedFields: [
+                                "username": username,
+                                "display_name": displayName,
+                                "note": bio
+                            ])
+                            dismiss()
+                        }
                     }
                 }
-                .padding()
-                .foregroundColor(.blue)
             }
-            .padding()
             .navigationTitle("Edit Profile")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -298,9 +338,7 @@ struct EditProfileView: View {
                     }
                 }
             }
-            .alert(isPresented: $profileViewModel.showAlert) {
-                Alert(title: Text("Error"), message: Text(profileViewModel.alertMessage ?? "Unknown error"), dismissButton: .default(Text("OK")))
-            }
         }
     }
 }
+
