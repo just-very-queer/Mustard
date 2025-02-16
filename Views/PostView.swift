@@ -1,11 +1,11 @@
+//  PostView.swift
+//  Mustard
 //
-//  PostView.swift
-//  Mustard
-//
-//  Created by VAIBHAV SRIVASTAVA on 31/01/25.
+//  Created by VAIBHAV SRIVASTAVA on 31/01/25.
 //
 
 import SwiftUI
+import LinkPresentation
 
 struct PostView: View {
     let post: Post
@@ -14,134 +14,165 @@ struct PostView: View {
 
     @State private var isExpanded = false
     @State private var commentText = ""
+    @State private var showFullText = false
+    @State private var linkPreview: LPLinkMetadata?
+    @State private var isLoadingLinkPreview = false
+
+    private var contentLines: Int {
+        post.content.components(separatedBy: .newlines).count
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // MARK: - User Header (Twitter-like)
-            HStack {
-                // Use optional chaining and nil-coalescing here
-                if let account = post.account {
-                    NavigationLink(destination: ProfileView(user: User(from: account))) {
-                        AsyncImage(url: account.avatar) { phase in
-                            switch phase {
-                            case .empty:
-                                ProgressView()
-                            case .success(let image):
-                                image.resizable()
-                                    .scaledToFill()
-                                    .frame(width: 40, height: 40)
-                                    .clipShape(Circle())
-                            case .failure:
-                                Image(systemName: "person.crop.circle.fill")
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 40, height: 40)
-                                    .foregroundColor(.gray)
-                            @unknown default:
-                                EmptyView()
+            // MARK: - User Header
+            HStack(alignment: .top) {
+                NavigationLink(destination: ProfileView(user: post.account?.toUser() ?? User(id: "invalid", username: "unknown", acct: "unknown", display_name: "Unknown User", locked: false, bot: false, discoverable: false, indexable: false, group: false, created_at: Date(), note: "", url: "", avatar: "", avatar_static: "", header: "", header_static: "", followers_count: 0, following_count: 0, statuses_count: 0, last_status_at: "", suspended: false, hide_collections: false, noindex: false, source: nil, emojis: [], roles: [], fields: []))) {
+                    AvatarView(url: post.account?.avatar, size: 40)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(post.account?.display_name ?? post.account!.username)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text("@\(post.account?.username ?? "unknown_user")")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Text(post.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal)
+
+            // MARK: - Post Content
+            VStack(alignment: .leading) {
+                Text(post.content.safeHTMLToAttributedString)
+                    .font(.body)
+                    .lineLimit(showFullText ? nil : 3)
+                    .foregroundColor(.primary)
+                    .padding(.horizontal)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.onAppear {
+                                let font = UIFont.preferredFont(forTextStyle: .body)
+                                let constraintWidth = proxy.size.width
+
+                                if let nsAttributedString = try? NSAttributedString(data: post.content.data(using: .utf8)!,
+                                   options: [.documentType: NSAttributedString.DocumentType.html,
+                                             .characterEncoding: String.Encoding.utf8.rawValue],
+                                   documentAttributes: nil) {
+                                    let boundingRect = nsAttributedString.boundingRect(with: CGSize(width: constraintWidth, height: .greatestFiniteMagnitude),
+                                                                                      options: [.usesLineFragmentOrigin, .usesFontLeading],
+                                                                                      context: nil)
+                                    let calculatedLines = Int(ceil(boundingRect.height / font.lineHeight))
+                                    showFullText = calculatedLines <= 3
+                                } else {
+                                    showFullText = true
+                                }
                             }
+                        }
+                    )
+
+                if !showFullText && contentLines > 3 {
+                    Button("Show More") {
+                        withAnimation {
+                            showFullText = true
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(.accentColor)
+                    .padding(.horizontal)
+                }
+            }
+
+            // MARK: - Media Attachments
+            if let media = post.mediaAttachments.first, let mediaURL = media.url {
+                AsyncImage(url: mediaURL) { phase in
+                    Group {
+                        switch phase {
+                        case .empty:
+                            ProgressView()
+                                .frame(maxWidth: .infinity)
+                        case .success(let image):
+                            image.resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity)
+                                .cornerRadius(10)
+                        case .failure:
+                            Image(systemName: "photo")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 100, height: 100)
+                                .foregroundColor(.secondary)
+                        @unknown default:
+                            EmptyView()
                         }
                     }
                 }
-
-
-                VStack(alignment: .leading, spacing: 5) {
-                    // Use optional chaining and nil-coalescing for display_name
-                    Text(post.account?.display_name ?? post.account?.username ?? "Unknown User")
-                        .font(.headline)
-                    // Use optional chaining for username
-                    Text("@\(post.account?.username ?? "")")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
-                Spacer()
-                Text(post.createdAt, format: .dateTime)
-                    .font(.caption)
-                    .foregroundColor(.gray)
-            }
-            .padding(.horizontal, 10)
-
-            // MARK: - Post Content
-            Text(post.content)
-                .font(.body)
-                .lineLimit(isExpanded ? nil : 3)
-                .padding([.leading, .trailing])
-
-            // MARK: - Media Attachments
-            // Correctly handle optional media attachments.
-            if let mediaURL = post.mediaAttachments.first?.url {
-                AsyncImage(url: mediaURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                    case .success(let image):
-                        image.resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 300)
-                            .cornerRadius(10)
-                            .shadow(radius: 5)
-                    case .failure:
-                        Image(systemName: "photo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 100, height: 100)
-                            .foregroundColor(.gray)
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
+                .padding(.horizontal)
             }
 
             // MARK: - Action Buttons
-            HStack {
-                Button(action: {
+            HStack(spacing: 20) {
+                ActionButton(
+                    image: post.isFavourited ? "heart.fill" : "heart",
+                    text: post.favouritesCount.formatted(),
+                    color: post.isFavourited ? .red : .secondary
+                ) {
                     Task { await viewModel.toggleLike(on: post) }
-                }) {
-                    Label("\(post.favouritesCount)", systemImage: post.isFavourited ? "heart.fill" : "heart")
-                        .foregroundColor(post.isFavourited ? .red : .gray)
                 }
 
-                Button(action: {
+                ActionButton(
+                    image: post.isReblogged ? "arrow.2.squarepath.fill" : "arrow.2.squarepath",
+                    text: post.reblogsCount.formatted(),
+                    color: post.isReblogged ? .green : .secondary
+                ) {
                     Task { await viewModel.toggleRepost(on: post) }
-                }) {
-                    Label("\(post.reblogsCount)", systemImage: post.isReblogged ? "arrow.2.squarepath.fill" : "arrow.2.squarepath")
-                        .foregroundColor(post.isReblogged ? .blue : .gray)
                 }
 
-                Button(action: {
-                    isExpanded.toggle()
-                }) {
-                    Label("\(post.repliesCount)", systemImage: "bubble.left")
-                        .foregroundColor(.gray)
+                ActionButton(
+                    image: "bubble.left",
+                    text: post.repliesCount.formatted(),
+                    color: .secondary
+                ) {
+                    withAnimation {
+                        isExpanded.toggle()
+                    }
                 }
 
                 Spacer()
             }
-            .padding([.leading, .bottom])
+            .padding(.horizontal)
 
             // MARK: - Expanded Comments Section
             if isExpanded {
                 Divider()
+                    .padding(.vertical, 8)
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Replies")
                         .font(.headline)
-                        .padding(.leading, 10)
+                        .padding(.horizontal)
 
-                    if ((post.replies?.isEmpty) != nil) {
-                        Text("No comments yet.")
-                            .foregroundColor(.gray)
-                            .padding(.leading, 10)
+                    if post.replies?.isEmpty ?? true {
+                        Text("No replies yet")
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal)
                     } else {
-                        ForEach(post.replies!) { reply in
-                            ReplyView(reply: reply)
+                        if let replies = post.replies {
+                            ForEach(replies) { reply in
+                                ReplyView(reply: reply)
+                            }
                         }
                     }
 
-                    // MARK: - Comment Box
                     HStack {
-                        TextField("Write a reply...", text: $commentText)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .padding([.leading, .trailing])
+                        TextField("Write a reply...", text: $commentText, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
 
                         Button(action: {
                             Task {
@@ -150,60 +181,86 @@ struct PostView: View {
                             }
                         }) {
                             Image(systemName: "paperplane.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(.accentColor)
                         }
+                        .disabled(commentText.isEmpty)
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal)
                 }
-                .padding(.bottom, 10)
+                .padding(.bottom, 8)
             }
         }
-        .padding()
-        .background(Color(UIColor.secondarySystemBackground))
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+        .padding(.horizontal, 8)
+        .shadow(color: .primary.opacity(0.05), radius: 5, x: 0, y: 2)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    }
+}
+
+// MARK: - Supporting Views
+
+private struct ReplyView: View {
+    let reply: Post
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            AvatarView(url: reply.account?.avatar, size: 32)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(reply.account?.display_name ?? "Display Name")
+                    .font(.subheadline)
+                    .bold()
+                    .foregroundColor(.primary)
+
+                Text(reply.content.safeHTMLToAttributedString)
+                    .font(.body)
+                    .foregroundColor(.primary)
+            }
+
+            Spacer()
+
+            Text(reply.createdAt.formatted(date: .omitted, time: .shortened))
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemBackground))
         .cornerRadius(12)
     }
+}
 
-    struct ReplyView: View {
-        let reply: Post
+// MARK: - Extensions
 
-        var body: some View {
-            HStack(alignment: .top, spacing: 10) {
-                // Safely unwrap the optional account
-                if let account = reply.account {
-                    AsyncImage(url: account.avatar) { phase in
-                        switch phase {
-                        case .empty:
-                            ProgressView()
-                        case .success(let image):
-                            image.resizable()
-                                .scaledToFill()
-                                .frame(width: 30, height: 30)
-                                .clipShape(Circle())
-                        case .failure:
-                            Image(systemName: "person.crop.circle.fill")
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 30, height: 30)
-                                .foregroundColor(.gray)
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
+private extension String {
+    var safeHTMLToAttributedString: AttributedString {
+        do {
+            let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
+                .documentType: NSAttributedString.DocumentType.html,
+                .characterEncoding: String.Encoding.utf8.rawValue,
+                .defaultAttributes: [
+                    NSAttributedString.Key.foregroundColor: UIColor.label,
+                    NSAttributedString.Key.font: UIFont.preferredFont(forTextStyle: .body)
+                ]
+            ]
 
-                    VStack(alignment: .leading) {
-                        // Use optional chaining and nil-coalescing
-                        Text(account.display_name ?? account.username)
-                            .font(.subheadline)
-                            .bold()
-                        Text(reply.content)
-                            .font(.body)
-                    }
-                } else {
-                    // Handle the case where reply.account is nil
-                    Text("Unknown User") // Or some other placeholder
-                }
-            }
-            .padding(.horizontal, 10)
+            return try AttributedString(
+                NSAttributedString(
+                    data: Data(utf8),
+                    options: options,
+                    documentAttributes: nil
+                )
+            )
+        } catch {
+            return AttributedString(self)
         }
+    }
+}
+
+extension Account {
+    func toUser() -> User {
+        return User(from: self)
     }
 }

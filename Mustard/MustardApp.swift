@@ -68,6 +68,8 @@ struct MustardApp: App {
         WindowGroup {
             Group {
                 switch authViewModel.authState {
+                case .checking: // Add the checking case
+                    ProgressView("Loading...")
                 case .unauthenticated, .authenticating:
                     LoginView()
                 case .authenticated:
@@ -103,4 +105,3 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 }
-

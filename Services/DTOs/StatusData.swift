@@ -31,9 +31,6 @@ struct PostData: Codable {
 
     /// Converts `PostData` to the app's `Post` model.
     func toPost(instanceURL: URL) -> Post? {
-       // let dateFormatter = ISO8601DateFormatter() This is best placed in the network service.
-        //dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds] //No need of this now
-
         // Decode createdAt safely
         let createdDate: Date
         if let createdAtString = created_at,
@@ -46,6 +43,7 @@ struct PostData: Codable {
 
         let acc = account.toAccount(instanceURL: instanceURL)
         let attachments = media_attachments.map { $0.toMediaAttachment() }
+        let postMentions = mentions?.map { $0.toMention() } // Convert MentionData to Mention
 
         return Post(
             id: id,
@@ -57,7 +55,8 @@ struct PostData: Codable {
             isReblogged: reblogged ?? false,
             reblogsCount: reblogs_count,
             favouritesCount: favourites_count,
-            repliesCount: replies_count
+            repliesCount: replies_count,
+            mentions: postMentions // Add mentions to the Post object
         )
     }
 }
