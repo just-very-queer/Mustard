@@ -21,6 +21,7 @@ final class Post: Identifiable, Codable, Equatable {
     var repliesCount: Int
     @Relationship(deleteRule: .cascade) var mediaAttachments: [MediaAttachment]
     var mentions: [Mention]? // Added mentions
+    var url: String?
 
 
     // MARK: - Relationship (Replies) - Note: Direct nested decoding of replies might be complex

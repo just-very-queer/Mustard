@@ -25,6 +25,10 @@ struct MainAppView: View {
     /// Hold a single source of truth for your TimelineViewModel so it’s reused
     @StateObject private var timelineViewModel: TimelineViewModel
 
+    /// Hold a single source of truth for your ProfileViewModel
+    @StateObject private var profileViewModel: ProfileViewModel
+    
+
     /// Custom initializer to inject everything we need:
     init(
         timelineService: TimelineService,
@@ -43,7 +47,7 @@ struct MainAppView: View {
         self.networkService = networkService
         self.weatherService = weatherService
 
-        // Initialize the ViewModel
+        // Initialize the TimelineViewModel
         _timelineViewModel = StateObject(
             wrappedValue: TimelineViewModel(
                 timelineService: timelineService,
@@ -51,11 +55,15 @@ struct MainAppView: View {
                 locationManager: LocationManager() // or pass a placeholder; can be replaced later
             )
         )
+
+        // Initialize the ProfileViewModel
+        _profileViewModel = StateObject(
+            wrappedValue: ProfileViewModel(profileService: profileService)
+        )
     }
 
     var body: some View {
         TabView {
-
             // MARK: - Home Tab
             NavigationStack {
                 /// Use a custom “TimelineScreen” (or any custom name) instead of SwiftUI's TimelineView.
@@ -69,9 +77,11 @@ struct MainAppView: View {
             // MARK: - Profile Tab
             NavigationStack {
                 if let currentUser = authViewModel.currentUser {
-                    // Only pass 'currentUser' if ProfileView expects it and does not need 'viewModel'
+                    // Pass both `currentUser` and `timelineViewModel` to ProfileView
                     ProfileView(user: currentUser)
                         .environmentObject(authViewModel)
+                        .environmentObject(timelineViewModel) // Inject TimelineViewModel here
+                        .environmentObject(profileViewModel) // Inject ProfileViewModel here
                 } else {
                     Text("Please log in to view your profile.")
                         .foregroundColor(.gray)
@@ -95,5 +105,8 @@ struct MainAppView: View {
         // Make sure environment objects are available throughout:
         .environmentObject(authViewModel)
         .environmentObject(locationManager)
+        .environmentObject(timelineViewModel) // Inject TimelineViewModel globally here
+        .environmentObject(profileViewModel) // Inject ProfileViewModel globally here
+        .environmentObject(cacheService) // Inject into the environment
     }
 }

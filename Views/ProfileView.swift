@@ -39,7 +39,7 @@ struct ProfileView: View {
 
                 // Actions view: Only the Edit Profile button is needed here (visible only if current user)
                 ProfileActionsView(user: user,
-                                   showEditProfile: $showEditProfile)
+                                 showEditProfile: $showEditProfile)
 
                 // Segmented control for additional profile content (Posts, Replies, Media, About)
                 ProfileContentView(user: user, selectedTab: $selectedTab)
@@ -54,6 +54,7 @@ struct ProfileView: View {
                 FollowersListView(userId: user.id)  //Keep
                     .environmentObject(profileViewModel)  // Inject via environment
                     .environmentObject(authViewModel)
+                    .environmentObject(timelineViewModel) // Inject TimelineViewModel here
             }
         }
         .sheet(isPresented: $showFollowing) {
@@ -61,6 +62,7 @@ struct ProfileView: View {
                 FollowingListView(userId: user.id)  //Keep
                     .environmentObject(profileViewModel)  // Inject via environment
                     .environmentObject(authViewModel)
+                    .environmentObject(timelineViewModel) // Inject TimelineViewModel here
             }
         }
         .sheet(isPresented: $showEditProfile) {
@@ -235,24 +237,24 @@ struct UserPostsAndRepliesView: View {
 
     var body: some View {
         // Display posts authored by the user OR posts that mention the user
-       ForEach(timelineViewModel.posts.filter { post in
-           let isAuthor = post.account?.id == user.id
-           let mentionsUser = post.mentions?.contains { $0.id == user.id } ?? false //Safely unwrap
-           return isAuthor || mentionsUser
-       }) { post in
-           PostView(post: post, viewModel: timelineViewModel) // Pass the view model
-               .padding(.bottom)
-       }
+        ForEach(timelineViewModel.posts.filter { post in
+            let isAuthor = post.account?.id == user.id
+            let mentionsUser = post.mentions?.contains { $0.id == user.id } ?? false //Safely unwrap
+            return isAuthor || mentionsUser
+        }) { post in
+            PostView(post: post, viewModel: timelineViewModel) // Pass the view model
+                .padding(.bottom)
+        }
     }
 }
 
 // User Media View
 struct UserMediaView: View {
-  let user: User
-  var body: some View {
-      Text("Media for \(user.username)")
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-  }
+ let user: User
+ var body: some View {
+        Text("Media for \(user.username)")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+ }
 }
 
 struct UserAboutView: View {
@@ -268,7 +270,7 @@ struct UserAboutView: View {
 struct FollowersListView: View {
     @EnvironmentObject var profileViewModel: ProfileViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel // Add this
-    
+
     let userId: String
 
 
@@ -299,6 +301,8 @@ struct FollowersListView: View {
                                 EmptyView()
                             }
                         }
+                        .frame(width: 40, height: 40)
+
                         VStack(alignment: .leading) {
                             Text(follower.display_name ?? follower.username)
                                 .font(.headline)
@@ -318,6 +322,8 @@ struct FollowersListView: View {
 
 struct FollowingListView: View {
     @EnvironmentObject var profileViewModel: ProfileViewModel // Use EnvironmentObject
+    @EnvironmentObject var timelineViewModel: TimelineViewModel // Add this
+
     let userId: String
 
     var body: some View {
@@ -329,24 +335,26 @@ struct FollowingListView: View {
                     HStack {
                         AsyncImage(url: URL(string: followingUser.avatar ?? "")) { phase in
                             switch phase {
-                                case .empty:
-                                    ProgressView()
-                                        .frame(width: 40, height: 40)
-                                case .success(let image):
-                                    image.resizable()
-                                        .scaledToFill()
-                                        .frame(width: 40, height: 40)
-                                        .clipShape(Circle())
-                                case .failure:
-                                   Image(systemName: "person.crop.circle.fill") // Placeholder
+                            case .empty:
+                                ProgressView()
+                                    .frame(width: 40, height: 40)
+                            case .success(let image):
+                                image.resizable()
+                                    .scaledToFill()
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(Circle())
+                            case .failure:
+                                Image(systemName: "person.crop.circle.fill") // Placeholder
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 40, height: 40)
                                     .foregroundColor(.gray)
-                                @unknown default:
-                                    EmptyView()
-                                }
+                            @unknown default:
+                                EmptyView()
+                            }
                         }
+                        .frame(width: 40, height: 40)
+
                         VStack(alignment: .leading) {
                             Text(followingUser.display_name ?? followingUser.username)
                                 .font(.headline)

@@ -27,38 +27,38 @@ public class NetworkService {
     private let keychainService = "MustardKeychain"
     
     /// JSONDecoder configured with `.convertFromSnakeCase` and appropriate date decoding strategies.
-        let jsonDecoder: JSONDecoder = {
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase  // This is the key fix!
-            decoder.dateDecodingStrategy = .custom { decoder in  // More robust date handling
-                let container = try decoder.singleValueContainer()
-                let dateString = try container.decode(String.self)
-
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                if let date = formatter.date(from: dateString) {
-                    return date
-                }
-                //Handle the case of date with no fractional seconds
-                formatter.formatOptions = [.withInternetDateTime]
-                if let date = formatter.date(from:dateString){
-                    return date
-                }
-                throw DecodingError.dataCorruptedError(in: container,
-                                                       debugDescription: "Invalid date format: \(dateString)")
-            }
-            return decoder
-        }()
-
-        // Inside NetworkService, add this for consistent date formatting:
-        static let iso8601DateFormatter: ISO8601DateFormatter = {
+    let jsonDecoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase  // This is the key fix!
+        decoder.dateDecodingStrategy = .custom { decoder in  // More robust date handling
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+            
             let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]  //.withFractionalSeconds is crucial
-            return formatter
-        }()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+            //Handle the case of date with no fractional seconds
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from:dateString){
+                return date
+            }
+            throw DecodingError.dataCorruptedError(in: container,
+                                                   debugDescription: "Invalid date format: \(dateString)")
+        }
+        return decoder
+    }()
+    
+    // Inside NetworkService, add this for consistent date formatting:
+    static let iso8601DateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]  //.withFractionalSeconds is crucial
+        return formatter
+    }()
     
     /// JSONEncoder configured with `.convertToSnakeCase` and ISO8601 date encoding.
-    private let jsonEncoder: JSONEncoder = {
+    let jsonEncoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
         encoder.dateEncodingStrategy = .iso8601
@@ -127,6 +127,7 @@ public class NetworkService {
     ///   - contentType: Content type of the request body. Defaults to "application/json".
     /// - Returns: Decoded response of type `T`.
     /// - Throws: `AppError` if a network/decoding error occurs.
+    
     func postData<T: Decodable>(
         endpoint: String,
         body: [String: String],
@@ -157,37 +158,37 @@ public class NetworkService {
     
     
     /// Generic request function to perform API calls and decode responses.
-        ///
-        /// - Parameters:
-        ///   - endpoint: The API endpoint path (e.g., "/api/v1/timelines/home").
-        ///   - method: HTTP method for the request (e.g., .get, .post).
-        ///   - responseType: The expected Decodable type for the response.
-        /// - Returns: Decoded response of type `T`.
-        /// - Throws: `AppError` if request fails, rate limit is exceeded, or decoding fails.
-        func request<T: Decodable>(
-            endpoint: String,
-            method: HTTPMethod,
-            responseType: T.Type
-        ) async throws -> T {
-            // Ensure rate limiting
-            guard await rateLimiter.tryConsume() else {
-                throw AppError(type: .mastodon(.rateLimitExceeded))
-            }
-
-            // Retrieve access token from Keychain
-            guard let accessToken = await fetchAccessToken() else {
-                throw AppError(mastodon: .missingCredentials)
-            }
-
-            // Construct the full URL
-            let url = try await endpointURL(endpoint)
-
-            // Build the URLRequest
-            let request = try buildRequest(url: url, method: method.rawValue, accessToken: accessToken)
-
-            // Perform the network request and decode the response
-            return try await performRequest(request: request, responseType: responseType)
+    ///
+    /// - Parameters:
+    ///   - endpoint: The API endpoint path (e.g., "/api/v1/timelines/home").
+    ///   - method: HTTP method for the request (e.g., .get, .post).
+    ///   - responseType: The expected Decodable type for the response.
+    /// - Returns: Decoded response of type `T`.
+    /// - Throws: `AppError` if request fails, rate limit is exceeded, or decoding fails.
+    func request<T: Decodable>(
+        endpoint: String,
+        method: HTTPMethod,
+        responseType: T.Type
+    ) async throws -> T {
+        // Ensure rate limiting
+        guard await rateLimiter.tryConsume() else {
+            throw AppError(type: .mastodon(.rateLimitExceeded))
         }
+        
+        // Retrieve access token from Keychain
+        guard let accessToken = await fetchAccessToken() else {
+            throw AppError(mastodon: .missingCredentials)
+        }
+        
+        // Construct the full URL
+        let url = try await endpointURL(endpoint)
+        
+        // Build the URLRequest
+        let request = try buildRequest(url: url, method: method.rawValue, accessToken: accessToken)
+        
+        // Perform the network request and decode the response
+        return try await performRequest(request: request, responseType: responseType)
+    }
     
     /// Performs a POST action (e.g., liking or reblogging a post) without expecting a decoded response.
     ///
@@ -217,6 +218,39 @@ public class NetworkService {
         _ = try await performRequest(request: request, responseType: Data.self)
     }
     
+    /// Fetches timeline posts with pagination support.
+    ///
+    /// - Parameters:
+    ///   - page: The page number to fetch. Page 1 fetches the latest posts, subsequent pages fetch older posts.
+    /// - Returns: An array of `Post` objects.
+    /// - Throws: `AppError` if the request fails.
+    func fetchTimelinePosts(page: Int) async throws -> [Post] {
+        var endpoint = "/api/v1/timelines/home"
+
+        if page > 1 {
+            // Fetch older posts by appending `max_id` to the request
+            if let lastPostID = try? await fetchLastPostID() {
+                endpoint += "?max_id=\(lastPostID)"
+            }
+        }
+
+        do {
+            return try await request(endpoint: endpoint, method: .get, responseType: [Post].self)
+        } catch {
+            logger.error("Failed to fetch timeline posts (Page \(page)): \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    /// Retrieves the ID of the last post in the timeline for pagination.
+    ///
+    /// - Returns: The `id` of the last post if available.
+    /// - Throws: `AppError` if fetching fails.
+    private func fetchLastPostID() async throws -> String? {
+        let timelinePosts: [Post] = try await request(endpoint: "/api/v1/timelines/home", method: .get, responseType: [Post].self)
+        return timelinePosts.last?.id
+    }
+
     // MARK: - OAuth Flow
     
     /// Registers the app with the specified Mastodon instance to obtain OAuth client credentials.
@@ -450,7 +484,7 @@ public class NetworkService {
             throw AppError(mastodon: .missingCredentials)
         }
         logger.debug("Access token: \(String(describing: accessToken))") // Log for debugging
-
+        
         // Determine the correct URL to fetch the current user's profile
         let userFetchURL: URL
         if let customURL = instanceURL {
@@ -462,11 +496,11 @@ public class NetworkService {
             }
             userFetchURL = baseURL.appendingPathComponent("/api/v1/accounts/verify_credentials")
         }
-
+        
         // Build the request and set the Authorization header
         var request = URLRequest(url: userFetchURL)
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-
+        
         // Reuse fetchData method to get the current user details
         let user: User = try await fetchData(url: userFetchURL, method: "GET", type: User.self)
         logger.info("Successfully fetched current user: \(user.username, privacy: .public)")
@@ -548,8 +582,8 @@ public class NetworkService {
 
 
 enum HTTPMethod: String {
-       case get = "GET"
-       case post = "POST"
-       case put = "PUT"
-       case delete = "DELETE"
+    case get = "GET"
+    case post = "POST"
+    case put = "PUT"
+    case delete = "DELETE"
 }

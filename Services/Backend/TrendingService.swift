@@ -23,11 +23,11 @@ class TrendingService {
         let cacheKey = "trendingPosts"
 
         // First, try fetching from cache
-        do {
-            let cachedPosts = try await cacheService.loadPostsFromCache(forKey: cacheKey)
+        let cachedPosts = await cacheService.loadPostsFromCache(forKey: cacheKey)
+        if !cachedPosts.isEmpty {
             return cachedPosts
-        } catch {
-            logger.info("Cache miss for top posts or error loading from cache: \(error.localizedDescription)")
+        } else {
+            logger.info("Cache miss for top posts or error loading from cache")
         }
 
         // If cache is unavailable, fetch from the network

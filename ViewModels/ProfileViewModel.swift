@@ -9,9 +9,9 @@ import SwiftUI
 import Combine
 
 @MainActor
-class ProfileViewModel: ObservableObject {
-    @Published var followers: [User] = []
-    @Published var following: [User] = []
+final class ProfileViewModel: ObservableObject {
+    @Published private(set) var followers: [User] = []
+    @Published private(set) var following: [User] = []
     @Published var alertMessage: String?
     @Published var showAlert: Bool = false
 
@@ -20,33 +20,24 @@ class ProfileViewModel: ObservableObject {
 
     init(profileService: ProfileService) {
         self.profileService = profileService
-        
-        // Subscribe to changes in the current user in AuthenticationService using the shared instance
-        AuthenticationService.shared.$currentUser
-            .compactMap { $0 } // Only proceed if currentUser is not nil
-            .sink { [weak self] user in
-                // Fetch followers and following when the current user changes
-                Task {
-                    await self?.fetchFollowers(for: user.id)
-                    await self?.fetchFollowing(for: user.id)
-                }
-            }
-            .store(in: &cancellables)
+        setupUserSubscription()
     }
 
     func fetchFollowers(for accountId: String) async {
         do {
-            followers = try await profileService.fetchFollowers(for: accountId)
+            let fetchedFollowers = try await profileService.fetchFollowers(for: accountId)
+            followers = fetchedFollowers
         } catch {
-            handleError(error, message: "Error fetching followers")
+            await handleError(error, message: "Error fetching followers")
         }
     }
 
     func fetchFollowing(for accountId: String) async {
         do {
-            following = try await profileService.fetchFollowing(for: accountId)
+            let fetchedFollowing = try await profileService.fetchFollowing(for: accountId)
+            following = fetchedFollowing
         } catch {
-            handleError(error, message: "Error fetching following")
+            await  handleError(error, message: "Error fetching following")
         }
     }
 
@@ -56,26 +47,47 @@ class ProfileViewModel: ObservableObject {
                 for: accountId,
                 updatedFields: updatedFields
             )
-            
             AuthenticationService.shared.updateAuthenticatedUser(updatedUser)
-            
             showSuccess(message: "Profile updated successfully!")
         } catch {
-            handleError(error, message: "Error updating profile")
+          await  handleError(error, message: "Error updating profile")
         }
     }
+}
 
-    private func showSuccess(message: String) {
+// MARK: - Private Helpers
+private extension ProfileViewModel {
+    func setupUserSubscription() {
+        AuthenticationService.shared.$currentUser
+            .compactMap { $0 }
+            .sink { [weak self] user in
+                Task { [weak self] in
+                    await self?.refreshUserData(userId: user.id)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    func refreshUserData(userId: String) async {
+        async let fetchFollowersTask: () = fetchFollowers(for: userId)
+        async let fetchFollowingTask: () = fetchFollowing(for: userId)
+        _ = await (fetchFollowersTask, fetchFollowingTask)
+    }
+
+    func showSuccess(message: String) {
         alertMessage = message
         showAlert = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            self.showAlert = false
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            showAlert = false
         }
     }
 
-    private func handleError(_ error: Error, message: String) {
-        alertMessage = "\(message): \(error.localizedDescription)"
-        showAlert = true
-        print("\(message): \(error.localizedDescription)")
+    func handleError(_ error: Error, message: String) async {
+        await MainActor.run {
+            alertMessage = "\(message): \(error.localizedDescription)"
+            showAlert = true
+            print("\(message): \(error.localizedDescription)")
+        }
     }
 }

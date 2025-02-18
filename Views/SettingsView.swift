@@ -10,7 +10,9 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
+    @EnvironmentObject var cacheService: CacheService
     @State private var isShowingLogoutAlert = false
+    @State private var selectedCacheSize: Int = 100 // Default cache size
 
     var body: some View {
         NavigationView {
@@ -52,6 +54,26 @@ struct SettingsView: View {
                             Image(systemName: "location.circle")
                                 .foregroundColor(.blue)
                             Text("Enable Location Services")
+                        }
+                    }
+
+                    // Cache Size Picker
+                    Picker("Cache Posts for Offline Reading", selection: $selectedCacheSize) {
+                        Text("100 Posts").tag(100)
+                        Text("500 Posts").tag(500)
+                        Text("1000 Posts").tag(1000)
+                    }
+                    .pickerStyle(MenuPickerStyle())
+
+                    Button(action: {
+                        Task {
+                            await cacheService.prefetchPosts(count: selectedCacheSize, forKey: "offline_posts")
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("Cache Posts for Offline Reading")
                         }
                     }
                 }

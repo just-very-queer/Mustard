@@ -63,7 +63,7 @@ class TimelineService {
     private func handleLocationUpdate(_ location: CLLocation) {
         print("Location updated: \(location)")
     }
-    
+
     // MARK: - Timeline Data Methods
     func initializeTimelineData() {
         isLoading = true
@@ -137,18 +137,18 @@ class TimelineService {
         let cacheKey = "timeline"
         
         if useCache {
-            do {
-                let cachedPosts = try await cacheService.loadPostsFromCache(forKey: cacheKey)
-                if !cachedPosts.isEmpty {
-                    logger.info("Loaded \(cachedPosts.count) posts from cache")
-                    return cachedPosts
-                }
-                logger.info("Empty cache, falling back to network")
-            } catch {
-                logger.error("Cache error: \(error.localizedDescription)")
+            let cachedPosts = await cacheService.loadPostsFromCache(forKey: cacheKey)
+            
+            // Check if we have cached posts
+            if !cachedPosts.isEmpty {
+                logger.info("Loaded \(cachedPosts.count) posts from cache")
+                return cachedPosts
             }
+            
+            logger.info("Empty cache, falling back to network")
         }
 
+        // Proceed with fetching from network if cache is empty or not used
         do {
             let fetchedPosts = try await networkService.request(
                 endpoint: "/api/v1/timelines/home",
@@ -156,6 +156,7 @@ class TimelineService {
                 responseType: [Post].self
             )
             
+            // Cache the fetched posts for future use
             Task {
                 await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
                 logger.info("Cached \(fetchedPosts.count) posts")
@@ -167,7 +168,7 @@ class TimelineService {
             throw error
         }
     }
-    
+
     func fetchMoreTimeline() async throws -> [Post] {
         var endpoint = "/api/v1/timelines/home"
         
@@ -190,6 +191,36 @@ class TimelineService {
         }
         
         return fetchedPosts
+    }
+
+    func fetchPosts(page: Int) async -> [Post] {
+        var endpoint = "/api/v1/timelines/home"
+        
+        if page > 1, let lastPostID = timelinePosts.last?.id {
+            endpoint += "?max_id=\(lastPostID)"
+        }
+        
+        do {
+            let fetchedPosts = try await networkService.request(
+                endpoint: endpoint,
+                method: .get,
+                responseType: [Post].self
+            )
+
+            // Cache new posts for better performance
+            if !fetchedPosts.isEmpty {
+                Task {
+                    let updatedPosts = self.timelinePosts + fetchedPosts
+                    await cacheService.cachePosts(updatedPosts, forKey: "timeline")
+                    logger.info("Updated cache with \(fetchedPosts.count) new posts")
+                }
+            }
+
+            return fetchedPosts
+        } catch {
+            logger.error("Fetch posts error (page \(page)): \(error.localizedDescription)")
+            return [] // Return an empty array on failure
+        }
     }
 
     func backgroundRefreshTimeline() async throws {
@@ -215,6 +246,7 @@ class TimelineService {
     }
 
     // MARK: - Post Actions
+    // Toggle like on a post
     func toggleLike(for post: Post) async throws {
         try await postActionService.toggleLike(postID: post.id)
         await updatePostInteraction(for: post.id) { post in
@@ -223,6 +255,7 @@ class TimelineService {
         }
     }
 
+    // Toggle repost on a post
     func toggleRepost(for post: Post) async throws {
         try await postActionService.toggleRepost(postID: post.id)
         await updatePostInteraction(for: post.id) { post in
@@ -231,6 +264,7 @@ class TimelineService {
         }
     }
 
+    // Comment on a post
     func comment(on post: Post, content: String) async throws {
         try await postActionService.comment(postID: post.id, content: content)
         await MainActor.run {
@@ -239,7 +273,19 @@ class TimelineService {
             }
         }
     }
-    
+
+    // Update post interaction (like/repost) in the timeline
+    private func updatePostInteraction(for postID: String, update: (inout Post) -> Void) async {
+        await MainActor.run {
+            if let index = timelinePosts.firstIndex(where: { $0.id == postID }) {
+                var post = timelinePosts[index]
+                update(&post)
+                timelinePosts[index] = post
+            }
+        }
+    }
+
+    // Fetch top posts (e.g., trending posts)
     func fetchTopPosts() async {
         do {
             let trendingPosts = try await trendingService.fetchTopPosts()
@@ -256,14 +302,5 @@ class TimelineService {
             logger.error("Top posts error: \(error.localizedDescription)")
         }
     }
-
-    private func updatePostInteraction(for postID: String, update: (inout Post) -> Void) async {
-        await MainActor.run {
-            if let index = timelinePosts.firstIndex(where: { $0.id == postID }) {
-                var post = timelinePosts[index]
-                update(&post)
-                timelinePosts[index] = post
-            }
-        }
-    }
 }
+

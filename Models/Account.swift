@@ -1,3 +1,4 @@
+//
 //  Account.swift
 //  Mustard
 //
@@ -92,6 +93,7 @@ class Account: Identifiable, Codable, Equatable {
         case header_static = "header_static" // Corrected to snake_case
     }
 
+    // Implementing the `Decodable` initializer
     required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decode(String.self, forKey: .id)
@@ -115,6 +117,7 @@ class Account: Identifiable, Codable, Equatable {
         self.suspended = try container.decodeIfPresent(Bool.self, forKey: .suspended)
     }
 
+    // Implementing the `Encodable` method
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -144,20 +147,37 @@ class Account: Identifiable, Codable, Equatable {
     }
 }
 
-struct Entities: Codable {
-    let hashtags: [Tag]
-    let mentions: [Mention]
-    let urls: [StatusURL]
-    
-    struct StatusURL: Codable {
-        let url: URL
-        let expandedUrl: URL
-        let displayUrl: String
-        
-        enum CodingKeys: String, CodingKey {
-            case url
-            case expandedUrl = "expanded_url"
-            case displayUrl = "display_url"
-        }
+// MARK: - Extension to Convert Account to User
+extension Account {
+    func toUser() -> User {
+        return User(
+            id: self.id,
+            username: self.username,
+            acct: self.acct,
+            display_name: self.display_name ?? self.username,
+            locked: self.isLocked ?? false,
+            bot: self.isBot ?? false,
+            discoverable: self.discoverable ?? false,
+            indexable: self.indexable ?? false,
+            group: false, // Default value, as it's not part of Account
+            created_at: Date(), // Default value, as it's not part of Account
+            note: self.note ?? "",
+            url: self.url?.absoluteString ?? "",
+            avatar: self.avatar?.absoluteString ?? "",
+            avatar_static: self.avatar?.absoluteString ?? "", // Assuming static avatar is the same as avatar
+            header: self.header?.absoluteString ?? "",
+            header_static: self.header_static?.absoluteString ?? "",
+            followers_count: self.followers_count ?? 0,
+            following_count: self.following_count ?? 0,
+            statuses_count: self.statuses_count ?? 0,
+            last_status_at: self.last_status_at ?? "",
+            suspended: self.suspended ?? false,
+            hide_collections: false, // Default value, as it's not part of Account
+            noindex: false, // Default value, as it's not part of Account
+            source: nil, // Default value, as it's not part of Account
+            emojis: [], // Default value, as it's not part of Account
+            roles: [], // Default value, as it's not part of Account
+            fields: [] // Default value, as it's not part of Account
+        )
     }
 }

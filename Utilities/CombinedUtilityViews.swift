@@ -6,32 +6,61 @@
 //
 
 import SwiftUI
-import OSLog
 import SafariServices
 import CoreLocation
 import Combine
 import SwiftData
 
-
-// MARK: - Action Button View
+// MARK: - Basic Components
 
 struct ActionButton: View {
-    let image: String
-    let text: String
-    let color: Color
+    @State private var showActionSheet = false
+    @Binding var isExpanded: Bool
+    let post: Post
+    let viewModel: TimelineViewModel
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button(action: { showActionSheet.toggle() }) {
             HStack {
-                Image(systemName: image).foregroundColor(color)
-                Text(text)
+                Image(systemName: "ellipsis")
+                    .foregroundColor(.blue)
+                Text("Actions")
+                    .foregroundColor(.blue)
             }
+        }
+        .actionSheet(isPresented: $showActionSheet) {
+            ActionSheet(
+                title: Text("Post Actions"),
+                message: Text("Choose an action for this post"),
+                buttons: [
+                    .default(Text("Like")) {
+                        likePost()
+                    },
+                    .default(Text("Repost")) {
+                        repostPost()
+                    },
+                    .default(Text("Comment")) {
+                        isExpanded.toggle()
+                    },
+                    .cancel()
+                ]
+            )
+        }
+    }
+    
+    private func likePost() {
+        Task {
+            await viewModel.likePost(post)
+        }
+    }
+    
+    private func repostPost() {
+        Task {
+            await viewModel.repostPost(post)
         }
     }
 }
-
-// MARK: - Avatar View
 
 struct AvatarView: View {
     let url: URL?
@@ -62,53 +91,76 @@ struct AvatarView: View {
     }
 }
 
-// MARK: - Loading Overlay
-
-struct LoadingOverlay: View {
-    let isLoading: Bool
-    let message: String
+struct HeaderView: View {
+    let headerURL: URL?
 
     var body: some View {
-        Group {
-            if isLoading {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                ProgressView(message)
-                    .padding()
-                    .background(Color.white)
-                    .cornerRadius(10)
+        AsyncImage(url: headerURL) { phase in
+            switch phase {
+            case .empty:
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: 200)
+            case .success(let image):
+                image.resizable()
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: 200)
+            case .failure:
+                Color.gray
+                    .frame(maxWidth: .infinity, maxHeight: 200)
+            @unknown default:
+                EmptyView()
             }
         }
     }
 }
 
-// MARK: - Link Preview
+// MARK: - Media Components
 
-struct LinkPreview: View {
-    let url: URL
-    let action: () -> Void
-
+struct MediaAttachmentView: View {
+    let post: Post
+    var onImageTap: () -> Void
+    
     var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: "link.circle")
-                Text(url.absoluteString).lineLimit(1).truncationMode(.middle)
+        if let media = post.mediaAttachments.first, let mediaURL = media.url {
+            AsyncImage(url: mediaURL) { phase in
+                Group {
+                    switch phase {
+                    case .empty:
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                    case .success(let image):
+                        image.resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: .infinity)
+                            .cornerRadius(15)
+                            .onTapGesture {
+                                onImageTap()
+                            }
+                    case .failure:
+                        Image(systemName: "photo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 100, height: 100)
+                            .foregroundColor(.secondary)
+                    @unknown default:
+                        EmptyView()
+                    }
+                }
             }
-            .foregroundColor(.blue)
+            .padding(.horizontal)
+            .cornerRadius(12)
         }
     }
 }
-
-// MARK: - Full-Screen Image View
 
 struct FullScreenImageView: View {
     let imageURL: URL
     @Binding var isPresented: Bool
-
+    
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
-
+            
             AsyncImage(url: imageURL) { phase in
                 switch phase {
                 case .empty:
@@ -128,7 +180,7 @@ struct FullScreenImageView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-
+            
             Button(action: { isPresented = false }) {
                 Image(systemName: "xmark.circle.fill")
                     .resizable()
@@ -142,13 +194,18 @@ struct FullScreenImageView: View {
     }
 }
 
-// MARK: - Safari Web View
+// MARK: - Web Components
 
 struct SafariWebView: View {
-    let url: URL
-
+    let post: Post
+    
     var body: some View {
-        SafariView(url: url)
+        if let url = post.url, let urlObj = URL(string: url) {
+            SafariView(url: urlObj)
+        } else {
+            Text("No URL available for this post.")
+                .foregroundColor(.red)
+        }
     }
 }
 
@@ -164,35 +221,67 @@ struct SafariView: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
-// MARK: - HTML Utilities
-
-struct HTMLUtils {
-    /// Converts an HTML string to plain text
-    static func convertHTMLToPlainText(html: String) -> String {
-        guard let data = html.data(using: .utf16) else { return html }
-        let options: [NSAttributedString.DocumentReadingOptionKey: Any] = [
-            .documentType: NSAttributedString.DocumentType.html,
-            .characterEncoding: String.Encoding.utf8.rawValue
-        ]
-        return (try? NSAttributedString(data: data, options: options, documentAttributes: nil).string) ?? html
-    }
-
-    /// Extracts links from an HTML string
-    static func extractLinks(from html: String) -> [URL] {
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return [] }
-        let matches = detector.matches(in: html, options: [], range: NSRange(location: 0, length: html.utf16.count))
-        return matches.compactMap { $0.url }
+struct BrowserView: View {
+    let post: Post
+    @ObservedObject var viewModel: TimelineViewModel
+    
+    var body: some View {
+        SafariWebView(post: post)
     }
 }
 
-// MARK: - URL Detection Extension
+// MARK: - Utility Components
+
+struct LoadingOverlay: View {
+    let isLoading: Bool
+    let message: String
+
+    var body: some View {
+        Group {
+            if isLoading {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                ProgressView(message)
+                    .padding()
+                    .background(Color.white)
+                    .cornerRadius(10)
+            }
+        }
+    }
+}
+
+struct LinkPreview: View {
+    let url: URL
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: "link.circle")
+                Text(url.absoluteString).lineLimit(1).truncationMode(.middle)
+            }
+            .foregroundColor(.blue)
+        }
+    }
+}
+
+// MARK: - HTML Utilities
+
+struct HTMLUtils {
+    static func convertHTMLToPlainText(html: String) -> String {
+        do {
+            return try SwiftSoupUtils.convertHTMLToPlainText(html: html)
+        } catch {
+            print("Error converting HTML to plain text: \(error)")
+            return html
+        }
+    }
+}
 
 extension URL {
-    /// Detects the first URL in a given content string
     static func detect(from content: String) -> URL? {
         let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
         return detector?.firstMatch(in: content, options: [], range: NSRange(location: 0, length: content.utf16.count))?.url
     }
 }
-
 

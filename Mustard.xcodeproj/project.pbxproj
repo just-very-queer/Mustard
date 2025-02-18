@@ -11,37 +11,21 @@
 		66292AE32D43CACE00883170 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66292AE22D43CACE00883170 /* Config.swift */; };
 		663A900F2D5F5E7C001FFE8C /* InstanceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */; };
 		664E08A22C96019600D547C7 /* ServerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664E089F2C96019600D547C7 /* ServerModel.swift */; };
+		666A1B622D63D4EA003F08FD /* SwiftSoupUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */; };
+		666A1B642D63D636003F08FD /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 666A1B632D63D636003F08FD /* SwiftSoup */; };
 		6687C37F2C95B426000ECC5D /* Post.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6687C37E2C95B426000ECC5D /* Post.swift */; };
 		6687C3852C95B44D000ECC5D /* Account.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6687C3822C95B44C000ECC5D /* Account.swift */; };
 		6687C3882C95B46E000ECC5D /* MediaAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6687C3862C95B46E000ECC5D /* MediaAttachment.swift */; };
 		66FA9EB62D35AF9700564B25 /* CombinedUtilityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FA9EB32D35AF9600564B25 /* CombinedUtilityViews.swift */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXContainerItemProxy section */
-		6687C3612C95AE8A000ECC5D /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 6687C3452C95AE87000ECC5D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 6687C34C2C95AE87000ECC5D;
-			remoteInfo = Mustard;
-		};
-		6687C36B2C95AE8A000ECC5D /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 6687C3452C95AE87000ECC5D /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 6687C34C2C95AE87000ECC5D;
-			remoteInfo = Mustard;
-		};
-/* End PBXContainerItemProxy section */
-
 /* Begin PBXFileReference section */
 		66292ADE2D43CA9D00883170 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		66292AE22D43CACE00883170 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceModel.swift; sourceTree = "<group>"; };
 		664E089F2C96019600D547C7 /* ServerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerModel.swift; sourceTree = "<group>"; };
+		666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftSoupUtils.swift; sourceTree = "<group>"; };
 		6687C34D2C95AE87000ECC5D /* Mustard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Mustard.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		6687C3602C95AE8A000ECC5D /* MustardTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MustardTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		6687C36A2C95AE8A000ECC5D /* MustardUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MustardUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6687C37E2C95B426000ECC5D /* Post.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Post.swift; sourceTree = "<group>"; };
 		6687C3822C95B44C000ECC5D /* Account.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Account.swift; sourceTree = "<group>"; };
 		6687C3862C95B46E000ECC5D /* MediaAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaAttachment.swift; sourceTree = "<group>"; };
@@ -49,20 +33,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		66292AD62D43BEB200883170 /* Exceptions for "Services" folder in "MustardTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Backend/LocationService.swift,
-			);
-			target = 6687C35F2C95AE8A000ECC5D /* MustardTests */;
-		};
-		66292AD72D43BEB200883170 /* Exceptions for "Services" folder in "MustardUITests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Backend/LocationService.swift,
-			);
-			target = 6687C3692C95AE8A000ECC5D /* MustardUITests */;
-		};
 		6687C4352C95BD61000ECC5D /* Exceptions for "Mustard" folder in "Mustard" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -88,10 +58,6 @@
 		};
 		6687C39B2C95B503000ECC5D /* Services */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				66292AD62D43BEB200883170 /* Exceptions for "Services" folder in "MustardTests" target */,
-				66292AD72D43BEB200883170 /* Exceptions for "Services" folder in "MustardUITests" target */,
-			);
 			path = Services;
 			sourceTree = "<group>";
 		};
@@ -112,20 +78,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		6687C35D2C95AE8A000ECC5D /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		6687C3672C95AE8A000ECC5D /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
+				666A1B642D63D636003F08FD /* SwiftSoup in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -150,8 +103,6 @@
 			isa = PBXGroup;
 			children = (
 				6687C34D2C95AE87000ECC5D /* Mustard.app */,
-				6687C3602C95AE8A000ECC5D /* MustardTests.xctest */,
-				6687C36A2C95AE8A000ECC5D /* MustardUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -174,6 +125,7 @@
 			isa = PBXGroup;
 			children = (
 				66FA9EB32D35AF9600564B25 /* CombinedUtilityViews.swift */,
+				666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -202,50 +154,11 @@
 			);
 			name = Mustard;
 			packageProductDependencies = (
+				666A1B632D63D636003F08FD /* SwiftSoup */,
 			);
 			productName = Mustard;
 			productReference = 6687C34D2C95AE87000ECC5D /* Mustard.app */;
 			productType = "com.apple.product-type.application";
-		};
-		6687C35F2C95AE8A000ECC5D /* MustardTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 6687C3772C95AE8A000ECC5D /* Build configuration list for PBXNativeTarget "MustardTests" */;
-			buildPhases = (
-				6687C35C2C95AE8A000ECC5D /* Sources */,
-				6687C35D2C95AE8A000ECC5D /* Frameworks */,
-				6687C35E2C95AE8A000ECC5D /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				6687C3622C95AE8A000ECC5D /* PBXTargetDependency */,
-			);
-			name = MustardTests;
-			packageProductDependencies = (
-			);
-			productName = MustardTests;
-			productReference = 6687C3602C95AE8A000ECC5D /* MustardTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		6687C3692C95AE8A000ECC5D /* MustardUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 6687C37A2C95AE8A000ECC5D /* Build configuration list for PBXNativeTarget "MustardUITests" */;
-			buildPhases = (
-				6687C3662C95AE8A000ECC5D /* Sources */,
-				6687C3672C95AE8A000ECC5D /* Frameworks */,
-				6687C3682C95AE8A000ECC5D /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				6687C36C2C95AE8A000ECC5D /* PBXTargetDependency */,
-			);
-			name = MustardUITests;
-			packageProductDependencies = (
-			);
-			productName = MustardUITests;
-			productReference = 6687C36A2C95AE8A000ECC5D /* MustardUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
@@ -260,16 +173,6 @@
 					6687C34C2C95AE87000ECC5D = {
 						CreatedOnToolsVersion = 16.0;
 					};
-					6687C35F2C95AE8A000ECC5D = {
-						CreatedOnToolsVersion = 16.0;
-						LastSwiftMigration = 1620;
-						TestTargetID = 6687C34C2C95AE87000ECC5D;
-					};
-					6687C3692C95AE8A000ECC5D = {
-						CreatedOnToolsVersion = 16.0;
-						LastSwiftMigration = 1620;
-						TestTargetID = 6687C34C2C95AE87000ECC5D;
-					};
 				};
 			};
 			buildConfigurationList = 6687C3482C95AE87000ECC5D /* Build configuration list for PBXProject "Mustard" */;
@@ -281,34 +184,21 @@
 			);
 			mainGroup = 6687C3442C95AE87000ECC5D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				666A1B602D63D4E2003F08FD /* XCRemoteSwiftPackageReference "SwiftSoup" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6687C34E2C95AE87000ECC5D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				6687C34C2C95AE87000ECC5D /* Mustard */,
-				6687C35F2C95AE8A000ECC5D /* MustardTests */,
-				6687C3692C95AE8A000ECC5D /* MustardUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		6687C34B2C95AE87000ECC5D /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		6687C35E2C95AE8A000ECC5D /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		6687C3682C95AE8A000ECC5D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -328,39 +218,13 @@
 				663A900F2D5F5E7C001FFE8C /* InstanceModel.swift in Sources */,
 				66FA9EB62D35AF9700564B25 /* CombinedUtilityViews.swift in Sources */,
 				6687C3852C95B44D000ECC5D /* Account.swift in Sources */,
+				666A1B622D63D4EA003F08FD /* SwiftSoupUtils.swift in Sources */,
 				6687C3882C95B46E000ECC5D /* MediaAttachment.swift in Sources */,
 				6687C37F2C95B426000ECC5D /* Post.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		6687C35C2C95AE8A000ECC5D /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		6687C3662C95AE8A000ECC5D /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
-
-/* Begin PBXTargetDependency section */
-		6687C3622C95AE8A000ECC5D /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 6687C34C2C95AE87000ECC5D /* Mustard */;
-			targetProxy = 6687C3612C95AE8A000ECC5D /* PBXContainerItemProxy */;
-		};
-		6687C36C2C95AE8A000ECC5D /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 6687C34C2C95AE87000ECC5D /* Mustard */;
-			targetProxy = 6687C36B2C95AE8A000ECC5D /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		6687C3722C95AE8A000ECC5D /* Debug */ = {
@@ -575,110 +439,6 @@
 			};
 			name = Release;
 		};
-		6687C3782C95AE8A000ECC5D /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DSG47QF9P9;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = titan.Test.Learn.mastdon.MustardTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "Views/MustardTests-Bridging-Header.h";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Mustard.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Mustard";
-				XROS_DEPLOYMENT_TARGET = 2.0;
-			};
-			name = Debug;
-		};
-		6687C3792C95AE8A000ECC5D /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DSG47QF9P9;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = titan.Test.Learn.mastdon.MustardTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "Views/MustardTests-Bridging-Header.h";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Mustard.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Mustard";
-				XROS_DEPLOYMENT_TARGET = 2.0;
-			};
-			name = Release;
-		};
-		6687C37B2C95AE8A000ECC5D /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DSG47QF9P9;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = titan.Test.Learn.mastdon.MustardUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "Views/MustardUITests-Bridging-Header.h";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_TARGET_NAME = Mustard;
-				XROS_DEPLOYMENT_TARGET = 2.0;
-			};
-			name = Debug;
-		};
-		6687C37C2C95AE8A000ECC5D /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = DSG47QF9P9;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = titan.Test.Learn.mastdon.MustardUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "Views/MustardUITests-Bridging-Header.h";
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_TARGET_NAME = Mustard;
-				XROS_DEPLOYMENT_TARGET = 2.0;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -700,25 +460,26 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		6687C3772C95AE8A000ECC5D /* Build configuration list for PBXNativeTarget "MustardTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				6687C3782C95AE8A000ECC5D /* Debug */,
-				6687C3792C95AE8A000ECC5D /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		6687C37A2C95AE8A000ECC5D /* Build configuration list for PBXNativeTarget "MustardUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				6687C37B2C95AE8A000ECC5D /* Debug */,
-				6687C37C2C95AE8A000ECC5D /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		666A1B602D63D4E2003F08FD /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.7.7;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		666A1B632D63D636003F08FD /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 666A1B602D63D4E2003F08FD /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6687C3452C95AE87000ECC5D /* Project object */;
 }
