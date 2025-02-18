@@ -15,12 +15,13 @@ struct MainAppView: View {
 
     // Services
     let timelineService: TimelineService
-    let trendingService: TrendingService
+    let trendingService: TrendingService // Make sure TrendingService is here
     let postActionService: PostActionService
     let profileService: ProfileService
     let cacheService: CacheService
     let networkService: NetworkService
     let weatherService: WeatherService
+    
 
     /// Hold a single source of truth for your TimelineViewModel so it’s reused
     @StateObject private var timelineViewModel: TimelineViewModel
@@ -52,7 +53,8 @@ struct MainAppView: View {
             wrappedValue: TimelineViewModel(
                 timelineService: timelineService,
                 weatherService: weatherService,
-                locationManager: LocationManager() // or pass a placeholder; can be replaced later
+                locationManager: LocationManager(), // or pass a placeholder; can be replaced later
+                trendingService: trendingService // Pass trendingService here
             )
         )
 
@@ -92,6 +94,16 @@ struct MainAppView: View {
             }
             .tabItem {
                 Label("Profile", systemImage: "person.circle")
+            }
+            
+            // MARK: - Search Tab
+            NavigationStack {
+                SearchView()
+                    .navigationTitle("Search")
+                    .environmentObject(timelineViewModel) // Inject TimelineViewModel for search functionality
+            }
+            .tabItem {
+                Label("Search", systemImage: "magnifyingglass")
             }
 
             // MARK: - Settings Tab

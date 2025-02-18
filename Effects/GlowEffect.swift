@@ -115,6 +115,3 @@ extension Color {
     }
 }
 
-#Preview {
-    GlowEffect()
-}

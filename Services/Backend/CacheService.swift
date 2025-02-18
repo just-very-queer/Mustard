@@ -91,11 +91,22 @@ final class CacheService: ObservableObject {
     }
 
     /// Prefetches and caches a specified number of posts for offline reading.
-    func prefetchPosts(count: Int, forKey key: String) async {
-        // Fetch posts from the network using the Mastodon API
+    /// - Parameters:
+    ///   - count: The number of posts to prefetch.
+    ///   - key: The cache key to store the posts under.
+    ///   - progress: A closure that is called with the current progress as a percentage.
+   
+    func prefetchPosts(count: Int, forKey key: String, progress: @escaping (Double) -> Void) async {
         do {
+            // Fetch posts from the network using the Mastodon API
             let posts = try await fetchPostsFromMastodon(count: count)
+            
+            // Cache all posts at once
             await cachePosts(posts, forKey: key)
+            
+            // Update progress to 100% after caching is complete
+            progress(100.0)
+            
             logger.info("Prefetched and cached \(posts.count) posts for offline reading.")
         } catch {
             logger.error("Failed to prefetch posts: \(error.localizedDescription)")

@@ -26,7 +26,10 @@ final class ProfileViewModel: ObservableObject {
     func fetchFollowers(for accountId: String) async {
         do {
             let fetchedFollowers = try await profileService.fetchFollowers(for: accountId)
-            followers = fetchedFollowers
+            // Update on the main thread.
+              await MainActor.run {
+                  self.followers = fetchedFollowers
+                }
         } catch {
             await handleError(error, message: "Error fetching followers")
         }

@@ -22,6 +22,7 @@ final class Post: Identifiable, Codable, Equatable {
     @Relationship(deleteRule: .cascade) var mediaAttachments: [MediaAttachment]
     var mentions: [Mention]? // Added mentions
     var url: String?
+    var tags: [Tag]?  // Added tags
 
 
     // MARK: - Relationship (Replies) - Note: Direct nested decoding of replies might be complex
@@ -40,7 +41,9 @@ final class Post: Identifiable, Codable, Equatable {
         favouritesCount: Int = 0,
         repliesCount: Int = 0,
         replies: [Post]? = nil, // Replies can be nil or empty array
-        mentions: [Mention]? = nil // Added mentions to init
+        mentions: [Mention]? = nil, // Added mentions to init
+        tags: [Tag]? = nil // Added tags to init
+
     ) {
         self.id = id
         self.content = content
@@ -54,11 +57,12 @@ final class Post: Identifiable, Codable, Equatable {
         self.mediaAttachments = mediaAttachments
         self.replies = replies
         self.mentions = mentions
+        self.tags = tags // Initialize tags
     }
 
     // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
-        case id, content, createdAt, account, mediaAttachments, replies, mentions
+        case id, content, createdAt, account, mediaAttachments, replies, mentions, tags, url
         case isFavourited = "favourited" // Corrected to "favourited" as per Mastodon API
         case isReblogged = "reblogged" // Corrected to "reblogged" as per Mastodon API
         case reblogsCount = "reblogs_count" // Corrected to snake_case
@@ -80,6 +84,9 @@ final class Post: Identifiable, Codable, Equatable {
         self.mediaAttachments = try container.decodeIfPresent([MediaAttachment].self, forKey: .mediaAttachments) ?? [] // Decode with default value
         self.replies = try container.decodeIfPresent([Post].self, forKey: .replies) ?? [] // Decode replies as optional, default to empty array
         self.mentions = try container.decodeIfPresent([Mention].self, forKey: .mentions) // Decode with default value
+        self.tags = try container.decodeIfPresent([Tag].self, forKey: .tags) // Decode tags
+        self.url = try container.decodeIfPresent(String.self, forKey: .url)
+
     }
 
     func encode(to encoder: Encoder) throws {
@@ -96,6 +103,9 @@ final class Post: Identifiable, Codable, Equatable {
         try container.encode(mediaAttachments, forKey: .mediaAttachments)
         try container.encodeIfPresent(replies, forKey: .replies) // Encode optional replies
         try container.encodeIfPresent(mentions, forKey: .mentions)
+        try container.encodeIfPresent(tags, forKey: .tags) // Encode tags
+        try container.encodeIfPresent(url, forKey: .url)
+
     }
 
     // MARK: - Equatable Conformance
@@ -110,7 +120,9 @@ final class Post: Identifiable, Codable, Equatable {
         lhs.favouritesCount == rhs.favouritesCount &&
         lhs.repliesCount == rhs.repliesCount &&
         lhs.mediaAttachments == rhs.mediaAttachments &&
-        lhs.mentions == rhs.mentions // Add mentions to equality check
+        lhs.mentions == rhs.mentions &&
+        lhs.tags == rhs.tags && // Compare tags
+        lhs.url == rhs.url
         // Note: 'replies' relationship is intentionally omitted from Equatable to avoid potential infinite recursion.
     }
 }

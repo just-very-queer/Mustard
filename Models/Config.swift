@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftData
 
 // MARK: - OAuth Config
 struct OAuthConfig: Decodable, Sendable {
@@ -36,7 +37,7 @@ struct RegisterResponse: Decodable {
     
     // If Mastodon includes extra fields like `scopes`, `redirect_uris`, etc.
     // .convertFromSnakeCase will decode them if you list them here in camelCase, e.g.:
-    // let scopes: [String]?   // Mastodon might return `scopes:["read","write","follow","push"]`
+    // let scopes: [String]?   // Mastodon might return `scopes:["read","write","follow","push"]`
     // let redirectUris: [String]? // `redirect_uris`
 }
 
@@ -63,6 +64,7 @@ struct TokenResponse: Codable, Sendable {
     //  case expiresIn = "expires_in"
     // }
 }
+
 // MARK: - WeatherData
 
 struct WeatherData: Decodable {
@@ -149,10 +151,78 @@ struct Mention: Codable, Identifiable, Equatable {
 }
 
 // MARK: - Tag
-struct Tag: Codable, Equatable {
-    let name: String
-    let url: URL
+@Model
+class Tag: Codable, Identifiable {
+    var name: String
+    var url: URL? // Make URL optional
+    var history: [History]? // Keep this as it's part of the response
+
+    // No 'id' property is needed here. 'name' is sufficient.
+
+    init(name: String, url: URL?, history: [History]? = nil) {
+        self.name = name
+        self.url = url
+        self.history = history
+    }
+
+    // MARK: - Codable
+
+    enum CodingKeys: String, CodingKey {
+        case name, url, history
+    }
+
+    required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+
+        // Handle URL as a String and convert to URL
+        let urlString = try container.decode(String.self, forKey: .url)
+        url = URL(string: urlString) // Convert String to URL, handling potential failure
+
+        history = try container.decodeIfPresent([History].self, forKey: .history)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(url?.absoluteString, forKey: .url) // Encode as String
+        try container.encodeIfPresent(history, forKey: .history)
+    }
 }
+
+// History struct remains the same (it's decoding correctly)
+struct History: Codable {
+    let day: String
+    let accounts: String // API returns counts as strings
+    let uses: String
+
+    // Custom initializer for converting strings to Ints if needed
+    init(day: String, accounts: String, uses: String) {
+        self.day = day
+        self.accounts = accounts
+        self.uses = uses
+    }
+
+    //Codable
+    enum CodingKeys: String, CodingKey{
+        case day, accounts, uses
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        day = try container.decode(String.self, forKey: .day)
+        accounts = try container.decode(String.self, forKey: .accounts)
+        uses = try container.decode(String.self, forKey: .uses)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(day, forKey: .day)
+        try container.encode(accounts, forKey: .accounts)
+        try container.encode(uses, forKey: .uses)
+    }
+}
+
 // MARK: - Minimal Model for /api/v1/instance
 /// Represents a small subset of instance info returned by the Mastodon server.
 struct InstanceInfo: Decodable {

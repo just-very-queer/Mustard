@@ -6,13 +6,17 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 struct SettingsView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
-    @EnvironmentObject var locationManager: LocationManager
+    @EnvironmentObject var locationManager: LocationManager // Make sure LocationManager is available
     @EnvironmentObject var cacheService: CacheService
     @State private var isShowingLogoutAlert = false
     @State private var selectedCacheSize: Int = 100 // Default cache size
+    @AppStorage("isDarkMode") private var isDarkMode = false // Dark mode setting
+    @State private var isCachingPosts = false // State to track caching progress
+    @State private var cacheProgress: Double = 0.0 // Progress value
 
     var body: some View {
         NavigationView {
@@ -26,7 +30,7 @@ struct SettingsView: View {
                                     url: URL(string: user.avatar ?? "https://example.com/default_avatar.png"),
                                     size: 50
                                 )
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment:.leading, spacing: 4) {
                                     Text(user.display_name ?? user.username)
                                         .font(.headline)
                                     Text("@\(user.username)")
@@ -34,8 +38,8 @@ struct SettingsView: View {
                                         .foregroundColor(.gray)
                                 }
                             }
-                            .padding(.vertical, 8)
                         }
+                        .padding(.vertical, 8)
                     } else {
                         Text("Not logged in")
                             .foregroundColor(.gray)
@@ -46,18 +50,14 @@ struct SettingsView: View {
 
                 // Preferences Section
                 Section(header: Text("Preferences").font(.headline)) {
-                    Toggle(isOn: Binding(
-                        get: { locationManager.userLocation != nil },
-                        set: { _ in locationManager.requestLocationPermission() }
-                    )) {
+                    Toggle(isOn: $isDarkMode) {
                         HStack {
-                            Image(systemName: "location.circle")
+                            Image(systemName: "moon.circle")
                                 .foregroundColor(.blue)
-                            Text("Enable Location Services")
+                            Text("Dark Mode")
                         }
                     }
 
-                    // Cache Size Picker
                     Picker("Cache Posts for Offline Reading", selection: $selectedCacheSize) {
                         Text("100 Posts").tag(100)
                         Text("500 Posts").tag(500)
@@ -67,13 +67,36 @@ struct SettingsView: View {
 
                     Button(action: {
                         Task {
-                            await cacheService.prefetchPosts(count: selectedCacheSize, forKey: "offline_posts")
+                            isCachingPosts = true
+                            await cacheService.prefetchPosts(count: selectedCacheSize, forKey: "offline_posts", progress: { progress in
+                                // Update the progress here
+                                cacheProgress = progress
+                            })
+                            isCachingPosts = false
                         }
                     }) {
                         HStack {
                             Image(systemName: "arrow.down.circle.fill")
                                 .foregroundColor(.blue)
                             Text("Cache Posts for Offline Reading")
+                        }
+                    }
+                    
+                    if isCachingPosts {
+                        ProgressView("Caching Posts...", value: cacheProgress, total: 100)
+                            .progressViewStyle(LinearProgressViewStyle())
+                            .padding()
+                    }
+
+                    Button("Request Notification Permission") {
+                        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, error in
+                            if granted {
+                                print("Notification permission granted.")
+                            } else if let error = error {
+                                print("Error requesting notification permission: \(error.localizedDescription)")
+                            } else {
+                                print("Notification permission denied.")
+                            }
                         }
                     }
                 }
@@ -105,5 +128,7 @@ struct SettingsView: View {
                 )
             }
         }
+        .preferredColorScheme(isDarkMode ? .dark : .light) // Corrected Dark Mode toggle
     }
 }
+

@@ -320,22 +320,33 @@ public class NetworkService {
     
     // MARK: - Helper Methods
     
-    /// Constructs a full URL from a path and optional override base URL.
-    ///
+    /// Constructs a full URL from a path, optional base URL override, and query items.
     /// - Parameters:
-    ///   - path: The API path (e.g., "/api/v1/apps").
+    ///   - path: The API path (e.g., "/api/v1/trends").
     ///   - baseURLOverride: Optional URL to override the base URL from Keychain.
+    ///   - queryItems: Optional query items to append to the URL.
     /// - Returns: A fully constructed `URL`.
     /// - Throws: `AppError` if the base URL is missing or invalid.
-    func endpointURL(_ path: String, baseURLOverride: URL? = nil) async throws -> URL {
+    func endpointURL(_ path: String, baseURLOverride: URL? = nil, queryItems: [URLQueryItem]? = nil) async throws -> URL {
+        let baseURL: URL
         if let override = baseURLOverride {
-            return override.appendingPathComponent(path)
+            baseURL = override
+        } else {
+            guard let baseURLString = await loadFromKeychain(key: "baseURL"),
+                  let url = URL(string: baseURLString) else {
+                throw AppError(mastodon: .missingCredentials)
+            }
+            baseURL = url
         }
-        guard let baseURLString = await loadFromKeychain(key: "baseURL"),
-              let baseURL = URL(string: baseURLString) else {
-            throw AppError(mastodon: .missingCredentials)
+        
+        var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
+        urlComponents?.queryItems = queryItems
+        
+        guard let url = urlComponents?.url else {
+            throw AppError(network: .invalidURL) // Corrected line
         }
-        return baseURL.appendingPathComponent(path)
+        
+        return url
     }
     
     /// Builds a `URLRequest` with optional body and Bearer token.
@@ -577,6 +588,30 @@ public class NetworkService {
             logger.error("Failed to load \(key, privacy: .public) from Keychain: \(error.localizedDescription)")
             return nil
         }
+    }
+    
+    // MARK: - Search and Trending Posts
+
+    /// Searches for posts matching the given query.
+    /// - Parameter query: The search query.
+    /// - Returns: An array of `Post` objects matching the query.
+    /// - Throws: `AppError` if the request fails.
+    func searchPosts(query: String) async throws -> [Post] {
+        let endpoint = "/api/v2/search"
+        let queryItems = [URLQueryItem(name: "q", value: query)]
+        let url = try await endpointURL(endpoint, queryItems: queryItems)
+        
+        return try await fetchData(url: url, method: "GET", type: [Post].self)
+    }
+
+    /// Fetches trending posts from the Mastodon API.
+    /// - Returns: An array of `Post` objects that are currently trending.
+    /// - Throws: `AppError` if the request fails.
+    func fetchTrendingPosts() async throws -> [Post] {
+        let endpoint = "/api/v1/trends"
+        let url = try await endpointURL(endpoint)
+        
+        return try await fetchData(url: url, method: "GET", type: [Post].self)
     }
 }
 

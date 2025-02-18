@@ -10,6 +10,7 @@ import SafariServices
 import CoreLocation
 import Combine
 import SwiftData
+import SwiftSoup
 
 // MARK: - Basic Components
 
@@ -198,13 +199,13 @@ struct FullScreenImageView: View {
 
 struct SafariWebView: View {
     let post: Post
-    
+
     var body: some View {
-        if let url = post.url, let urlObj = URL(string: url) {
-            SafariView(url: urlObj)
+        if let urlString = post.url, let url = URL(string: urlString), let _ = try? SwiftSoup.parse(post.content) {
+            SafariView(url: url)
         } else {
-            Text("No URL available for this post.")
-                .foregroundColor(.red)
+            Text("No valid URL available for this post.")
+              .foregroundColor(.red)
         }
     }
 }

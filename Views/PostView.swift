@@ -28,21 +28,23 @@ struct PostView: View {
         VStack(alignment: .leading, spacing: 15) {
             UserHeaderView(post: post)
             
+            // Display error message if any
             if let networkError = networkError {
                 Text("Error: \(networkError)")
                     .foregroundColor(.red)
                     .padding()
             }
-
+            
             // Post content and media
             if showBrowserView {
-                SafariWebView(post: post)
+                SafariWebView(post: post)  // Reuse SafariWebView here
             } else if showImageViewer {
                 FullScreenImageView(imageURL: post.mediaAttachments.first?.url ?? URL(string: "https://example.com")!, isPresented: $showImageViewer)
             } else {
                 PostContentView(post: post, showFullText: $showFullText)
             }
             
+            // Media attachments
             MediaAttachmentView(post: post, onImageTap: {
                 self.showImageViewer.toggle()
             })
@@ -71,6 +73,7 @@ struct PostView: View {
             }
             .padding(.top, 5)
             
+            // Expandable comment section
             if showCommentSection {
                 ExpandedCommentsSection(post: post, isExpanded: $isExpanded, commentText: $commentText, viewModel: viewModel)
             }
@@ -84,7 +87,6 @@ struct PostView: View {
         .onTapGesture {
             showBrowserView.toggle()
         }
-        .preferredColorScheme(.dark) // Ensure Dark Mode support
     }
 }
 
@@ -156,6 +158,7 @@ struct PostContentView: View {
                     .padding(.horizontal)
             }
             
+            // Show "Show More" button if post content exceeds a certain limit
             if !showFullText && post.content.components(separatedBy: .newlines).count > 3 {
                 ShowMoreButton(showFullText: $showFullText)
             }
@@ -164,6 +167,7 @@ struct PostContentView: View {
     }
 }
 
+// MARK: - ShowMoreButton (Show More / Show Less button)
 struct ShowMoreButton: View {
     @Binding var showFullText: Bool
     
@@ -273,4 +277,3 @@ extension String {
         }
     }
 }
-
