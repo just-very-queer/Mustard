@@ -195,11 +195,27 @@ class TimelineService {
 
     func fetchPosts(page: Int) async -> [Post] {
         var endpoint = "/api/v1/timelines/home"
-        
-        if page > 1, let lastPostID = timelinePosts.last?.id {
-            endpoint += "?max_id=\(lastPostID)"
+
+        // Use max_id for pagination instead of page number for pages > 1
+        // Assuming timelinePosts is accessible within this scope and holds the currently loaded posts
+        // and assuming posts are ordered with newest first, so last post is the oldest currently loaded
+        // NOTE: You need to have `timelinePosts` defined and maintained in your TimelineService or TimelineViewModel
+        // For example:  @Published var timelinePosts: [Post] = [] in your TimelineViewModel
+        // and append fetchedPosts to timelinePosts in your viewModel when using this fetchPosts function.
+        // This function ONLY handles fetching and caching, not updating the viewModel's timelinePosts directly.
+
+        // Check if page is greater than 1 and if there are existing timeline posts to get the last post's id
+        // to use as max_id for pagination.
+        // Important: make sure timelinePosts is populated BEFORE calling fetchPosts with page > 1,
+        // otherwise lastPostID will be nil, and pagination might not work as expected.
+        // You should fetch page 1 first to initialize timelinePosts.
+        if page > 1, !timelinePosts.isEmpty, let lastPost = timelinePosts.last {
+            endpoint += "?max_id=\(lastPost.id)"
+        } else {
+            endpoint += "?page=\(page)" // Fallback to page based if it's the first page (or timelinePosts is not available for max_id)
         }
-        
+
+
         do {
             let fetchedPosts = try await networkService.request(
                 endpoint: endpoint,
@@ -210,9 +226,17 @@ class TimelineService {
             // Cache new posts for better performance
             if !fetchedPosts.isEmpty {
                 Task {
-                    let updatedPosts = self.timelinePosts + fetchedPosts
-                    await cacheService.cachePosts(updatedPosts, forKey: "timeline")
-                    logger.info("Updated cache with \(fetchedPosts.count) new posts")
+                    // Assuming cacheService and cachePosts are available
+                    // and assuming timelinePosts is already available and contains previously fetched posts.
+                    // CAUTION: This cache update logic ASSUMES timelinePosts is the CURRENT SOURCE OF TRUTH
+                    // and you intend to APPEND the newly fetched posts to the existing timelinePosts for caching.
+                    // If you intend to REPLACE the cache with ONLY the newly fetched posts, you should adjust this logic.
+
+                    // Correct way to update cache by appending fetchedPosts to the EXISTING timelinePosts.
+                    // This assumes timelinePosts contains the posts already loaded in the current session.
+                    let updatedPosts = timelinePosts + fetchedPosts // Append new posts to existing ones
+                    await cacheService.cachePosts(updatedPosts, forKey: "timeline") // Cache the combined list
+                    logger.info("Updated cache with \(fetchedPosts.count) new posts, total cached: \(updatedPosts.count)")
                 }
             }
 

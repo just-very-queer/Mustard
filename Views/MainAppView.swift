@@ -12,7 +12,7 @@ import SwiftData
 struct MainAppView: View {
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
-
+    
     // Services
     let timelineService: TimelineService
     let trendingService: TrendingService // Make sure TrendingService is here
@@ -22,14 +22,14 @@ struct MainAppView: View {
     let networkService: NetworkService
     let weatherService: WeatherService
     
-
+    
     /// Hold a single source of truth for your TimelineViewModel so it’s reused
     @StateObject private var timelineViewModel: TimelineViewModel
-
+    
     /// Hold a single source of truth for your ProfileViewModel
     @StateObject private var profileViewModel: ProfileViewModel
     
-
+    
     /// Custom initializer to inject everything we need:
     init(
         timelineService: TimelineService,
@@ -47,23 +47,24 @@ struct MainAppView: View {
         self.cacheService = cacheService
         self.networkService = networkService
         self.weatherService = weatherService
-
+        
         // Initialize the TimelineViewModel
         _timelineViewModel = StateObject(
             wrappedValue: TimelineViewModel(
                 timelineService: timelineService,
                 weatherService: weatherService,
                 locationManager: LocationManager(), // or pass a placeholder; can be replaced later
-                trendingService: trendingService // Pass trendingService here
+                trendingService: trendingService, // Pass trendingService here
+                postActionService: postActionService // Pass postActionService
             )
         )
-
+        
         // Initialize the ProfileViewModel
         _profileViewModel = StateObject(
             wrappedValue: ProfileViewModel(profileService: profileService)
         )
     }
-
+    
     var body: some View {
         TabView {
             // MARK: - Home Tab
@@ -75,7 +76,7 @@ struct MainAppView: View {
             .tabItem {
                 Label("Home", systemImage: "house")
             }
-
+            
             // MARK: - Profile Tab
             NavigationStack {
                 if let currentUser = authViewModel.currentUser {
@@ -105,7 +106,7 @@ struct MainAppView: View {
             .tabItem {
                 Label("Search", systemImage: "magnifyingglass")
             }
-
+            
             // MARK: - Settings Tab
             NavigationStack {
                 SettingsView()

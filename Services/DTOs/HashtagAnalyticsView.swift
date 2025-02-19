@@ -5,21 +5,20 @@
 //  Created by VAIBHAV SRIVASTAVA on 18/02/25.
 //
 
-// HashtagAnalyticsView.swift
 import SwiftUI
 import Charts
 
 struct HashtagAnalyticsView: View {
     let hashtag: String
-    let posts: [Post]
-    @Binding var selectedTimeRange: SearchView.TimeRange
+    let history: [TagHistory]
+    @Binding var selectedTimeRange: SearchViewModel.TimeRange // Corrected
     @Binding var showHashtagAnalytics: Bool // Add this binding
 
     @State private var sortOrder: SortOrder = .latest
 
     enum SortOrder {
         case latest
-        case topLiked
+        case topLiked //Not used for Chart, kept for future expansion to other view with list of posts
     }
 
     var body: some View {
@@ -30,28 +29,31 @@ struct HashtagAnalyticsView: View {
                     .padding()
 
                 Picker("Time Range", selection: $selectedTimeRange) {
-                    ForEach(SearchView.TimeRange.allCases) { range in
+                    ForEach(SearchViewModel.TimeRange.allCases) { range in // Corrected
                         Text(range.rawValue).tag(range)
                     }
                 }
                 .pickerStyle(SegmentedPickerStyle())
                 .padding()
+                .onChange(of: selectedTimeRange) { oldValue, newValue in //Listen to time range and update on change.  Important
+                    //Could re-fetch data here if needed, based on the new time range
+                }
 
-                let filteredPosts = filteredPosts(for: selectedTimeRange)
+                let (filteredHistory,maxUses) = filteredHistory(for: selectedTimeRange)
 
-                Chart {
-                    ForEach(filteredPosts, id: \.id) { post in
+
+                Chart(filteredHistory, id: \.day) { item in
                         LineMark(
-                            x: .value("Date", post.createdAt),
-                            y: .value("Likes", post.favouritesCount)
+                            x: .value("Date", formattedDate(from: item.day)),
+                            y: .value("Uses", Int(item.uses) ?? 0)
                         )
                         .foregroundStyle(Color.blue)
                         PointMark(
-                            x: .value("Date", post.createdAt),
-                            y: .value("Likes", post.favouritesCount)
+                            x: .value("Date", formattedDate(from: item.day)),
+                            y: .value("Uses", Int(item.uses) ?? 0)
                         )
                         .foregroundStyle(Color.blue)
-                    }
+
                 }
                 .frame(height: 200)
                 .padding()
@@ -77,51 +79,27 @@ struct HashtagAnalyticsView: View {
                         }
                     }
                 }
+                .chartYScale(domain: 0...(maxUses + maxUses/5)) //Dynamic y Scale
 
-                List {
-                    Section(header:
-                                HStack {
-                                    Text("Posts")
-                                    Spacer()
-                                    Picker("Sort Order", selection: $sortOrder) {
-                                        Text("Latest").tag(SortOrder.latest)
-                                        Text("Top Liked").tag(SortOrder.topLiked)
-                                    }
-                                    .pickerStyle(SegmentedPickerStyle())
-                                }
-                                .textCase(nil)
-                            ) {
-                        ForEach(sortedPosts(filteredPosts), id: \.id) { post in
-                            PostRow(post: post)
-                        }
-                    }
-                }
-                .listStyle(.plain)
             }
             .navigationTitle("Hashtag Analytics")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
-                        showHashtagAnalytics = false // Correct: Modifying the binding
+                        showHashtagAnalytics = false  //Correct: Modifying the binding
                     }
                 }
             }
         }
     }
 
-    func sortedPosts(_ posts: [Post]) -> [Post] {
-        switch sortOrder {
-        case .latest:
-            return posts.sorted { $0.createdAt > $1.createdAt }
-        case .topLiked:
-            return posts.sorted { $0.favouritesCount > $1.favouritesCount }
-        }
-    }
 
-    func filteredPosts(for range: SearchView.TimeRange) -> [Post] {
+
+    func filteredHistory(for range: SearchViewModel.TimeRange) -> ([TagHistory], Int) { //Corrected
         let now = Date()
         let calendar = Calendar.current
-        let startDate: Date
+        var startDate: Date
+        var filteredData: [TagHistory] = []
 
         switch range {
         case .day:
@@ -133,37 +111,55 @@ struct HashtagAnalyticsView: View {
         case .year:
             startDate = calendar.date(byAdding: .year, value: -1, to: now)!
         }
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd"  // Important for consistent comparison
 
-        return posts.filter { post in
-            post.tags?.contains { $0.name.lowercased() == hashtag.lowercased() } ?? false &&
-            post.createdAt >= startDate
+        for item in history {
+            guard let dayInt = Int(item.day),
+                  let itemDate = dateFormatter.date(from: String(dayInt)) else {
+                continue // Skip invalid data
+            }
+            if itemDate >= startDate {
+                filteredData.append(item)
+            }
+        }
+        let maxUses = filteredData.compactMap { Int($0.uses) }.max() ?? 0
+
+        return (filteredData,maxUses)
+    }
+
+
+    func formattedDate(from timestampString: String) -> Date { //Corrected Return type
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd" //Match the API format
+        return dateFormatter.date(from: timestampString) ?? Date() //Return a default date.
+
+    }
+
+    func timeAxisStride(for range: SearchViewModel.TimeRange) -> Calendar.Component { //Corrected
+        switch range {
+        case .day:       return .hour
+        case .week:      return .day
+        case .month:     return .day
+        case .year:      return .month
         }
     }
 
-    func timeAxisStride(for range: SearchView.TimeRange) -> Calendar.Component {
+    func timeAxisCount(for range: SearchViewModel.TimeRange) -> Int { //Corrected
         switch range {
-        case .day:         return .hour
-        case .week:        return .day
-        case .month:       return .day
-        case .year:        return .month
+        case .day:       return 6 // Show 6 hour intervals (24 / 6 = 4)
+        case .week:      return 7 // Show 7 days
+        case .month:     return 6  // Show roughly 6 intervals
+        case .year:      return 12 //Show all 12 months
         }
     }
 
-    func timeAxisCount(for range: SearchView.TimeRange) -> Int {
+    func timeAxisFormat(for range: SearchViewModel.TimeRange) -> Date.FormatStyle { //Corrected
         switch range {
-        case .day:     return 6
-        case .week:    return 7
-        case .month:   return 6
-        case .year:    return 12
-        }
-    }
-
-    func timeAxisFormat(for range: SearchView.TimeRange) -> Date.FormatStyle {
-        switch range {
-        case .day:         return .dateTime.hour()
-        case .week:        return .dateTime.weekday()
-        case .month:       return .dateTime.day()
-        case .year:        return .dateTime.month()
+        case .day:       return .dateTime.hour()
+        case .week:      return .dateTime.weekday() // Day of week name
+        case .month:     return .dateTime.day()   // Day of the Month
+        case .year:      return .dateTime.month()   // Month
         }
     }
 }

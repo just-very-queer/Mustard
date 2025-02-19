@@ -43,7 +43,8 @@ struct PostData: Codable {
 
         let acc = account.toAccount(instanceURL: instanceURL)
         let attachments = media_attachments.map { $0.toMediaAttachment() }
-        let postMentions = mentions?.map { $0.toMention() } // Convert MentionData to Mention
+        let postMentions = mentions?.map { $0.toMention() } ?? []
+        let postTags = tags?.map { $0.toTag() } ?? []
 
         return Post(
             id: id,
@@ -56,7 +57,8 @@ struct PostData: Codable {
             reblogsCount: reblogs_count,
             favouritesCount: favourites_count,
             repliesCount: replies_count,
-            mentions: postMentions // Add mentions to the Post object
+            mentions: postMentions,
+            tags: postTags
         )
     }
 }
@@ -92,9 +94,9 @@ struct AccountData: Codable {
             id: id,
             username: username,
             display_name: display_name ?? username,
-            avatar: URL(string: avatar) ?? URL(string: "https://example.com/default_avatar.png")!,
+            avatar: URL(string: avatar, relativeTo: instanceURL) ?? URL(string: "https://example.com/default_avatar.png")!,
             acct: acct,
-            url: URL(string: url)!,
+            url: URL(string: url, relativeTo: instanceURL)!,
             accessToken: nil,
             followers_count: followers_count,
             following_count: following_count,
@@ -103,8 +105,8 @@ struct AccountData: Codable {
             isBot: bot,
             isLocked: locked,
             note: note,
-            header: URL(string: header ?? ""),
-            header_static: URL(string: header_static ?? "")
+            header: URL(string: header ?? "", relativeTo: instanceURL),
+            header_static: URL(string: header_static ?? "", relativeTo: instanceURL)
         )
     }
 }

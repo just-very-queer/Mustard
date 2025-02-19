@@ -31,16 +31,18 @@ final class TimelineViewModel: ObservableObject {
     private let timelineService: TimelineService
     private let weatherService: WeatherService
     private let locationManager: LocationManager
-    private let trendingService: TrendingService // Add trendingService
+    private let trendingService: TrendingService
+    let postActionService: PostActionService
     private var cancellables = Set<AnyCancellable>()
     private var weatherFetchOnce = false
     private var currentPage = 0
     
-    init(timelineService: TimelineService, weatherService: WeatherService, locationManager: LocationManager, trendingService: TrendingService) { // Add trendingService parameter
+    init(timelineService: TimelineService, weatherService: WeatherService, locationManager: LocationManager, trendingService: TrendingService, postActionService: PostActionService) {
         self.timelineService = timelineService
         self.weatherService = weatherService
         self.locationManager = locationManager
-        self.trendingService = trendingService // Initialize trendingService
+        self.trendingService = trendingService
+        self.postActionService = postActionService
         setupSubscriptions()
         setupLocationListener()
     }
@@ -141,31 +143,29 @@ final class TimelineViewModel: ObservableObject {
         return await timelineService.fetchPosts(page: page)
     }
     
-    // Function to like a post
+    // MARK: - Post Actions
     func likePost(_ post: Post) async {
         updateLoadingState(for: post.id, isLoading: true)
         defer { updateLoadingState(for: post.id, isLoading: false) }
         
         do {
-            try await timelineService.toggleLike(for: post) // Toggle like action in service
+            try await timelineService.toggleLike(for: post)
         } catch {
             alertError = AppError(message: "Failed to like the post", underlyingError: error)
         }
     }
     
-    // Function to repost a post
     func repostPost(_ post: Post) async {
         updateLoadingState(for: post.id, isLoading: true)
         defer { updateLoadingState(for: post.id, isLoading: false) }
         
         do {
-            try await timelineService.toggleRepost(for: post) // Toggle repost action in service
+            try await timelineService.toggleRepost(for: post)
         } catch {
             alertError = AppError(message: "Failed to repost the post", underlyingError: error)
         }
     }
     
-    // Function to comment on a post
     func comment(on post: Post, content: String) async {
         updateLoadingState(for: post.id, isLoading: true)
         defer { updateLoadingState(for: post.id, isLoading: false) }
@@ -198,7 +198,6 @@ final class TimelineViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Post Actions
     func toggleLike(on post: Post) async {
         updateLoadingState(for: post.id, isLoading: true)
         defer { updateLoadingState(for: post.id, isLoading: false) }
@@ -222,35 +221,46 @@ final class TimelineViewModel: ObservableObject {
     }
     
     // MARK: - Search and Trending
-    func searchPosts(query: String) async throws -> [Post] {
+    func search(query: String, type: String?, limit: Int?, resolve: Bool?, excludeUnreviewed: Bool?) async throws -> SearchResults {
         guard let baseURLString = try? await KeychainHelper.shared.read(service: "MustardKeychain", account: "baseURL"),
               let baseURL = URL(string: baseURLString) else {
             throw AppError(message: "Base URL not found")
         }
-
+        
         var components = URLComponents(url: baseURL.appendingPathComponent("/api/v2/search"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [
-            URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "type", value: "statuses"),
-            URLQueryItem(name: "resolve", value: "true") // Resolve non-local accounts
-        ]
-
+        var queryItems = [URLQueryItem(name: "q", value: query)]
+        
+        if let type = type {
+            queryItems.append(URLQueryItem(name: "type", value: type))
+        }
+        if let limit = limit {
+            queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        if let resolve = resolve {
+            queryItems.append(URLQueryItem(name: "resolve", value: String(resolve)))
+        }
+        if let excludeUnreviewed = excludeUnreviewed {
+            queryItems.append(URLQueryItem(name: "exclude_unreviewed", value: String(excludeUnreviewed)))
+        }
+        
+        components.queryItems = queryItems
+        
         guard let url = components.url else {
             throw AppError(message: "Invalid search URL")
         }
-
-        return try await NetworkService.shared.fetchData(url: url, method: "GET", type: [Post].self)
+        
+        return try await NetworkService.shared.fetchData(url: url, method: "GET", type: SearchResults.self)
     }
-
+    
     func fetchTrendingHashtags() async throws -> [Tag] {
         guard let baseURLString = try? await KeychainHelper.shared.read(service: "MustardKeychain", account: "baseURL"),
               let baseURL = URL(string: baseURLString) else {
             throw AppError(message: "Base URL not found")
         }
-
+        
         let endpoint = "/api/v1/trends/tags"
         let url = baseURL.appendingPathComponent(endpoint)
-
+        
         do {
             let tags = try await NetworkService.shared.fetchData(url: url, method: "GET", type: [Tag].self)
             return tags
@@ -262,19 +272,15 @@ final class TimelineViewModel: ObservableObject {
     func followHashtag(_ hashtag: String) async throws {
         let encodedHashtag = hashtag.trimmingCharacters(in: .whitespacesAndNewlines).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
         guard let encodedHashtagName = encodedHashtag else {
-            throw AppError(message: "Invalid hashtag format.") // Generic error for encoding failure
+            throw AppError(message: "Invalid hashtag format.")
         }
         
         let endpoint = "/api/v1/tags/\(encodedHashtagName)/follow"
         
         do {
-            // Assuming an empty response is expected on success for follow hashtag API
             _ = try await NetworkService.shared.request(endpoint: endpoint, method: .post, responseType: EmptyResponse.self)
-            // Handle success - maybe update some local state if needed
             print("Successfully followed hashtag: \(hashtag)")
-            // Optionally, update local storage or UI to reflect followed hashtag
         } catch {
-            // Handle error -  set alertError to display error to user
             if let appError = error as? AppError {
                 self.alertError = appError
             } else {
@@ -282,7 +288,6 @@ final class TimelineViewModel: ObservableObject {
             }
         }
     }
-    
     
     // MARK: - Loading State Helper
     private func updateLoadingState(for postId: String, isLoading: Bool) {
@@ -295,7 +300,7 @@ final class TimelineViewModel: ObservableObject {
         return postLoadingStates[post.id] ?? false
     }
     
-    // MARK: - Private account helper (replace with your actual auth mechanism)
+    // MARK: - Private account helper
     private func authAccount() -> Account? {
         return Account(
             id: "current-user-id",
@@ -321,7 +326,12 @@ final class TimelineViewModel: ObservableObject {
     }
 }
 
-// MARK: - Empty Response struct (for APIs that return no body on success)
-private struct EmptyResponse: Decodable {
-    
+// MARK: - SearchResults
+struct SearchResults: Decodable {
+    var accounts: [Account]
+    var statuses: [Post]
+    var hashtags: [Tag]
 }
+
+// MARK: - Empty Response
+private struct EmptyResponse: Decodable {}

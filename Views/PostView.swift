@@ -96,17 +96,28 @@ struct ExpandedCommentsSection: View {
     @Binding var isExpanded: Bool
     @Binding var commentText: String
     @ObservedObject var viewModel: TimelineViewModel
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Comments")
                 .font(.headline)
                 .padding(.horizontal)
                 .foregroundColor(.primary)
-            
+
+
             ForEach(post.replies ?? [], id: \.id) { comment in
                 VStack(alignment: .leading, spacing: 5) {
-                    UserHeaderView(post: comment)
+                    HStack(spacing: 10) { // Using HStack for avatar and user info, like in Version 1, but cleaner
+                        AvatarView(url: comment.account?.avatar, size: 30)
+                        VStack(alignment: .leading) {
+                            Text(comment.account?.display_name ?? "")
+                                .font(.subheadline)
+                            Text("@\(comment.account?.acct ?? "")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal) // Padding for user info
                     Text(comment.content)
                         .font(.body)
                         .padding(.horizontal)
@@ -114,14 +125,16 @@ struct ExpandedCommentsSection: View {
                 }
                 .padding(.bottom, 5)
             }
-            
+
+
             // Add new comment input
             HStack {
                 TextField("Add a comment...", text: $commentText)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .padding(.horizontal)
                     .foregroundColor(.primary)
-                
+
+
                 Button(action: {
                     Task {
                         await viewModel.comment(on: post, content: commentText)

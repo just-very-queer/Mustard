@@ -46,7 +46,7 @@ struct TokenResponse: Codable, Sendable {
     let accessToken: String
     let tokenType: String
     let scope: String
-    let createdAt: Int?
+    let createdAt: String?
     let expiresIn: Int? // Add this back, but make it optional
     
     // Removed expiresIn as per recommendations for targeted decoding and if not essential for your app.
