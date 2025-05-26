@@ -191,23 +191,111 @@ struct UserPostsAndRepliesView: View {
 }
 
 // --- UserMediaView ---
-// IMPORTANT: This requires fetching posts with `only_media=true`.
-// You'll need a separate property and fetch function in ProfileViewModel for this.
 struct UserMediaView: View {
-   let user: User
-   @EnvironmentObject var profileViewModel: ProfileViewModel // Needs a specific `userMediaPosts` property
+    @EnvironmentObject var viewModel: ProfileViewModel // Use EnvironmentObject as it's passed down
+    @EnvironmentObject var timelineViewModel: TimelineViewModel // For PostDetailView navigation via PostView
+    let user: User // Pass the user to get accountID
 
-   var body: some View {
-       // TODO: Fetch and display posts with media from profileViewModel
-        // Example: ForEach(profileViewModel.userMediaPosts) { post ... }
-        Text("Media View - Implementation Needed")
-            .frame(maxWidth: .infinity) // Center text
-            .foregroundColor(.gray)
-            .padding()
-            .onAppear {
-                 // Task { await profileViewModel.fetchUserMediaPosts(for: user.id) } // Example fetch call
+    // Define grid layout
+    private let gridItems: [GridItem] = [
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2),
+        GridItem(.flexible(), spacing: 2) // 3 columns
+    ]
+    
+    @State private var selectedPost: Post? = nil
+
+    var body: some View {
+        Group { // Use Group to handle conditional logic at the top level
+            if viewModel.isLoadingMediaPosts && viewModel.mediaPosts.isEmpty {
+                ProgressView("Loading Media...")
+                    .frame(maxWidth: .infinity)
+                    .padding()
+            } else if viewModel.mediaPosts.isEmpty {
+                Text("No media posts yet.")
+                    .foregroundColor(.gray)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: gridItems, spacing: 2) {
+                        ForEach(viewModel.mediaPosts) { post in
+                            // Ensure there's a media attachment and a URL
+                            if let firstAttachment = post.mediaAttachments.first,
+                               let thumbnailUrl = URL(string: firstAttachment.previewUrl ?? firstAttachment.url ?? "") {
+                                
+                                Button(action: {
+                                    self.selectedPost = post
+                                }) {
+                                    AsyncImage(url: thumbnailUrl) { phase in
+                                        switch phase {
+                                        case .empty:
+                                            ProgressView()
+                                                .aspectRatio(1, contentMode: .fill) // Maintain square shape
+                                        case .success(let image):
+                                            image
+                                                .resizable()
+                                                .aspectRatio(1, contentMode: .fill)
+                                        case .failure:
+                                            Image(systemName: "photo.fill") // Placeholder for failure
+                                                .resizable()
+                                                .aspectRatio(1, contentMode: .fit)
+                                                .foregroundColor(.gray)
+                                                .padding() // Add some padding to placeholder
+                                                .background(Color.gray.opacity(0.1)) // Background for placeholder
+                                        @unknown default:
+                                            EmptyView()
+                                        }
+                                    }
+                                }
+                                .aspectRatio(1, contentMode: .fill)
+                                .clipped()
+                                .background(Color.gray.opacity(0.1)) // Placeholder background for the cell
+                                // Optional: Add .onAppear for the last item for pagination
+                                // if post == viewModel.mediaPosts.last {
+                                //     Text("").onAppear {
+                                //         // await viewModel.loadMoreMediaPosts(accountID: user.id)
+                                //     }
+                                // }
+                            } else {
+                                // Placeholder for posts that might not have valid media (should be rare)
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.1))
+                                    .aspectRatio(1, contentMode: .fill)
+                            }
+                        }
+                    }
+                }
+                .sheet(item: $selectedPost) { postToDetail in
+                    // Assuming PostDetailView can be presented like this
+                    // PostDetailView needs to be adapted if it expects showDetail binding directly from parent
+                    // For simplicity, wrapping in a NavigationView if PostDetailView requires it
+                    NavigationView {
+                        PostDetailView(
+                            post: postToDetail,
+                            viewModel: timelineViewModel, // Pass the timelineViewModel
+                            showDetail: .constant(true) // Binding to control presentation (might need adjustment)
+                        )
+                        // Add a toolbar if PostDetailView doesn't manage its own dismissal from a sheet context
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarLeading) {
+                                Button("Close") {
+                                    selectedPost = nil
+                                }
+                            }
+                        }
+                    }
+                }
             }
-   }
+        }
+        .task(id: user.id) { // Use .task on UserMediaView itself or its top-level Group
+            // Only load if mediaPosts is empty or for a different user
+            // This simple check might need refinement based on how ProfileViewModel handles state
+            if viewModel.mediaPosts.isEmpty || (viewModel.mediaPosts.first?.account?.id != user.id && !viewModel.isLoadingMediaPosts) {
+                 await viewModel.loadMediaPosts(accountID: user.id)
+            }
+        }
+    }
 }
 
 // MARK: - Subviews (ProfileHeaderView, ProfileStatsView, etc.) - No changes needed from previous version

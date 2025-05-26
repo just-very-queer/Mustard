@@ -23,13 +23,18 @@ struct PostView: View {
     @State private var showImageViewer = false
     @State private var showBrowserView = false // Assuming this uses post.url
 
+    // Assuming TimelineViewModel exposes currentUserAccountID or a similar property
+    // For now, let's assume viewModel.currentUserAccountID is available.
+    // If not, this would need to be plumbed through.
+    let interestScore: Double // Added for interest highlighting
+
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             // User Header - Pass profile navigation action
             UserHeaderView(post: post, viewProfileAction: viewProfileAction)
 
             // Content
-            PostContentView(post: post, showFullText: $showFullText)
+            PostContentView(post: post, showFullText: $showFullText, currentUserAccountID: viewModel.currentUserAccountID) // Pass it here
 
             // Media attachments - Trigger local state for viewer
             MediaAttachmentView(post: post, onImageTap: {
@@ -69,6 +74,7 @@ struct PostView: View {
         }
         // Alert for errors (Handled by parent view using viewModel.alertError)
     }
+    .interestHighlight(isActive: interestScore > 5.0, score: interestScore) // Threshold = 5.0
 }
 
 // MARK: - Revised PostActionsView
@@ -142,9 +148,11 @@ struct PostActionsViewRevised: View {
 struct PostContentView: View {
     let post: Post
     @Binding var showFullText: Bool
+    let currentUserAccountID: String? // Added to receive current user ID
 
     // State to hold the computed attributed string
     @State private var displayedAttributedString: AttributedString? = nil
+    @State private var plainTextContentForShowMore: String = "" // For "Show More" logic
     @State private var detectedLinkCard: Card? = nil
     @State private var isLoadingLinkPreview: Bool = false
 
@@ -167,8 +175,7 @@ struct PostContentView: View {
             }
 
             // "Show More" button
-            let plainText = HTMLUtils.convertHTMLToPlainText(html: post.content)
-            if !showFullText && plainText.count > 200 {
+            if !showFullText && plainTextContentForShowMore.count > 200 { // Use state variable
                  ShowMoreButton(showFullText: $showFullText)
             }
 
@@ -178,19 +185,30 @@ struct PostContentView: View {
                     .padding(.horizontal)
                     .frame(maxWidth: .infinity, alignment: .center)
             } else if let card = detectedLinkCard {
-                LinkPreview(card: card)
+                LinkPreview(card: card, postID: post.id, currentUserAccountID: currentUserAccountID) // Pass postID and currentUserAccountID
                     .padding(.horizontal) // Add padding around the LinkPreview
                     .padding(.top, 5) // Add some space above the LinkPreview
             }
         }
         .padding(.vertical, 5)
         .task(id: post.id) { // Re-run when post.id changes (safer than post.content for triggering)
-            // 1. AttributedString conversion
+            // 1. AttributedString and PlainText conversion (for Show More)
             self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
+            self.plainTextContentForShowMore = HTMLUtils.convertHTMLToPlainText(html: post.content) // Calculate once
 
             // 2. Link Preview Logic
             self.detectedLinkCard = nil // Reset
             self.isLoadingLinkPreview = false // Reset
+
+            // Log .view interaction
+            RecommendationService.shared.logInteraction(
+                statusID: post.id,
+                actionType: .view,
+                accountID: currentUserAccountID, // Passed in
+                authorAccountID: post.account?.id,
+                postURL: post.url,
+                tags: post.tags?.compactMap { $0.name } // Assuming Tag has 'name'
+            )
 
             if let existingCard = post.card {
                 self.detectedLinkCard = existingCard
@@ -302,10 +320,11 @@ struct ExpandedCommentsSection: View {
             // Note: The `Post` model needs to correctly decode/fetch replies.
             // If `post.replies` is nil or empty, this ForEach won't display anything.
             if let replies = post.replies, !replies.isEmpty {
-                ForEach(replies) { reply in
-                    VStack(alignment: .leading, spacing: 5) {
-                        // Use UserHeaderView for consistency
-                        UserHeaderView(post: reply, viewProfileAction: { user in
+                LazyVStack(spacing: 0) { // Added LazyVStack for replies
+                    ForEach(replies) { reply in
+                        VStack(alignment: .leading, spacing: 5) {
+                            // Use UserHeaderView for consistency
+                            UserHeaderView(post: reply, viewProfileAction: { user in
                             // Decide how to handle profile taps from replies
                             // Option 1: Use the viewModel's navigation
                              viewModel.navigateToProfile(user)
@@ -317,8 +336,9 @@ struct ExpandedCommentsSection: View {
                     }
                     .padding(.bottom, 5)
                     Divider().padding(.leading, 60) // Indented divider
-                }
-            } else {
+                    }
+                } // End of ForEach
+            } else { // End of LazyVStack
                 Text("No replies yet.")
                     .font(.caption)
                     .foregroundColor(.gray)
