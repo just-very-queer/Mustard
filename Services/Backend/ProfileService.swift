@@ -57,4 +57,16 @@ class ProfileService {
         logger.debug("Profile updated for account: \(accountId)")
         return updatedUser
     }
+
+    /// Fetch media posts for a user, with optional pagination.
+    func fetchUserMediaPosts(accountID: String, maxId: String? = nil) async throws -> [Post] {
+        logger.debug("Fetching media posts for account: \(accountID), maxId: \(maxId ?? "nil")")
+        let posts = try await mastodonAPIService.WorkspaceUserMediaPosts(
+            accountID: accountID,
+            onlyMedia: true, // Hardcoded to true for media gallery
+            maxId: maxId
+        )
+        logger.debug("Fetched \(posts.count) media posts for account: \(accountID)")
+        return posts
+    }
 }

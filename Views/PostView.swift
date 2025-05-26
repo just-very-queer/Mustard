@@ -145,6 +145,8 @@ struct PostContentView: View {
 
     // State to hold the computed attributed string
     @State private var displayedAttributedString: AttributedString? = nil
+    @State private var detectedLinkCard: Card? = nil
+    @State private var isLoadingLinkPreview: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -157,41 +159,73 @@ struct PostContentView: View {
                     .padding(.horizontal)
             } else {
                 // Fallback to plain text while loading or if conversion fails
-                Text(post.content) // Or use HTMLUtils.convertHTMLToPlainText
+                Text(HTMLUtils.convertHTMLToPlainText(html: post.content)) // Use plain text as fallback
                     .font(.body)
                     .lineLimit(showFullText ? nil : 3)
                     .foregroundColor(.primary)
                     .padding(.horizontal)
-                    // Optionally show a placeholder or spinner while loading state
             }
 
-            // "Show More" button (logic remains the same)
-            // Consider content length check based on plain text?
+            // "Show More" button
             let plainText = HTMLUtils.convertHTMLToPlainText(html: post.content)
-            if !showFullText && plainText.count > 200 { // Example condition using plain text length
+            if !showFullText && plainText.count > 200 {
                  ShowMoreButton(showFullText: $showFullText)
+            }
+
+            // Link Preview Section
+            if isLoadingLinkPreview {
+                ProgressView()
+                    .padding(.horizontal)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else if let card = detectedLinkCard {
+                LinkPreview(card: card)
+                    .padding(.horizontal) // Add padding around the LinkPreview
+                    .padding(.top, 5) // Add some space above the LinkPreview
             }
         }
         .padding(.vertical, 5)
-        // Use .task to compute the AttributedString when post.content changes
-        // This runs asynchronously and updates the @State variable, triggering a valid view update
-        .task(id: post.content) { // Re-run when post.content changes
-             // Perform the conversion asynchronously
-             // Add a small delay if needed to ensure it runs after initial layout pass
-             // try? await Task.sleep(for: .milliseconds(10))
-             self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
+        .task(id: post.id) { // Re-run when post.id changes (safer than post.content for triggering)
+            // 1. AttributedString conversion
+            self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
+
+            // 2. Link Preview Logic
+            self.detectedLinkCard = nil // Reset
+            self.isLoadingLinkPreview = false // Reset
+
+            if let existingCard = post.card {
+                self.detectedLinkCard = existingCard
+            } else {
+                // Extract URL from post content (HTML string)
+                // NSDataDetector works better on plain text, but let's try with raw HTML first.
+                // For better results, consider extracting URLs from the plain text version.
+                let textToDetect = post.content // Or plainText for potentially cleaner URL detection
+                if let firstURL = detectFirstURL(in: textToDetect) {
+                    self.isLoadingLinkPreview = true
+                    // Asynchronously fetch metadata
+                    let fetchedCard = await HTMLUtils.fetchLinkMetadata(from: firstURL)
+                    // Ensure the task has not been cancelled or post.id changed again
+                    if Task.isCancelled { return }
+                    // Check if the current post context is still the same
+                    // This check might be overly cautious if id in .task(id: post.id) handles it well
+                    // but good for robustness if updates are frequent.
+                    // For simplicity here, we assume post.id check in .task is sufficient.
+                    
+                    self.detectedLinkCard = fetchedCard
+                    self.isLoadingLinkPreview = false
+                }
+            }
         }
-        // Or use .onChange if you prefer (though .task(id:) is often cleaner for this)
-        /*
-        .onChange(of: post.content) { _, newContent in
-            self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: newContent)
+    }
+
+    private func detectFirstURL(in text: String) -> URL? {
+        do {
+            let detector = try NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+            let matches = detector.matches(in: text, options: [], range: NSRange(location: 0, length: text.utf16.count))
+            return matches.first?.url
+        } catch {
+            print("Error creating URL detector: \(error)")
+            return nil
         }
-        .onAppear { // Initial calculation on appear
-             if displayedAttributedString == nil {
-                 self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
-             }
-        }
-        */
     }
 }
 

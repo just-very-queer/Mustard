@@ -15,7 +15,9 @@ final class ProfileViewModel: ObservableObject {
     @Published private(set) var followers: [User] = []
     @Published private(set) var following: [User] = []
     @Published private(set) var userPosts: [Post] = [] // <-- ADDED: To store profile-specific posts
+    @Published private(set) var mediaPosts: [Post] = [] // <-- ADDED: To store media posts
     @Published private(set) var isLoadingUserPosts: Bool = false // <-- ADDED: Loading state for user posts
+    @Published private(set) var isLoadingMediaPosts: Bool = false // <-- ADDED: Loading state for media posts
     @Published var alertMessage: String?
     @Published var showAlert: Bool = false
 
@@ -85,6 +87,28 @@ final class ProfileViewModel: ObservableObject {
             await handleError(error, message: "Error fetching user posts")
         }
         isLoadingUserPosts = false // Ensure loading state is reset
+    }
+    // -----------------------------------------
+
+    // --- ADDED: Fetch User-Specific Media Posts ---
+    func loadMediaPosts(accountID: String) async {
+        guard !isLoadingMediaPosts else { return } // Prevent simultaneous loads
+
+        logger.debug("Fetching media posts for account ID: \(accountID)")
+        isLoadingMediaPosts = true
+        // Clear previous media posts if loading for a new user or refreshing
+        // self.mediaPosts = [] // Optional: Clear immediately or on success
+
+        do {
+            let fetchedPosts = try await profileService.fetchUserMediaPosts(accountID: accountID, maxId: nil)
+            self.mediaPosts = fetchedPosts // Assign directly as we are on @MainActor
+            logger.debug("Successfully fetched \(fetchedPosts.count) media posts for user \(accountID).")
+        } catch {
+            logger.error("Error fetching media posts for \(accountID): \(error.localizedDescription)")
+            // self.mediaPosts = [] // Clear on error to avoid showing stale data
+            await handleError(error, message: "Error fetching media posts")
+        }
+        isLoadingMediaPosts = false
     }
     // -----------------------------------------
 

@@ -11,15 +11,6 @@ import CoreLocation
 import Combine
 import SwiftData
 
-@Model
-final class Item {
-    var timestamp: Date
-    
-    init(timestamp: Date) {
-        self.timestamp = timestamp
-    }
-}
-
 // MARK: - Notification.Name Extensions
 
 extension Notification.Name {
@@ -30,4 +21,3 @@ extension Notification.Name {
     static let didDecodePostLocation = Notification.Name("didDecodePostLocatior")
     static let didRequestWeatherFetch = Notification.Name("didRequestWeatherFetch")
 }
-

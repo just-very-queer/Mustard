@@ -23,6 +23,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
     var mentions: [Mention]? // Added mentions
     var url: String?
     var tags: [Tag]?  // Added tags
+    var card: Card? // Added card
     
     
     // MARK: - Relationship (Replies) - Note: Direct nested decoding of replies might be complex
@@ -42,7 +43,8 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
         repliesCount: Int = 0,
         replies: [Post]? = nil, // Replies can be nil or empty array
         mentions: [Mention]? = nil, // Added mentions to init
-        tags: [Tag]? = nil // Added tags to init
+        tags: [Tag]? = nil, // Added tags to init
+        card: Card? = nil // Added card to init
         
     ) {
         self.id = id
@@ -58,11 +60,12 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
         self.replies = replies
         self.mentions = mentions
         self.tags = tags // Initialize tags
+        self.card = card // Initialize card
     }
     
     // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
-        case id, content, createdAt, account, mediaAttachments, replies, mentions, tags, url
+        case id, content, createdAt, account, mediaAttachments, replies, mentions, tags, url, card // Added card
         case isFavourited = "favourited" // Corrected to "favourited" as per Mastodon API
         case isReblogged = "reblogged" // Corrected to "reblogged" as per Mastodon API
         case reblogsCount = "reblogs_count" // Corrected to snake_case
@@ -86,6 +89,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
         self.mentions = try container.decodeIfPresent([Mention].self, forKey: .mentions) // Decode with default value
         self.tags = try container.decodeIfPresent([Tag].self, forKey: .tags) // Decode tags
         self.url = try container.decodeIfPresent(String.self, forKey: .url)
+        self.card = try container.decodeIfPresent(Card.self, forKey: .card) // Decode card
         
     }
     
@@ -105,6 +109,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
         try container.encodeIfPresent(mentions, forKey: .mentions)
         try container.encodeIfPresent(tags, forKey: .tags) // Encode tags
         try container.encodeIfPresent(url, forKey: .url)
+        try container.encodeIfPresent(card, forKey: .card) // Encode card
         
     }
     
@@ -119,6 +124,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
         hasher.combine(favouritesCount)
         hasher.combine(repliesCount)
         hasher.combine(mediaAttachments) // [MediaAttachment] must be Hashable
+        hasher.combine(card) // Add card to hash
     }
     
     // MARK: - Equatable Conformance
@@ -135,7 +141,8 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
         lhs.mediaAttachments == rhs.mediaAttachments &&
         lhs.mentions == rhs.mentions &&
         lhs.tags == rhs.tags && // Compare tags
-        lhs.url == rhs.url
+        lhs.url == rhs.url &&
+        lhs.card == rhs.card // Compare card
         // Note: 'replies' relationship is intentionally omitted from Equatable to avoid potential infinite recursion.
     }
 }

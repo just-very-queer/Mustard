@@ -196,6 +196,22 @@ public class MastodonAPIService {
          return try await get(endpoint: endpoint, responseType: [User].self)
      }
 
+    func WorkspaceUserMediaPosts(accountID: String, onlyMedia: Bool = true, maxId: String? = nil) async throws -> [Post] {
+        let endpoint = "/api/v1/accounts/\(accountID)/statuses"
+        var queryItems: [URLQueryItem] = []
+
+        queryItems.append(URLQueryItem(name: "only_media", value: String(onlyMedia)))
+
+        if let maxId = maxId {
+            queryItems.append(URLQueryItem(name: "max_id", value: maxId))
+        }
+        
+        // Consider adding a default limit or making it a parameter
+        // queryItems.append(URLQueryItem(name: "limit", value: "20")) // Example limit
+
+        return try await get(endpoint: endpoint, queryItems: queryItems.isEmpty ? nil : queryItems, responseType: [Post].self)
+    }
+
       // Example: Update profile requires PATCH and often form-urlencoded data
       func updateCurrentUserProfile(fields: [String: String]) async throws -> User {
           let endpoint = "/api/v1/accounts/update_credentials"
