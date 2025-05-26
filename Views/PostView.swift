@@ -5,185 +5,200 @@
 //  Created by VAIBHAV SRIVASTAVA on 31/01/25.
 //
 
+
 import SwiftUI
 import LinkPresentation
 import SafariServices
+import SwiftSoup // If needed for HTML parsing in subviews
 
 // MARK: - PostView (Main View)
 struct PostView: View {
+    // Properties
     let post: Post
-    @ObservedObject var viewModel: TimelineViewModel
-    @EnvironmentObject var profileViewModel: ProfileViewModel
-    
-    @State private var isExpanded = false
-    @State private var commentText = ""
+    @ObservedObject var viewModel: TimelineViewModel // Use the ViewModel directly
+    var viewProfileAction: (User) -> Void // Keep for context-dependent navigation
+
+    // Local UI State
     @State private var showFullText = false
     @State private var showImageViewer = false
-    @State private var showBrowserView = false
-    @State private var showCommentSection = false
-    @State private var isLoading = false  // Loading indicator for network requests
-    @State private var networkError: String? = nil  // Store network error messages
-    
+    @State private var showBrowserView = false // Assuming this uses post.url
+
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            UserHeaderView(post: post)
-            
-            // Display error message if any
-            if let networkError = networkError {
-                Text("Error: \(networkError)")
-                    .foregroundColor(.red)
-                    .padding()
-            }
-            
-            // Post content and media
-            if showBrowserView {
-                SafariWebView(post: post)  // Reuse SafariWebView here
-            } else if showImageViewer {
-                FullScreenImageView(imageURL: post.mediaAttachments.first?.url ?? URL(string: "https://example.com")!, isPresented: $showImageViewer)
-            } else {
-                PostContentView(post: post, showFullText: $showFullText)
-            }
-            
-            // Media attachments
+            // User Header - Pass profile navigation action
+            UserHeaderView(post: post, viewProfileAction: viewProfileAction)
+
+            // Content
+            PostContentView(post: post, showFullText: $showFullText)
+
+            // Media attachments - Trigger local state for viewer
             MediaAttachmentView(post: post, onImageTap: {
                 self.showImageViewer.toggle()
             })
-            
-            // Like, Repost, and Comment buttons below the post
-            HStack(spacing: 20) {
-                PostActionButton(icon: "heart.fill", label: "Like") {
-                    Task {
-                        isLoading = true
-                        await viewModel.likePost(post)
-                        isLoading = false
-                    }
-                }
-                
-                PostActionButton(icon: "arrow.2.squarepath", label: "Repost") {
-                    Task {
-                        isLoading = true
-                        await viewModel.repostPost(post)
-                        isLoading = false
-                    }
-                }
-                
-                PostActionButton(icon: "bubble.left.fill", label: "Comment") {
-                    showCommentSection.toggle()
-                }
-            }
-            .padding(.top, 5)
-            
-            // Expandable comment section
-            if showCommentSection {
-                ExpandedCommentsSection(post: post, isExpanded: $isExpanded, commentText: $commentText, viewModel: viewModel)
+
+            // Post actions - Directly call ViewModel methods
+            PostActionsViewRevised(post: post, viewModel: viewModel)
+                .padding(.top, 5)
+
+            // Loading Indicator - Check state from ViewModel
+            if viewModel.isLoading(for: post) {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 5)
             }
         }
         .padding(.vertical, 12)
-        .background(Color(.systemBackground))
+        .background(Color(.systemBackground)) // Use adaptive background
         .cornerRadius(16)
         .padding(.horizontal, 8)
         .shadow(color: .primary.opacity(0.05), radius: 8, x: 0, y: 3)
         .dynamicTypeSize(.medium)
-        .onTapGesture {
-            showBrowserView.toggle()
+        // Sheet for FullScreenImageView (Uses local state)
+        .sheet(isPresented: $showImageViewer) {
+            // Assuming first attachment is the one to show fullscreen
+            if let imageURL = post.mediaAttachments.first?.url {
+                FullScreenImageView(imageURL: imageURL, isPresented: $showImageViewer)
+            }
         }
+        // Sheet for WebView (Uses local state and post data)
+        .sheet(isPresented: $showBrowserView) {
+            // Assuming post.url contains the link to show
+            if let urlString = post.url, let url = URL(string: urlString) {
+                 SafariView(url: url) // Assumes SafariView exists
+            }
+        }
+        // Alert for errors (Handled by parent view using viewModel.alertError)
     }
 }
 
-// MARK: - ExpandedCommentsSection (Comment Section)
-struct ExpandedCommentsSection: View {
+// MARK: - Revised PostActionsView
+struct PostActionsViewRevised: View {
     let post: Post
-    @Binding var isExpanded: Bool
-    @Binding var commentText: String
-    @ObservedObject var viewModel: TimelineViewModel
+    @ObservedObject var viewModel: TimelineViewModel // Inject ViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Comments")
-                .font(.headline)
-                .padding(.horizontal)
-                .foregroundColor(.primary)
-
-
-            ForEach(post.replies ?? [], id: \.id) { comment in
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 10) { // Using HStack for avatar and user info, like in Version 1, but cleaner
-                        AvatarView(url: comment.account?.avatar, size: 30)
-                        VStack(alignment: .leading) {
-                            Text(comment.account?.display_name ?? "")
-                                .font(.subheadline)
-                            Text("@\(comment.account?.acct ?? "")")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.horizontal) // Padding for user info
-                    Text(comment.content)
-                        .font(.body)
-                        .padding(.horizontal)
-                        .foregroundColor(.primary)
-                }
-                .padding(.bottom, 5)
+        HStack {
+            // Like Button
+            Button {
+                viewModel.toggleLike(for: post)
+            } label: {
+                Image(systemName: post.isFavourited ? "heart.fill" : "heart")
+                    .foregroundColor(post.isFavourited ? .red : .gray)
+                Text("\(post.favouritesCount)") // Display count
+                    .font(.caption)
+                    .foregroundColor(.gray)
             }
+            .buttonStyle(PlainButtonStyle()) // Use PlainButtonStyle for better layout control
 
+            Spacer()
 
-            // Add new comment input
-            HStack {
-                TextField("Add a comment...", text: $commentText)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .padding(.horizontal)
-                    .foregroundColor(.primary)
-
-
-                Button(action: {
-                    Task {
-                        await viewModel.comment(on: post, content: commentText)
-                        commentText = "" // Clear after posting
-                    }
-                }) {
-                    Text("Post")
-                        .foregroundColor(.blue)
-                }
-                .padding(.trailing)
+            // Repost Button
+            Button {
+                viewModel.toggleRepost(for: post)
+            } label: {
+                Image(systemName: post.isReblogged ? "arrow.2.squarepath" : "arrow.2.squarepath") // Use consistent icon
+                    .foregroundColor(post.isReblogged ? .green : .gray)
+                 Text("\(post.reblogsCount)") // Display count
+                     .font(.caption)
+                     .foregroundColor(.gray)
             }
-            .padding(.horizontal)
-            .padding(.top, 10)
+            .buttonStyle(PlainButtonStyle())
+
+            Spacer()
+
+            // Comment Button - Shows sheet via ViewModel
+            Button {
+                viewModel.showComments(for: post)
+            } label: {
+                Image(systemName: "bubble.left")
+                    .foregroundColor(.gray)
+                Text("\(post.repliesCount)") // Display count
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            Spacer()
+
+            // More Options Button (Example: Share)
+            if let urlString = post.url, let url = URL(string: urlString) {
+                ShareLink(item: url) {
+                    Image(systemName: "square.and.arrow.up")
+                        .foregroundColor(.gray)
+                }
+            } else {
+                // Provide a disabled or different button if no URL
+                 Image(systemName: "square.and.arrow.up")
+                    .foregroundColor(.gray.opacity(0.5))
+            }
         }
-        .padding(.vertical, 5)
-        .background(Color(.systemGray6))
-        .cornerRadius(10)
-        .dynamicTypeSize(.medium)
+        .padding(.horizontal) // Add padding for better spacing
     }
 }
 
-// MARK: - PostContentView (Post Text)
+// MARK: - Subviews (Keep relevant subviews like PostContentView, MediaAttachmentView, UserHeaderView)
+
+// Example: Keep PostContentView as is
 struct PostContentView: View {
     let post: Post
     @Binding var showFullText: Bool
-    
+
+    // State to hold the computed attributed string
+    @State private var displayedAttributedString: AttributedString? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let safeContent = post.content.safeHTMLToAttributedString {
-                AttributedTextView(attributedText: safeContent)
+            // Display the computed AttributedString (or fallback)
+            if let attrString = displayedAttributedString {
+                Text(attrString)
+                    .font(.body) // Apply font modifier here if needed
+                    .lineLimit(showFullText ? nil : 3)
+                    .foregroundColor(.primary) // Apply color here
+                    .padding(.horizontal)
+            } else {
+                // Fallback to plain text while loading or if conversion fails
+                Text(post.content) // Or use HTMLUtils.convertHTMLToPlainText
                     .font(.body)
                     .lineLimit(showFullText ? nil : 3)
-                    .foregroundColor(.primary) // Ensure text visibility in both modes
+                    .foregroundColor(.primary)
                     .padding(.horizontal)
+                    // Optionally show a placeholder or spinner while loading state
             }
-            
-            // Show "Show More" button if post content exceeds a certain limit
-            if !showFullText && post.content.components(separatedBy: .newlines).count > 3 {
-                ShowMoreButton(showFullText: $showFullText)
+
+            // "Show More" button (logic remains the same)
+            // Consider content length check based on plain text?
+            let plainText = HTMLUtils.convertHTMLToPlainText(html: post.content)
+            if !showFullText && plainText.count > 200 { // Example condition using plain text length
+                 ShowMoreButton(showFullText: $showFullText)
             }
         }
         .padding(.vertical, 5)
+        // Use .task to compute the AttributedString when post.content changes
+        // This runs asynchronously and updates the @State variable, triggering a valid view update
+        .task(id: post.content) { // Re-run when post.content changes
+             // Perform the conversion asynchronously
+             // Add a small delay if needed to ensure it runs after initial layout pass
+             // try? await Task.sleep(for: .milliseconds(10))
+             self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
+        }
+        // Or use .onChange if you prefer (though .task(id:) is often cleaner for this)
+        /*
+        .onChange(of: post.content) { _, newContent in
+            self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: newContent)
+        }
+        .onAppear { // Initial calculation on appear
+             if displayedAttributedString == nil {
+                 self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
+             }
+        }
+        */
     }
 }
 
-// MARK: - ShowMoreButton (Show More / Show Less button)
+// ShowMoreButton remains the same
 struct ShowMoreButton: View {
     @Binding var showFullText: Bool
-    
+
     var body: some View {
         Button(action: { showFullText.toggle() }) {
             Text(showFullText ? "Show Less" : "Show More")
@@ -191,102 +206,116 @@ struct ShowMoreButton: View {
                 .foregroundColor(.blue)
         }
         .padding(.horizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-// MARK: - UserHeaderView (User Header in Post and Comment)
+// UserHeaderView - Assuming viewProfileAction remains for flexibility
 struct UserHeaderView: View {
     let post: Post
-    @EnvironmentObject var profileViewModel: ProfileViewModel
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
-    
-    @State private var isNavigatingToProfile = false
-    @State private var selectedAccount: Account? = nil
-    
+    var viewProfileAction: (User) -> Void
+
     var body: some View {
         HStack {
-            AvatarView(url: post.account?.avatar, size: post.account?.avatar != nil ? 50 : 40)
+            AvatarView(url: post.account?.avatar, size: 44)
                 .onTapGesture {
-                    if let account = post.account {
-                        selectedAccount = account
-                        isNavigatingToProfile = true
+                    if let user = post.account?.toUser() {
+                        viewProfileAction(user)
                     }
                 }
-            
-            VStack(alignment: .leading) {
-                Text(post.account?.display_name ?? post.account?.username ?? "")
-                    .font(.body)
-                    .fontWeight(.bold)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(post.account?.display_name ?? post.account?.username ?? "Unknown User")
+                    .font(.headline)
                     .foregroundColor(.primary)
-                Text("@\(post.account?.username ?? "")")
+                Text("@\(post.account?.acct ?? "unknown")")
                     .font(.subheadline)
                     .foregroundColor(.gray)
+                    .lineLimit(1)
             }
             Spacer()
+            Text(post.createdAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption)
+                .foregroundColor(.gray)
+                .lineLimit(1)
         }
-        .padding()
-        .navigationDestination(isPresented: $isNavigatingToProfile) {
-            if let user = selectedAccount?.toUser() {
-                ProfileView(user: user)
-                    .environmentObject(profileViewModel)
-                    .environmentObject(authViewModel)
-                    .environmentObject(timelineViewModel)
-            }
-        }
+        .padding(.horizontal)
+        .padding(.top, 5)
     }
 }
 
-// MARK: - PostActionButton (Reusable Post Action Button)
-struct PostActionButton: View {
-    let icon: String
-    let label: String
-    let action: () -> Void
-    
+// MARK: - ExpandedCommentsSection (Re-declared here)
+// This struct defines the view for displaying comments and adding a new one.
+// It's used within PostDetailView or potentially the comment sheet shown by TimelineViewModel.
+struct ExpandedCommentsSection: View {
+    let post: Post // The post whose comments are being shown
+    @Binding var isExpanded: Bool // To control visibility (might not be needed if always shown in DetailView)
+    @Binding var commentText: String // Bound to the text field input
+    @ObservedObject var viewModel: TimelineViewModel // To handle posting the comment
+
     var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(.blue)
-                Text(label)
+        VStack(alignment: .leading, spacing: 10) {
+            // Separator
+            Divider().padding(.horizontal)
+
+            // Title
+            Text("Replies") // Changed from "Comments" to "Replies" to match Mastodon term
+                .font(.headline)
+                .padding(.horizontal)
+                .foregroundColor(.primary)
+
+            // List existing replies (assuming post.replies is populated)
+            // Note: The `Post` model needs to correctly decode/fetch replies.
+            // If `post.replies` is nil or empty, this ForEach won't display anything.
+            if let replies = post.replies, !replies.isEmpty {
+                ForEach(replies) { reply in
+                    VStack(alignment: .leading, spacing: 5) {
+                        // Use UserHeaderView for consistency
+                        UserHeaderView(post: reply, viewProfileAction: { user in
+                            // Decide how to handle profile taps from replies
+                            // Option 1: Use the viewModel's navigation
+                             viewModel.navigateToProfile(user)
+                            // Option 2: Could potentially dismiss the detail view and navigate
+                        })
+                        // Display reply content
+                        PostContentView(post: reply, showFullText: .constant(true)) // Always show full text for replies
+
+                    }
+                    .padding(.bottom, 5)
+                    Divider().padding(.leading, 60) // Indented divider
+                }
+            } else {
+                Text("No replies yet.")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
             }
-        }
-    }
-}
 
-// MARK: - AttributedTextView (For rendering HTML safely)
-struct AttributedTextView: UIViewRepresentable {
-    var attributedText: NSAttributedString
-    
-    func makeUIView(context: Context) -> UILabel {
-        let label = UILabel()
-        label.numberOfLines = 0
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return label
-    }
-    
-    func updateUIView(_ uiView: UILabel, context: Context) {
-        uiView.attributedText = attributedText
-    }
-}
 
-// MARK: - String Extension (To convert HTML to NSAttributedString)
-extension String {
-    var safeHTMLToAttributedString: NSAttributedString? {
-        guard let data = self.data(using: .utf8) else {
-            return nil
+            // Add new comment input area
+            HStack {
+                TextField("Add a reply...", text: $commentText, axis: .vertical) // Allow multiline
+                    .textFieldStyle(.plain) // Use plain style for better integration
+                    .padding(8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
+
+                // Post button - enabled only when text is not empty
+                Button {
+                    viewModel.comment(on: post, content: commentText)
+                    // Clearing commentText is now handled within the viewModel after successful post
+                } label: {
+                    Image(systemName: "paperplane.fill")
+                        .foregroundColor(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .blue)
+                }
+                .disabled(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 5) // Add some bottom padding
         }
-        do {
-            return try NSAttributedString(
-                data: data,
-                options: [
-                    .documentType: NSAttributedString.DocumentType.html,
-                    .characterEncoding: String.Encoding.utf8.rawValue
-                ],
-                documentAttributes: nil
-            )
-        } catch {
-            return nil
-        }
+        .padding(.vertical, 10) // Add vertical padding to the whole section
+        // Removed background and cornerRadius to let it blend with PostDetailView's ScrollView
+        .dynamicTypeSize(.medium)
     }
 }

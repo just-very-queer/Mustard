@@ -3,335 +3,369 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 30/12/24.
-//
+// (REVISED: Added explicit 'self.' captures in closures and fixed unused result warnings)
 
 import Foundation
-import SwiftUI
 import Combine
 import CoreLocation
+import SwiftUI
+import OSLog
 
 @MainActor
 final class TimelineViewModel: ObservableObject {
-    @Published var posts: [Post] = []
-    @Published var topPosts: [Post] = []
-    @Published var weather: WeatherData?
-    @Published var isFetchingMore = false
+    // MARK: - Filter Enum (Updated)
+    enum TimelineFilter: String, CaseIterable, Identifiable {
+        case latest = "Latest"       // Fetches home timeline
+        case trending = "Trending"   // Fetches trending statuses
+        // case following = "Following" // Requires more complex logic/API - Omitted for now
+        // case local = "Local"       // Requires specific API endpoint - Omitted for now
+        // case federated = "Federated" // Requires specific API endpoint - Omitted for now
+        
+        var id: String { self.rawValue }
+    }
+    
+    // MARK: - Published Properties
+    @Published private(set) var posts: [Post] = [] // Combined list for the selected filter
+    @Published var selectedFilter: TimelineFilter = .latest { // Default to Latest
+        didSet {
+            if oldValue != selectedFilter {
+                // Fetch new data when filter changes, don't just filter locally
+                // Use self. here
+                logger.info("Filter changed to \(self.selectedFilter.rawValue). Refreshing data.")
+                self.posts = [] // Clear existing posts immediately for visual feedback
+                self.initializeTimelineData() // Fetch data for the new filter
+            }
+        }
+    }
+    // 'filteredPosts' is removed - 'posts' now holds the content for the selected filter
+    @Published private(set) var topPosts: [Post] = [] // Keep for the separate horizontal trending section
+    @Published private(set) var isLoading: Bool = false
+    @Published private(set) var isFetchingMore = false
     @Published var alertError: AppError?
+    @Published var navigationPath = NavigationPath() // Keep for navigation
     
-    @Published private(set) var postLoadingStates: [String: Bool] = [:] {
-        didSet { objectWillChange.send() }
-    }
+    @Published var selectedPostForComments: Post?
+    @Published var showingCommentSheet = false
+    @Published var commentText: String = ""
+    @Published private(set) var postLoadingStates: [String: Bool] = [:]
     
-    private var _isLoading: Bool = false
-    var isLoading: Bool {
-        get { return _isLoading }
-        set { _isLoading = newValue }
-    }
+    // Pagination Tracking - Store next page URLs or max_id/since_id
+    private var nextPageInfo: String? = nil // Example: Could be max_id or a full URL
     
+    // MARK: - Services
     private let timelineService: TimelineService
-    private let weatherService: WeatherService
+    private let postActionService: PostActionService
     private let locationManager: LocationManager
-    private let trendingService: TrendingService
-    let postActionService: PostActionService
-    private var cancellables = Set<AnyCancellable>()
-    private var weatherFetchOnce = false
-    private var currentPage = 0
+    private let trendingService: TrendingService // Kept for separate topPosts section if needed
+    private let cacheService: CacheService
     
-    init(timelineService: TimelineService, weatherService: WeatherService, locationManager: LocationManager, trendingService: TrendingService, postActionService: PostActionService) {
+    // MARK: - Private Properties
+    private var cancellables = Set<AnyCancellable>()
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "TimelineViewModel")
+    
+    // MARK: - Initialization
+    init(
+        timelineService: TimelineService,
+        locationManager: LocationManager,
+        trendingService: TrendingService,
+        postActionService: PostActionService,
+        cacheService: CacheService
+    ) {
         self.timelineService = timelineService
-        self.weatherService = weatherService
         self.locationManager = locationManager
         self.trendingService = trendingService
         self.postActionService = postActionService
-        setupSubscriptions()
-        setupLocationListener()
+        self.cacheService = cacheService
+        // No subscriptions needed here if fetching is driven by actions/appear
     }
     
-    // MARK: - Setup Subscriptions
-    private func setupSubscriptions() {
-        timelineService.timelinePostsPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] posts in
-                guard let self = self else { return }
-                self.posts = posts
-                var newStates = self.postLoadingStates
-                for post in posts where newStates[post.id] == nil {
-                    newStates[post.id] = false
-                }
-                self.postLoadingStates = newStates
-            }
-            .store(in: &cancellables)
-        
-        timelineService.isLoadingPublisher
-            .receive(on: DispatchQueue.main)
-            .assign(to: \.isLoading, on: self)
-            .store(in: &cancellables)
-        
-        timelineService.isFetchingMorePublisher
-            .receive(on: DispatchQueue.main)
-            .assign(to: \.isFetchingMore, on: self)
-            .store(in: &cancellables)
-        
-        timelineService.errorPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] error in
-                self?.alertError = error
-            }
-            .store(in: &cancellables)
-        
-        weatherService.$weather
-            .receive(on: DispatchQueue.main)
-            .assign(to: \.weather, on: self)
-            .store(in: &cancellables)
-        
-        weatherService.$error
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] error in
-                if let error = error, error.isRecoverable {
-                    self?.alertError = error
-                }
-            }
-            .store(in: &cancellables)
-    }
+    // MARK: - Data Fetching Triggers (Updated for Filters)
     
-    // MARK: - Location Listener
-    private func setupLocationListener() {
-        locationManager.locationPublisher
-            .debounce(for: .seconds(10), scheduler: DispatchQueue.main)
-            .sink { [weak self] location in
-                guard let self = self, !self.weatherFetchOnce else { return }
-                Task {
-                    await self.weatherService.fetchWeather(for: location)
-                    self.weatherFetchOnce = true
+    func initializeTimelineData() {
+        // Don't fetch if already loading
+        guard !isLoading else { return }
+        
+        // Use self. here
+        logger.info("Initializing timeline data for filter: \(self.selectedFilter.rawValue)...")
+        isLoading = true
+        isFetchingMore = false // Reset pagination state
+        nextPageInfo = nil    // Reset pagination state
+        alertError = nil
+        
+        Task {
+            // Use weak self capture if necessary, though @MainActor might mitigate some cycle risks
+            // [weak self] in // Optional: Use weak self if you suspect retain cycles
+            
+            // Ensure loading state is reset
+            // Use self. here
+            defer { self.isLoading = false }
+            
+            // guard let self = self else { return } // Uncomment if using [weak self]
+            
+            do {
+                let fetchedPosts: [Post]
+                // Use self. here
+                switch self.selectedFilter {
+                case .latest:
+                    fetchedPosts = try await self.timelineService.fetchHomeTimeline(maxId: nil)
+                    self.nextPageInfo = fetchedPosts.last?.id
+                case .trending:
+                    fetchedPosts = try await self.timelineService.fetchTrendingTimeline()
+                    self.nextPageInfo = nil
                 }
+                // Use self. here
+                self.posts = fetchedPosts
+                self.initializeLoadingStates(for: fetchedPosts)
+                
+                await self.fetchTopPostsForHeader()
+                
+            } catch {
+                // Use self. here
+                self.logger.error("Failed to initialize timeline: \(error.localizedDescription)")
+                self.handleFetchError(error)
             }
-            .store(in: &cancellables)
-    }
-    
-    // MARK: - Fetch Data
-    func initializeData() async {
-        timelineService.initializeTimelineData()
+        }
     }
     
     func fetchMoreTimeline() {
-        guard !isFetchingMore else { return }
-        isFetchingMore = true
+        // Use self. here for all property accesses in the guard condition
+        guard !self.isLoading, !self.isFetchingMore, let pageInfo = self.nextPageInfo, self.selectedFilter == .latest else {
+            logger.debug("Cannot fetch more. isLoading: \(self.isLoading), isFetchingMore: \(self.isFetchingMore), nextPageInfo: \(self.nextPageInfo ?? "nil"), filter: \(self.selectedFilter.rawValue)")
+            return
+        }
+        
+        logger.info("Fetching more timeline posts (using page info: \(pageInfo))...")
+        // Use self. here
+        self.isFetchingMore = true
+        self.alertError = nil
         
         Task {
-            let newPosts = await fetchPosts(page: currentPage + 1)
-            DispatchQueue.main.async {
-                self.posts.append(contentsOf: newPosts)
-                self.currentPage += 1
-                self.isFetchingMore = false
+            // [weak self] in // Optional weak self capture
+            // Ensure fetchingMore is reset
+            // Use self. here
+            defer { self.isFetchingMore = false }
+            // guard let self = self else { return } // Uncomment if using [weak self]
+            
+            do {
+                let newPosts: [Post]
+                // Use self. here
+                switch self.selectedFilter {
+                case .latest:
+                    newPosts = try await self.timelineService.fetchHomeTimeline(maxId: pageInfo)
+                    self.nextPageInfo = newPosts.last?.id
+                case .trending:
+                    newPosts = []
+                    self.nextPageInfo = nil
+                }
+                
+                if !newPosts.isEmpty {
+                    // Use self. here
+                    self.posts.append(contentsOf: newPosts)
+                    self.initializeLoadingStates(for: newPosts)
+                } else {
+                    // Use self. here
+                    self.nextPageInfo = nil
+                    self.logger.info("No more posts found for pagination.")
+                }
+            } catch {
+                // Use self. here
+                self.logger.error("Failed to fetch more timeline posts: \(error.localizedDescription)")
+                self.handleFetchError(error)
             }
         }
     }
     
     func refreshTimeline() {
-        timelineService.refreshTimeline()
+        // Use self. here
+        logger.info("Refreshing timeline for filter: \(self.selectedFilter.rawValue)...")
+        initializeTimelineData()
     }
     
-    func fetchTopPosts() async {
-        await timelineService.fetchTopPosts()
+    // Fetch separate top posts for the horizontal view
+    private func fetchTopPostsForHeader() async {
+        logger.debug("Fetching top posts for horizontal header...")
+        do {
+            // Use self. here
+            self.topPosts = try await trendingService.fetchTopPosts()
+        } catch {
+            logger.error("Failed to fetch top posts for header: \(error.localizedDescription)")
+            // Use self. here
+            self.topPosts = [] // Clear on error
+        }
     }
     
-    func fetchWeather(for location: CLLocation) async {
-        await weatherService.fetchWeather(for: location)
+    private func handleFetchError(_ error: Error) {
+        if (error as? URLError)?.code == .cancelled {
+            logger.info("Timeline fetch task cancelled.")
+            return
+        }
+        // Use self. here
+        self.alertError = AppError(message: "Failed to load timeline", underlyingError: error)
+        self.posts = [] // Clear posts on significant error
     }
     
-    func fetchPosts(page: Int) async -> [Post] {
-        return await timelineService.fetchPosts(page: page)
-    }
     
     // MARK: - Post Actions
-    func likePost(_ post: Post) async {
-        updateLoadingState(for: post.id, isLoading: true)
-        defer { updateLoadingState(for: post.id, isLoading: false) }
-        
-        do {
-            try await timelineService.toggleLike(for: post)
-        } catch {
-            alertError = AppError(message: "Failed to like the post", underlyingError: error)
-        }
-    }
     
-    func repostPost(_ post: Post) async {
-        updateLoadingState(for: post.id, isLoading: true)
-        defer { updateLoadingState(for: post.id, isLoading: false) }
+    func toggleLike(for post: Post) {
+        let originalPost = post // Keep a copy for potential rollback
+        let originalIndex = posts.firstIndex(where: { $0.id == post.id })
+        let originalTopIndex = topPosts.firstIndex(where: { $0.id == post.id })
         
-        do {
-            try await timelineService.toggleRepost(for: post)
-        } catch {
-            alertError = AppError(message: "Failed to repost the post", underlyingError: error)
+        // Optimistic update
+        if let index = originalIndex {
+            posts[index].isFavourited.toggle()
+            posts[index].favouritesCount += posts[index].isFavourited ? 1 : -1
         }
-    }
-    
-    func comment(on post: Post, content: String) async {
-        updateLoadingState(for: post.id, isLoading: true)
-        defer { updateLoadingState(for: post.id, isLoading: false) }
+        if let topIndex = originalTopIndex {
+            topPosts[topIndex].isFavourited.toggle()
+            topPosts[topIndex].favouritesCount += topPosts[topIndex].isFavourited ? 1 : -1
+        }
         
-        do {
-            try await timelineService.comment(on: post, content: content)
-            
-            await MainActor.run {
-                let newComment = Post(
-                    id: UUID().uuidString,
-                    content: content,
-                    createdAt: Date(),
-                    account: authAccount(),
-                    mediaAttachments: [],
-                    isFavourited: false,
-                    isReblogged: false,
-                    reblogsCount: 0,
-                    favouritesCount: 0,
-                    repliesCount: 0,
-                    mentions: nil
-                )
+        updateLoadingState(for: post.id, isLoading: true)
+        Task {
+            defer { self.updateLoadingState(for: post.id, isLoading: false) }
+            do {
+                // Pass the original favourited state (before optimistic update)
+                let returnedPost = try await self.postActionService.toggleLike(postID: post.id, isCurrentlyFavourited: originalPost.isFavourited)
                 
-                if let index = posts.firstIndex(where: { $0.id == post.id }) {
-                    posts[index].replies?.append(newComment)
-                    posts[index].repliesCount += 1
+                // If API returns the updated post, use its state for consistency
+                if let returnedPost = returnedPost {
+                    if let index = self.posts.firstIndex(where: { $0.id == returnedPost.id }) {
+                        self.posts[index].isFavourited = returnedPost.isFavourited
+                        self.posts[index].favouritesCount = returnedPost.favouritesCount
+                    }
+                    if let topIndex = self.topPosts.firstIndex(where: { $0.id == returnedPost.id }) {
+                        self.topPosts[topIndex].isFavourited = returnedPost.isFavourited
+                        self.topPosts[topIndex].favouritesCount = returnedPost.favouritesCount
+                    }
                 }
-            }
-        } catch {
-            alertError = AppError(message: "Failed to comment", underlyingError: error)
-        }
-    }
-    
-    func toggleLike(on post: Post) async {
-        updateLoadingState(for: post.id, isLoading: true)
-        defer { updateLoadingState(for: post.id, isLoading: false) }
-        
-        do {
-            try await timelineService.toggleLike(for: post)
-        } catch {
-            alertError = AppError(message: "Failed to toggle like", underlyingError: error)
-        }
-    }
-    
-    func toggleRepost(on post: Post) async {
-        updateLoadingState(for: post.id, isLoading: true)
-        defer { updateLoadingState(for: post.id, isLoading: false) }
-        
-        do {
-            try await timelineService.toggleRepost(for: post)
-        } catch {
-            alertError = AppError(message: "Failed to toggle repost", underlyingError: error)
-        }
-    }
-    
-    // MARK: - Search and Trending
-    func search(query: String, type: String?, limit: Int?, resolve: Bool?, excludeUnreviewed: Bool?) async throws -> SearchResults {
-        guard let baseURLString = try? await KeychainHelper.shared.read(service: "MustardKeychain", account: "baseURL"),
-              let baseURL = URL(string: baseURLString) else {
-            throw AppError(message: "Base URL not found")
-        }
-        
-        var components = URLComponents(url: baseURL.appendingPathComponent("/api/v2/search"), resolvingAgainstBaseURL: false)!
-        var queryItems = [URLQueryItem(name: "q", value: query)]
-        
-        if let type = type {
-            queryItems.append(URLQueryItem(name: "type", value: type))
-        }
-        if let limit = limit {
-            queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
-        }
-        if let resolve = resolve {
-            queryItems.append(URLQueryItem(name: "resolve", value: String(resolve)))
-        }
-        if let excludeUnreviewed = excludeUnreviewed {
-            queryItems.append(URLQueryItem(name: "exclude_unreviewed", value: String(excludeUnreviewed)))
-        }
-        
-        components.queryItems = queryItems
-        
-        guard let url = components.url else {
-            throw AppError(message: "Invalid search URL")
-        }
-        
-        return try await NetworkService.shared.fetchData(url: url, method: "GET", type: SearchResults.self)
-    }
-    
-    func fetchTrendingHashtags() async throws -> [Tag] {
-        guard let baseURLString = try? await KeychainHelper.shared.read(service: "MustardKeychain", account: "baseURL"),
-              let baseURL = URL(string: baseURLString) else {
-            throw AppError(message: "Base URL not found")
-        }
-        
-        let endpoint = "/api/v1/trends/tags"
-        let url = baseURL.appendingPathComponent(endpoint)
-        
-        do {
-            let tags = try await NetworkService.shared.fetchData(url: url, method: "GET", type: [Tag].self)
-            return tags
-        } catch {
-            throw AppError(message: "Failed to fetch trending hashtags", underlyingError: error)
-        }
-    }
-    
-    func followHashtag(_ hashtag: String) async throws {
-        let encodedHashtag = hashtag.trimmingCharacters(in: .whitespacesAndNewlines).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-        guard let encodedHashtagName = encodedHashtag else {
-            throw AppError(message: "Invalid hashtag format.")
-        }
-        
-        let endpoint = "/api/v1/tags/\(encodedHashtagName)/follow"
-        
-        do {
-            _ = try await NetworkService.shared.request(endpoint: endpoint, method: .post, responseType: EmptyResponse.self)
-            print("Successfully followed hashtag: \(hashtag)")
-        } catch {
-            if let appError = error as? AppError {
-                self.alertError = appError
-            } else {
-                self.alertError = AppError(message: "Failed to follow hashtag: \(hashtag)", underlyingError: error)
+            } catch {
+                self.logger.error("Failed toggleLike network call: \(error.localizedDescription)")
+                // Revert optimistic update if network call failed
+                if let index = originalIndex {
+                    self.posts[index].isFavourited = originalPost.isFavourited
+                    self.posts[index].favouritesCount = originalPost.favouritesCount
+                }
+                if let topIndex = originalTopIndex {
+                    self.topPosts[topIndex].isFavourited = originalPost.isFavourited
+                    self.topPosts[topIndex].favouritesCount = originalPost.favouritesCount
+                }
+                self.alertError = AppError(message: "Failed to like post", underlyingError: error)
             }
         }
     }
+    
+    // Apply similar changes to toggleRepost
+    func toggleRepost(for post: Post) {
+        let originalPost = post
+        let originalIndex = posts.firstIndex(where: { $0.id == post.id })
+        let originalTopIndex = topPosts.firstIndex(where: { $0.id == post.id })
+        
+        // Optimistic update
+        if let index = originalIndex {
+            posts[index].isReblogged.toggle()
+            posts[index].reblogsCount += posts[index].isReblogged ? 1 : -1
+        }
+        if let topIndex = originalTopIndex {
+            topPosts[topIndex].isReblogged.toggle()
+            topPosts[topIndex].reblogsCount += topPosts[topIndex].isReblogged ? 1 : -1
+        }
+        
+        updateLoadingState(for: post.id, isLoading: true)
+        Task {
+            defer { self.updateLoadingState(for: post.id, isLoading: false) }
+            do {
+                let returnedPost = try await self.postActionService.toggleRepost(postID: post.id, isCurrentlyReblogged: originalPost.isReblogged)
+                if let returnedPost = returnedPost {
+                    if let index = self.posts.firstIndex(where: { $0.id == returnedPost.id }) {
+                        self.posts[index].isReblogged = returnedPost.isReblogged
+                        self.posts[index].reblogsCount = returnedPost.reblogsCount
+                    }
+                    if let topIndex = self.topPosts.firstIndex(where: { $0.id == returnedPost.id }) {
+                        self.topPosts[topIndex].isReblogged = returnedPost.isReblogged
+                        self.topPosts[topIndex].reblogsCount = returnedPost.reblogsCount
+                    }
+                }
+            } catch {
+                self.logger.error("Failed toggleRepost network call: \(error.localizedDescription)")
+                // Revert optimistic update
+                if let index = originalIndex {
+                    self.posts[index].isReblogged = originalPost.isReblogged
+                    self.posts[index].reblogsCount = originalPost.reblogsCount
+                }
+                if let topIndex = originalTopIndex {
+                    self.topPosts[topIndex].isReblogged = originalPost.isReblogged
+                    self.topPosts[topIndex].reblogsCount = originalPost.reblogsCount
+                }
+                self.alertError = AppError(message: "Failed to repost", underlyingError: error)
+            }
+        }
+    }
+    
+    func comment(on post: Post, content: String) {
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        updateLoadingState(for: post.id, isLoading: true)
+        Task {
+            // [weak self] in // Optional
+            defer { self.updateLoadingState(for: post.id, isLoading: false) } // Use self.
+            // guard let self = self else { return } // Uncomment if using [weak self]
+            do {
+                // FIX: Assign result to _ to silence warning
+                _ = try await self.postActionService.comment(postID: post.id, content: content) // Use self.
+                // Optimistic Update counts
+                // Use self. here
+                if let index = self.posts.firstIndex(where: { $0.id == post.id }) { self.posts[index].repliesCount += 1 }
+                if let topIndex = self.topPosts.firstIndex(where: { $0.id == post.id }) { self.topPosts[topIndex].repliesCount += 1 }
+                
+                // Use self. here
+                self.commentText = ""
+                self.showingCommentSheet = false
+                self.selectedPostForComments = nil
+                self.logger.info("Commented on post \(post.id)")
+            } catch {
+                // Use self. here
+                self.logger.error("Failed to comment on post \(post.id): \(error.localizedDescription)")
+                self.alertError = AppError(message: "Failed to post comment", underlyingError: error)
+            }
+        }
+    }
+    
+    // --- Show Comment Sheet ---
+    func showComments(for post: Post) {
+        selectedPostForComments = post
+        showingCommentSheet = true
+    }
+    
     
     // MARK: - Loading State Helper
-    private func updateLoadingState(for postId: String, isLoading: Bool) {
+    private func initializeLoadingStates(for newPosts: [Post]) {
+        // No need for self. here as it's not in a closure
         var newStates = postLoadingStates
-        newStates[postId] = isLoading
+        for post in newPosts where newStates[post.id] == nil {
+            newStates[post.id] = false
+        }
         postLoadingStates = newStates
     }
     
     func isLoading(for post: Post) -> Bool {
+        // No need for self. here
         return postLoadingStates[post.id] ?? false
     }
     
-    // MARK: - Private account helper
-    private func authAccount() -> Account? {
-        return Account(
-            id: "current-user-id",
-            username: "currentUsername",
-            display_name: "Current User",
-            avatar: nil,
-            acct: "current-user-acct",
-            url: nil,
-            accessToken: nil,
-            followers_count: 0,
-            following_count: 0,
-            statuses_count: 0,
-            last_status_at: nil,
-            isBot: false,
-            isLocked: false,
-            note: nil,
-            header: nil,
-            header_static: nil,
-            discoverable: false,
-            indexable: false,
-            suspended: false
-        )
+    private func updateLoadingState(for postId: String, isLoading: Bool) {
+        // No need for self. here
+        postLoadingStates[postId] = isLoading
+    }
+    
+    // MARK: - Navigation
+    func navigateToProfile(_ user: User) {
+        // No need for self. here
+        navigationPath.append(user)
+    }
+    
+    func navigateToDetail(for post: Post) {
+        // No need for self. here
+        navigationPath.append(post)
     }
 }
-
-// MARK: - SearchResults
-struct SearchResults: Decodable {
-    var accounts: [Account]
-    var statuses: [Post]
-    var hashtags: [Tag]
-}
-
-// MARK: - Empty Response
-private struct EmptyResponse: Decodable {}

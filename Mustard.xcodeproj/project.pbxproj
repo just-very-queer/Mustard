@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		66292ADF2D43CA9D00883170 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66292ADE2D43CA9D00883170 /* User.swift */; };
 		66292AE32D43CACE00883170 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66292AE22D43CACE00883170 /* Config.swift */; };
+		66397F592D9BBFBB00AD1475 /* AttributedTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66397F582D9BBFBB00AD1475 /* AttributedTextView.swift */; };
 		663A900F2D5F5E7C001FFE8C /* InstanceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */; };
 		664E08A22C96019600D547C7 /* ServerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664E089F2C96019600D547C7 /* ServerModel.swift */; };
 		666A1B622D63D4EA003F08FD /* SwiftSoupUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */; };
@@ -16,12 +17,19 @@
 		6687C37F2C95B426000ECC5D /* Post.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6687C37E2C95B426000ECC5D /* Post.swift */; };
 		6687C3852C95B44D000ECC5D /* Account.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6687C3822C95B44C000ECC5D /* Account.swift */; };
 		6687C3882C95B46E000ECC5D /* MediaAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6687C3862C95B46E000ECC5D /* MediaAttachment.swift */; };
-		66FA9EB62D35AF9700564B25 /* CombinedUtilityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FA9EB32D35AF9600564B25 /* CombinedUtilityViews.swift */; };
+		66A3F2AC2D68903100F86646 /* BasicComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A3F2AB2D68903100F86646 /* BasicComponents.swift */; };
+		66A3F2AE2D68908800F86646 /* MediaComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A3F2AD2D68908800F86646 /* MediaComponents.swift */; };
+		66A3F2B02D6890B300F86646 /* WebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A3F2AF2D6890B300F86646 /* WebView.swift */; };
+		66A3F2B22D6890D700F86646 /* UtilityComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A3F2B12D6890D700F86646 /* UtilityComponents.swift */; };
+		66A3F2B42D6891F700F86646 /* CustomDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A3F2B32D6891F700F86646 /* CustomDivider.swift */; };
+		66A3F2B82D68987E00F86646 /* AccountRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A3F2B72D68987E00F86646 /* AccountRow.swift */; };
+		66FA9EB62D35AF9700564B25 /* HTMLUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FA9EB32D35AF9600564B25 /* HTMLUtils.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		66292ADE2D43CA9D00883170 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		66292AE22D43CACE00883170 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
+		66397F582D9BBFBB00AD1475 /* AttributedTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttributedTextView.swift; sourceTree = "<group>"; };
 		663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceModel.swift; sourceTree = "<group>"; };
 		664E089F2C96019600D547C7 /* ServerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerModel.swift; sourceTree = "<group>"; };
 		666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftSoupUtils.swift; sourceTree = "<group>"; };
@@ -29,7 +37,13 @@
 		6687C37E2C95B426000ECC5D /* Post.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Post.swift; sourceTree = "<group>"; };
 		6687C3822C95B44C000ECC5D /* Account.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Account.swift; sourceTree = "<group>"; };
 		6687C3862C95B46E000ECC5D /* MediaAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaAttachment.swift; sourceTree = "<group>"; };
-		66FA9EB32D35AF9600564B25 /* CombinedUtilityViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CombinedUtilityViews.swift; sourceTree = "<group>"; };
+		66A3F2AB2D68903100F86646 /* BasicComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BasicComponents.swift; sourceTree = "<group>"; };
+		66A3F2AD2D68908800F86646 /* MediaComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaComponents.swift; sourceTree = "<group>"; };
+		66A3F2AF2D6890B300F86646 /* WebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebView.swift; sourceTree = "<group>"; };
+		66A3F2B12D6890D700F86646 /* UtilityComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilityComponents.swift; sourceTree = "<group>"; };
+		66A3F2B32D6891F700F86646 /* CustomDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomDivider.swift; sourceTree = "<group>"; };
+		66A3F2B72D68987E00F86646 /* AccountRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRow.swift; sourceTree = "<group>"; };
+		66FA9EB32D35AF9600564B25 /* HTMLUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLUtils.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -124,8 +138,15 @@
 		6687C3B52C95B61C000ECC5D /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
-				66FA9EB32D35AF9600564B25 /* CombinedUtilityViews.swift */,
+				66FA9EB32D35AF9600564B25 /* HTMLUtils.swift */,
+				66A3F2B12D6890D700F86646 /* UtilityComponents.swift */,
+				66A3F2AD2D68908800F86646 /* MediaComponents.swift */,
+				66A3F2AB2D68903100F86646 /* BasicComponents.swift */,
 				666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */,
+				66A3F2AF2D6890B300F86646 /* WebView.swift */,
+				66A3F2B32D6891F700F86646 /* CustomDivider.swift */,
+				66A3F2B72D68987E00F86646 /* AccountRow.swift */,
+				66397F582D9BBFBB00AD1475 /* AttributedTextView.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -213,10 +234,17 @@
 			buildActionMask = 2147483647;
 			files = (
 				66292ADF2D43CA9D00883170 /* User.swift in Sources */,
+				66397F592D9BBFBB00AD1475 /* AttributedTextView.swift in Sources */,
+				66A3F2B22D6890D700F86646 /* UtilityComponents.swift in Sources */,
+				66A3F2AC2D68903100F86646 /* BasicComponents.swift in Sources */,
+				66A3F2B02D6890B300F86646 /* WebView.swift in Sources */,
+				66A3F2AE2D68908800F86646 /* MediaComponents.swift in Sources */,
 				66292AE32D43CACE00883170 /* Config.swift in Sources */,
 				664E08A22C96019600D547C7 /* ServerModel.swift in Sources */,
 				663A900F2D5F5E7C001FFE8C /* InstanceModel.swift in Sources */,
-				66FA9EB62D35AF9700564B25 /* CombinedUtilityViews.swift in Sources */,
+				66FA9EB62D35AF9700564B25 /* HTMLUtils.swift in Sources */,
+				66A3F2B82D68987E00F86646 /* AccountRow.swift in Sources */,
+				66A3F2B42D6891F700F86646 /* CustomDivider.swift in Sources */,
 				6687C3852C95B44D000ECC5D /* Account.swift in Sources */,
 				666A1B622D63D4EA003F08FD /* SwiftSoupUtils.swift in Sources */,
 				6687C3882C95B46E000ECC5D /* MediaAttachment.swift in Sources */,

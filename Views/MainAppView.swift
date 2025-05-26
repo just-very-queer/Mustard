@@ -3,123 +3,119 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 24/01/25.
-//
+// (REVISED: Removed NetworkService dependency, aligned with MastodonAPIService)
 
 import SwiftUI
 import OSLog
 import SwiftData
 
 struct MainAppView: View {
+    // Environment Objects (Passed from MustardApp)
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var locationManager: LocationManager
-    
-    // Services
+    @EnvironmentObject var cacheService: CacheService // Receives from environment
+
+    // Services (Passed from MustardApp - stored for ViewModel initialization)
+    // These are the services created by AppServices, which should now be using MastodonAPIService
     let timelineService: TimelineService
-    let trendingService: TrendingService // Make sure TrendingService is here
+    let trendingService: TrendingService
     let postActionService: PostActionService
     let profileService: ProfileService
-    let cacheService: CacheService
-    let networkService: NetworkService
-    let weatherService: WeatherService
-    
-    
-    /// Hold a single source of truth for your TimelineViewModel so it’s reused
+    let searchService: SearchService // Assuming SearchService is also passed via AppServices
+
+    // State Objects (Initialized here, single source of truth for these ViewModels within MainAppView scope)
     @StateObject private var timelineViewModel: TimelineViewModel
-    
-    /// Hold a single source of truth for your ProfileViewModel
     @StateObject private var profileViewModel: ProfileViewModel
-    
-    
-    /// Custom initializer to inject everything we need:
+    @StateObject private var searchViewModel: SearchViewModel // For the Search tab
+
+    // Initializer to receive services and create ViewModels
     init(
         timelineService: TimelineService,
         trendingService: TrendingService,
         postActionService: PostActionService,
         profileService: ProfileService,
+        searchService: SearchService, // Added SearchService
         cacheService: CacheService,
-        networkService: NetworkService,
-        weatherService: WeatherService
+        locationManager: LocationManager,
     ) {
         self.timelineService = timelineService
         self.trendingService = trendingService
         self.postActionService = postActionService
         self.profileService = profileService
-        self.cacheService = cacheService
-        self.networkService = networkService
-        self.weatherService = weatherService
-        
-        // Initialize the TimelineViewModel
+        self.searchService = searchService
+
+        // Initialize the ViewModels, passing all required dependencies
         _timelineViewModel = StateObject(
             wrappedValue: TimelineViewModel(
                 timelineService: timelineService,
-                weatherService: weatherService,
-                locationManager: LocationManager(), // or pass a placeholder; can be replaced later
-                trendingService: trendingService, // Pass trendingService here
-                postActionService: postActionService // Pass postActionService
+                locationManager: locationManager,
+                trendingService: trendingService,
+                postActionService: postActionService,
+                cacheService: cacheService
             )
         )
-        
-        // Initialize the ProfileViewModel
+
         _profileViewModel = StateObject(
             wrappedValue: ProfileViewModel(profileService: profileService)
         )
+
+        // Initialize SearchViewModel, ensuring SearchService is correctly configured
+        // SearchService itself should have been initialized with MastodonAPIService by AppServices
+        _searchViewModel = StateObject(
+            wrappedValue: SearchViewModel(searchService: searchService)
+        )
     }
-    
+
     var body: some View {
         TabView {
             // MARK: - Home Tab
-            NavigationStack {
-                /// Use a custom “TimelineScreen” (or any custom name) instead of SwiftUI's TimelineView.
+            NavigationStack(path: $timelineViewModel.navigationPath) { // Use ViewModel's path
                 TimelineScreen(viewModel: timelineViewModel)
                     .navigationTitle("Timeline")
             }
             .tabItem {
                 Label("Home", systemImage: "house")
             }
-            
+
             // MARK: - Profile Tab
             NavigationStack {
-                if let currentUser = authViewModel.currentUser {
-                    // Pass both `currentUser` and `timelineViewModel` to ProfileView
-                    ProfileView(user: currentUser)
-                        .environmentObject(authViewModel)
-                        .environmentObject(timelineViewModel) // Inject TimelineViewModel here
-                        .environmentObject(profileViewModel) // Inject ProfileViewModel here
+                if let currentUser = authViewModel.currentUser { //
+                    ProfileView(user: currentUser) //
+                    // EnvironmentObjects for ProfileView and its children are provided globally below
                 } else {
                     Text("Please log in to view your profile.")
                         .foregroundColor(.gray)
-                        .font(.body)
-                        .multilineTextAlignment(.center)
-                        .padding()
                 }
             }
             .tabItem {
                 Label("Profile", systemImage: "person.circle")
             }
-            
+
             // MARK: - Search Tab
             NavigationStack {
-                SearchView()
-                    .navigationTitle("Search")
-                    .environmentObject(timelineViewModel) // Inject TimelineViewModel for search functionality
+                SearchView() //
+                // EnvironmentObjects for SearchView are provided globally below
+                // It uses its own @StateObject for SearchViewModel
             }
             .tabItem {
                 Label("Search", systemImage: "magnifyingglass")
             }
-            
+
             // MARK: - Settings Tab
             NavigationStack {
-                SettingsView()
+                SettingsView() //
+                // EnvironmentObjects for SettingsView are provided globally below
             }
             .tabItem {
                 Label("Settings", systemImage: "gearshape")
             }
         }
-        // Make sure environment objects are available throughout:
-        .environmentObject(authViewModel)
-        .environmentObject(locationManager)
-        .environmentObject(timelineViewModel) // Inject TimelineViewModel globally here
-        .environmentObject(profileViewModel) // Inject ProfileViewModel globally here
-        .environmentObject(cacheService) // Inject into the environment
+        // Inject ViewModels and other objects into the environment for descendant views
+        .environmentObject(authViewModel) //
+        .environmentObject(locationManager) //
+        .environmentObject(timelineViewModel) // Make timelineViewModel available globally
+        .environmentObject(profileViewModel)  // Make profileViewModel available globally
+        .environmentObject(searchViewModel) // Make searchViewModel available globally for search tab
+        .environmentObject(cacheService)     // Make cacheService available globally
     }
 }

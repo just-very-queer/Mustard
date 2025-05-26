@@ -12,80 +12,79 @@ import OSLog
 
 @main
 struct MustardApp: App {
+    
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-    // MARK: - Services
-    static private let networkService = NetworkService.shared
-    private let cacheService = CacheService()
-
-    // MARK: - ViewModels
+    // MARK: - Shared Instances & Managers
+    static private let mastodonAPIServiceInstance = MastodonAPIService() // single instance
+    
+    @StateObject private var cacheService: CacheService   // will be initialized in init()
     @StateObject private var authViewModel = AuthenticationViewModel()
     @StateObject private var locationManager = LocationManager()
-    @State private var weatherService: WeatherService! // Add WeatherService
-
-    // MARK: - SwiftData container
+    
+    // MARK: - SwiftData Container
     let container: ModelContainer
-
-    // MARK: - Services
-    @State private var timelineService: TimelineService!
-    @State private var trendingService: TrendingService!
-    @State private var postActionService: PostActionService!
-    @State private var profileService: ProfileService!
+    
+    // MARK: - Service Environment
+    @StateObject private var appServices: AppServices
 
     // MARK: - Initialization
     init() {
-        // Initialize ModelContainer
+        // 1. SwiftData ModelContainer
         do {
-            container = try ModelContainer(for: Account.self, MediaAttachment.self, Post.self, ServerModel.self)
-            print("[MustardApp] ModelContainer initialized successfully.")
+            let schema = Schema([
+                Account.self, MediaAttachment.self, Post.self, ServerModel.self,
+                Tag.self, Item.self, InstanceModel.self, InstanceInformationModel.self
+            ])
+            let modelConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            self.container = try ModelContainer(for: schema, configurations: [modelConfig])
+            print("[MustardApp] ModelContainer initialized.")
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // Initialize weatherService before using it in any other services
-        let weatherService = WeatherService()
+        // 2. Initialize CacheService with MastodonAPIService instance
+        let initialCache = CacheService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)
+        _cacheService = StateObject(wrappedValue: initialCache)
 
-        // Initialize services with proper dependencies
-        let postActionService = PostActionService(networkService: MustardApp.networkService)
-        let trendingService = TrendingService(networkService: MustardApp.networkService, cacheService: cacheService)
-        let timelineService = TimelineService(
-            networkService: MustardApp.networkService,
-            cacheService: cacheService,
-            postActionService: postActionService,
-            locationManager: LocationManager(),
-            trendingService: trendingService
+        // 3. Initialize AppServices using the shared instances
+        let services = AppServices(
+            mastodonAPIService: MustardApp.mastodonAPIServiceInstance,
+            cacheService: initialCache,
+            locationManager: self.locationManager
         )
+        _appServices = StateObject(wrappedValue: services)
 
-        // Initialize all other services
-        _timelineService = State(initialValue: timelineService)
-        _trendingService = State(initialValue: trendingService)
-        _postActionService = State(initialValue: postActionService)
-        _profileService = State(initialValue: ProfileService(networkService: MustardApp.networkService))
-        _weatherService = State(initialValue: weatherService) // Initialize WeatherService state
+        print("[MustardApp] init() completed. AppServices & CacheService ready.")
+        Logger(subsystem: "titan.mustard.app", category: "App").info("AppServices initialized.")
     }
 
     var body: some Scene {
         WindowGroup {
             Group {
                 switch authViewModel.authState {
-                case .checking: // Add the checking case
+                case .checking:
                     ProgressView("Loading...")
                 case .unauthenticated, .authenticating:
                     LoginView()
+                        .environmentObject(authViewModel)
+                        .environmentObject(locationManager)
                 case .authenticated:
                     MainAppView(
-                        timelineService: timelineService,
-                        trendingService: trendingService,
-                        postActionService: postActionService,
-                        profileService: profileService,
+                        timelineService: appServices.timelineService,
+                        trendingService: appServices.trendingService,
+                        postActionService: appServices.postActionService,
+                        profileService: appServices.profileService,
+                        searchService: appServices.searchService,
                         cacheService: cacheService,
-                        networkService: MustardApp.networkService,
-                        weatherService: weatherService // Pass WeatherService instance
+                        locationManager: locationManager
+                        // Removed: direct mastodonAPIService injection
                     )
+                    .environmentObject(authViewModel)
+                    .environmentObject(locationManager)
+                    .environmentObject(cacheService)
                 }
             }
-            .environmentObject(authViewModel)
-            .environmentObject(locationManager)
             .modelContainer(container)
         }
     }
@@ -93,9 +92,11 @@ struct MustardApp: App {
 
 // MARK: - AppDelegate
 class AppDelegate: NSObject, UIApplicationDelegate {
-    let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AppDelegate")
-
-    func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AppDelegate")
+    
+    func application(_ app: UIApplication,
+                     open url: URL,
+                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         logger.info("Received OAuth callback URL: \(url.absoluteString, privacy: .public)")
         NotificationCenter.default.post(
             name: .didReceiveOAuthCallback,

@@ -9,7 +9,7 @@ import SwiftData
 
 /// Represents a Mastodon post, previously known as Status.
 @Model
-final class Post: Identifiable, Codable, Equatable {
+final class Post: Identifiable, Hashable, Codable, Equatable {
     @Attribute(.unique) var id: String
     var content: String
     var createdAt: Date
@@ -23,11 +23,11 @@ final class Post: Identifiable, Codable, Equatable {
     var mentions: [Mention]? // Added mentions
     var url: String?
     var tags: [Tag]?  // Added tags
-
-
+    
+    
     // MARK: - Relationship (Replies) - Note: Direct nested decoding of replies might be complex
     @Relationship(deleteRule: .cascade) var replies: [Post]? = [] // Initialize as optional and empty array
-
+    
     // MARK: - Initializer
     init(
         id: String,
@@ -43,7 +43,7 @@ final class Post: Identifiable, Codable, Equatable {
         replies: [Post]? = nil, // Replies can be nil or empty array
         mentions: [Mention]? = nil, // Added mentions to init
         tags: [Tag]? = nil // Added tags to init
-
+        
     ) {
         self.id = id
         self.content = content
@@ -59,7 +59,7 @@ final class Post: Identifiable, Codable, Equatable {
         self.mentions = mentions
         self.tags = tags // Initialize tags
     }
-
+    
     // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
         case id, content, createdAt, account, mediaAttachments, replies, mentions, tags, url
@@ -69,7 +69,7 @@ final class Post: Identifiable, Codable, Equatable {
         case favouritesCount = "favourites_count" // Corrected to snake_case
         case repliesCount = "replies_count" // Corrected to snake_case
     }
-
+    
     required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try container.decode(String.self, forKey: .id)
@@ -86,9 +86,9 @@ final class Post: Identifiable, Codable, Equatable {
         self.mentions = try container.decodeIfPresent([Mention].self, forKey: .mentions) // Decode with default value
         self.tags = try container.decodeIfPresent([Tag].self, forKey: .tags) // Decode tags
         self.url = try container.decodeIfPresent(String.self, forKey: .url)
-
+        
     }
-
+    
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
@@ -105,9 +105,22 @@ final class Post: Identifiable, Codable, Equatable {
         try container.encodeIfPresent(mentions, forKey: .mentions)
         try container.encodeIfPresent(tags, forKey: .tags) // Encode tags
         try container.encodeIfPresent(url, forKey: .url)
-
+        
     }
-
+    
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(content)
+        hasher.combine(account) // Account must be Hashable
+        hasher.combine(createdAt)
+        hasher.combine(replies) // [Post] must be Hashable (recursive Hashable conformance!)
+        hasher.combine(url)
+        hasher.combine(reblogsCount)
+        hasher.combine(favouritesCount)
+        hasher.combine(repliesCount)
+        hasher.combine(mediaAttachments) // [MediaAttachment] must be Hashable
+    }
+    
     // MARK: - Equatable Conformance
     static func == (lhs: Post, rhs: Post) -> Bool {
         return lhs.id == rhs.id &&
@@ -126,3 +139,4 @@ final class Post: Identifiable, Codable, Equatable {
         // Note: 'replies' relationship is intentionally omitted from Equatable to avoid potential infinite recursion.
     }
 }
+

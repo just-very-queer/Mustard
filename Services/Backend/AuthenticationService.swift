@@ -3,11 +3,8 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 24/01/25.
+//  Updated to use MastodonAPIService & NetworkSessionManager
 //
-//  This service handles the authentication flow using OAuth 2.0. The flow includes registering a new OAuth app,
-//  starting the web authentication session, exchanging the authorization code for an access token, and saving the
-//  token and user information in the Keychain. This service also handles error scenarios like missing credentials
-//  or failed token exchanges, providing logging for troubleshooting.
 
 import Foundation
 import AuthenticationServices
@@ -28,157 +25,145 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AuthenticationService")
     private let keychainService = "MustardKeychain"
-    private let networkService = NetworkService.shared
+    private let mastodonAPIService: MastodonAPIService
+    private let sessionManager: NetworkSessionManager
     private var webAuthSession: ASWebAuthenticationSession?
     private var cancellables = Set<AnyCancellable>()
     private var alertErrorTimer: Timer?
     
     // MARK: - Singleton Instance
     
-    static let shared = AuthenticationService()
+    static let shared = AuthenticationService(
+        mastodonAPIService: MastodonAPIService(),
+        sessionManager: NetworkSessionManager.shared
+    )
     
-    private override init() {
+    /// Designated initializer for explicit injection (e.g. tests)
+    internal init(
+        mastodonAPIService: MastodonAPIService,
+        sessionManager: NetworkSessionManager
+    ) {
+        self.mastodonAPIService = mastodonAPIService
+        self.sessionManager = sessionManager
         super.init()
-        checkExistingCredentials()  // Call the credential check on initialization
+        checkExistingCredentials()
     }
+    
+    /// Private override for the shared singleton
+    private override init() {
+        self.mastodonAPIService = MastodonAPIService()
+        self.sessionManager = NetworkSessionManager.shared
+        super.init()
+        checkExistingCredentials()
+    }
+    
+    // MARK: - Credential Check
     
     private func checkExistingCredentials() {
         Task {
             do {
                 try await verifyCredentials()
                 logger.info("Credentials are valid.")
-                // No need to set isAuthenticated = true here; verifyCredentials does it.
             } catch {
                 logger.error("Credentials check failed: \(error.localizedDescription)")
-                await MainActor.run {
-                    isAuthenticated = false  // Ensure isAuthenticated is false on failure
-                }
-                try? await clearCredentials() // Only clear if verification *fails*
+                await MainActor.run { isAuthenticated = false }
+                try? await clearCredentials()
             }
         }
     }
     
     private func verifyCredentials() async throws {
-        guard let baseURLString = try await KeychainHelper.shared.read(service: keychainService, account: "baseURL"),
-              !baseURLString.isEmpty,
-              let baseURL = URL(string: baseURLString),
-              let token = try await KeychainHelper.shared.read(service: keychainService, account: "accessToken"),
-              !token.isEmpty else {
-            throw AppError(mastodon: .missingCredentials)
-        }
-        
-        // Fetch current user to validate token
-        currentUser = try await networkService.fetchCurrentUser(instanceURL: baseURL)
-        
-        // Update isAuthenticated on main thread
-        // await MainActor.run { // Already on MainActor
+        // Validate by fetching current user
+        currentUser = try await mastodonAPIService.fetchCurrentUser()
         isAuthenticated = true
-        // }
     }
-    
     
     // MARK: - Authentication Flow
     
-    /// Main authentication method that triggers the OAuth flow
-    /// - Parameter server: The server model representing the Mastodon instance
-    /// - Throws: An error if authentication fails at any step
     func authenticate(to server: ServerModel) async throws {
         guard !isAuthenticating else {
             throw AppError(mastodon: .operationInProgress)
         }
-        
         isAuthenticating = true
         alertError = nil
         
         do {
             let config = try await obtainOAuthConfig(for: server)
-            
-            // Use a Task to handle the web authentication session, ensuring it runs concurrently
-            let authorizationCode = try await Task { [weak self] in
-                guard let self = self else { throw AppError(message: "AuthenticationService deallocated during authentication") }
+            let code = try await Task { [weak self] in
+                guard let self = self else {
+                    throw AppError(message: "AuthenticationService deallocated")
+                }
                 return try await self.startWebAuthSession(config: config, instanceURL: server.url)
             }.value
             
-            guard !authorizationCode.isEmpty else {
+            guard !code.isEmpty else {
                 throw AppError(mastodon: .missingAuthorizationCode)
             }
             
-            _ = try await exchangeAuthorizationCode(authorizationCode, config: config, instanceURL: server.url)
+            _ = try await exchangeAuthorizationCode(code, config: config, instanceURL: server.url)
             try await saveInstanceURL(server.url)
-            try await fetchAndUpdateUser(instanceURL: server.url)
+            try await fetchAndUpdateUser()
             
-            // Update isAuthenticated ONLY after all steps are successful
-            // await MainActor.run { // Ensure UI update is on the main thread.  Already on MainActor
             isAuthenticated = true
-            // }
             logger.info("Authentication successful")
         } catch {
-            // Update isAuthenticated to false on the main thread
-            // await MainActor.run { // Already on main actor
             isAuthenticated = false
-            //}
-            
             handleError(error)
-            
-            // Rethrow the error to be handled by the caller
             throw error
         }
         
-        // Reset isAuthenticating only after the authentication process is complete (success or failure)
-        //do { // Removed unnecessary do block
         isAuthenticating = false
-        //}
     }
     
-    
-    // MARK: - OAuth Configuration Handling
+    // MARK: - OAuth Config
     
     private func obtainOAuthConfig(for server: ServerModel) async throws -> OAuthConfig {
-        let (existingClientID, existingClientSecret) = try await fetchExistingOAuthCredentials()
-        if let clientId = existingClientID, let clientSecret = existingClientSecret, !clientId.isEmpty, !clientSecret.isEmpty {
+        let (existingId, existingSecret) = try await fetchExistingOAuthCredentials()
+        if let id = existingId, let secret = existingSecret,
+           !id.isEmpty, !secret.isEmpty {
             logger.info("Reusing existing OAuth credentials")
-            return OAuthConfig(clientId: clientId, clientSecret: clientSecret, redirectUri: "mustard://oauth-callback", scope: "read write follow push")
+            return OAuthConfig(
+                clientId: id,
+                clientSecret: secret,
+                redirectUri: "mustard://oauth-callback",
+                scope: "read write follow push"
+            )
         } else {
             return try await registerNewOAuthApp(with: server)
         }
     }
     
     private func fetchExistingOAuthCredentials() async throws -> (String?, String?) {
-        let clientID = try await KeychainHelper.shared.read(service: keychainService, account: "clientID")
-        let clientSecret = try await KeychainHelper.shared.read(service: keychainService, account: "clientSecret")
-        return (clientID, clientSecret)
+        let id = try await KeychainHelper.shared.read(service: keychainService, account: "clientID")
+        let secret = try await KeychainHelper.shared.read(service: keychainService, account: "clientSecret")
+        return (id, secret)
     }
-    
     
     private func registerNewOAuthApp(with server: ServerModel) async throws -> OAuthConfig {
         logger.info("Registering new OAuth app with server: \(server.url.absoluteString, privacy: .public)")
-        
         try? await KeychainHelper.shared.delete(service: keychainService, account: "clientID")
         try? await KeychainHelper.shared.delete(service: keychainService, account: "clientSecret")
         
-        let newConfig = try await networkService.registerOAuthApp(instanceURL: server.url)
-        
-        guard !newConfig.clientId.isEmpty, !newConfig.clientSecret.isEmpty else {
+        let config = try await mastodonAPIService.registerOAuthApp(instanceURL: server.url)
+        guard !config.clientId.isEmpty, !config.clientSecret.isEmpty else {
             logger.error("Invalid OAuth credentials from registerOAuthApp")
             throw AppError(mastodon: .invalidCredentials)
         }
         
-        try await KeychainHelper.shared.save(newConfig.clientId, service: keychainService, account: "clientID")
-        try await KeychainHelper.shared.save(newConfig.clientSecret, service: keychainService, account: "clientSecret")
-        
+        try await KeychainHelper.shared.save(config.clientId, service: keychainService, account: "clientID")
+        try await KeychainHelper.shared.save(config.clientSecret, service: keychainService, account: "clientSecret")
         logger.info("Successfully registered and saved new OAuth app")
-        return newConfig
+        return config
     }
     
-    // MARK: - Token Management
+    // MARK: - Token Exchange
     
-    /// Exchanging authorization code for an access token
-    /// - Parameter code: The authorization code returned from the web auth flow
-    /// - Parameter config: The OAuth configuration to be used
-    /// - Parameter instanceURL: The URL of the Mastodon instance
-    /// - Throws: An error if token exchange fails or response can't be decoded
-    func exchangeAuthorizationCode(_ code: String, config: OAuthConfig, instanceURL: URL) async throws -> TokenResponse {
-        let body: [String: String] = [
+    func exchangeAuthorizationCode(
+        _ code: String,
+        config: OAuthConfig,
+        instanceURL: URL
+    ) async throws -> TokenResponse {
+        let body = [
             "grant_type": "authorization_code",
             "code": code,
             "client_id": config.clientId,
@@ -187,118 +172,49 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             "scope": config.scope
         ]
         
-        let tokenEndpointURL = instanceURL.appendingPathComponent("/oauth/token")
-        var request = URLRequest(url: tokenEndpointURL)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-            .map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")" }
-            .joined(separator: "&")
-            .data(using: .utf8)
-        
-        logger.info("Exchanging authorization code at \(tokenEndpointURL.absoluteString)")
+        let tokenURL = instanceURL.appendingPathComponent("/oauth/token")
+        let request = try sessionManager.buildRequest(
+            url: tokenURL,
+            method: "POST",
+            body: body,
+            contentType: "application/x-www-form-urlencoded",
+            accessToken: nil
+        )
         
         let (data, response) = try await URLSession.shared.data(for: request)
-        
-        // Capture and log raw response data for debugging
-        logger.debug("Raw response data (before validation): \(String(data: data, encoding: .utf8) ?? "Invalid data")")
-        logger.debug("HTTP response (before validation): \(response)")
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw AppError(mastodon: .networkError(message: "Network Error"))
+        guard let http = response as? HTTPURLResponse else {
+            throw AppError(mastodon: .networkError(message: "Invalid response"))
+        }
+        guard http.statusCode == 200 else {
+            let msg = String(data: data, encoding: .utf8) ?? "No body"
+            logger.error("Token exchange failed: \(http.statusCode) – \(msg)")
+            throw AppError(mastodon: .oauthError(message: msg))
         }
         
-        guard httpResponse.statusCode == 200 else {
-            // Decode the error response directly as a dictionary and handle it generically
-            if let errorResponse = try? JSONDecoder().decode([String: String].self, from: data),
-               let errorMessage = errorResponse["error_description"] ?? errorResponse["error"] {
-                logger.error("Token exchange failed. Status code: \(httpResponse.statusCode), Error: \(errorMessage)")
-                throw AppError(mastodon: .oauthError(message: errorMessage))
-            } else {
-                let responseBody = String(data: data, encoding: .utf8) ?? "No response body"
-                logger.error("Token exchange failed. Status code: \(httpResponse.statusCode), Response body: \(responseBody)")
-                throw AppError(mastodon: .oauthError(message: "Token exchange failed. Status code: \(httpResponse.statusCode), Response body: \(responseBody)"))
-            }
+        let tokenResp = try sessionManager.jsonDecoder.decode(TokenResponse.self, from: data)
+        logger.debug("Decoded TokenResponse: accessToken=\(tokenResp.accessToken)")
+        
+        // Save tokens
+        try await KeychainHelper.shared.save(tokenResp.accessToken, service: keychainService, account: "accessToken")
+        if let expires = tokenResp.expiresIn {
+            try await KeychainHelper.shared.save(String(expires), service: keychainService, account: "expiresIn")
+        } else {
+            try await KeychainHelper.shared.delete(service: keychainService, account: "expiresIn")
         }
         
-        // Isolate decoding and error handling for better diagnostics
-        do {
-            logger.debug("Raw response data (IMMEDIATELY): \(String(data: data, encoding: .utf8) ?? "Invalid data")")
-            
-            // Use the NetworkService's pre-configured decoder
-            let decodedResponse = try networkService.jsonDecoder.decode(TokenResponse.self, from: data)
-            
-            logger.debug("Successfully decoded TokenResponse. Access Token: \(decodedResponse.accessToken), Expires In: \(decodedResponse.expiresIn ?? -1)") // Handle optional expiresIn
-            
-            // Store the access token and expiration securely
-            print("Attempting to save accessToken to Keychain") // Debugging print
-            try await KeychainHelper.shared.save(decodedResponse.accessToken, service: keychainService, account: "accessToken")
-            print("Successfully saved accessToken to Keychain") // Debugging print
-            
-            if let expiresIn = decodedResponse.expiresIn {
-                print("Attempting to save expiresIn to Keychain") // Debugging print
-                try await KeychainHelper.shared.save(String(expiresIn), service: keychainService, account: "expiresIn")
-                print("Successfully saved expiresIn to Keychain") // Debugging print
-            } else {
-                // If expiresIn is not provided, delete any existing value in the keychain
-                print("expiresIn not provided; deleting existing expiresIn from Keychain") // Debugging print
-                try await KeychainHelper.shared.delete(service: keychainService, account: "expiresIn")
-                logger.info("OAuth token does not expire; 'expires_in' not provided.")
-            }
-            
-            return decodedResponse
-            
-        } catch let decodingError as DecodingError {
-            logger.error("Decoding error: \(decodingError)")
-            
-            switch decodingError {
-            case .dataCorrupted(let context):
-                logger.error("Data corrupted: \(context.debugDescription)")
-            case .keyNotFound(let key, let context):
-                logger.error("Key '\(key.stringValue)' not found: \(context.debugDescription), Coding Path: \(context.codingPath)")
-            case .valueNotFound(let type, let context):
-                logger.error("Value of type '\(type)' not found: \(context.debugDescription), Coding Path: \(context.codingPath)")
-            case .typeMismatch(let type, let context):
-                logger.error("Type '\(type)' mismatch: \(context.debugDescription), Coding Path: \(context.codingPath)")
-            @unknown default:
-                logger.error("Unknown decoding error")
-            }
-            
-            throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
-            
-        } catch {
-            logger.error("Failed to decode TokenResponse: \(error.localizedDescription)")
-            let responseBody = String(data: data, encoding: .utf8) ?? ""
-            logger.debug("Response body for debugging: \(responseBody)")
-            throw AppError(type: .mastodon(.decodingError), underlyingError: error)
-        }
-    }
-    
-    private func saveTokenResponse(_ response: TokenResponse) async throws {
-        try await KeychainHelper.shared.save(response.accessToken, service: keychainService, account: "accessToken")
-        try await KeychainHelper.shared.save(String(response.createdAt!), service: keychainService, account: "createdAt")
-        logger.info("Successfully saved token information")
+        return tokenResp
     }
     
     // MARK: - Error Handling
     
-    /// Handles errors, logs them, and provides suggestions
-    /// - Parameter error: The error to handle
     func handleError(_ error: Error) {
         logger.error("Authentication error: \(error.localizedDescription)")
-        
         alertErrorTimer?.invalidate()
-        if let appError = error as? AppError {
-            alertError = appError
-        } else {
-            alertError = AppError(message: "Authentication failed", underlyingError: error)
-        }
+        
+        alertError = (error as? AppError) ?? AppError(message: "Authentication failed", underlyingError: error)
         
         alertErrorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.alertError = nil
-                self?.alertErrorTimer = nil
-            }
+            self?.alertError = nil
         }
         
         if case .mastodon(.tokenExpired) = (error as? AppError)?.type {
@@ -306,78 +222,53 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         }
     }
     
-    // MARK: - Session Validation
-    
-    func validateAuthentication() async {
-        do {
-            try await verifyCredentials()
-            logger.info("Authentication validation successful")
-        } catch {
-            handleError(error)
-            try? await clearCredentials()
-        }
-    }
-    
-    // MARK: - Web Auth Session
+    // MARK: - Web Auth
     
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow } ?? ASPresentationAnchor()
+        UIApplication.shared.windows.first { $0.isKeyWindow } ?? ASPresentationAnchor()
     }
     
     func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            var components = URLComponents(url: instanceURL.appendingPathComponent("/oauth/authorize"), resolvingAgainstBaseURL: false)!
-            components.queryItems = [
-                URLQueryItem(name: "client_id", value: config.clientId),
-                URLQueryItem(name: "redirect_uri", value: config.redirectUri),
-                URLQueryItem(name: "response_type", value: "code"),
-                URLQueryItem(name: "scope", value: config.scope),
-                URLQueryItem(name: "force_login", value: "true")
+        try await withCheckedThrowingContinuation { cont in
+            var comps = URLComponents(url: instanceURL.appendingPathComponent("/oauth/authorize"), resolvingAgainstBaseURL: false)!
+            comps.queryItems = [
+                .init(name: "client_id", value: config.clientId),
+                .init(name: "redirect_uri", value: config.redirectUri),
+                .init(name: "response_type", value: "code"),
+                .init(name: "scope", value: config.scope),
+                .init(name: "force_login", value: "true")
             ]
-            
-            guard let finalURL = components.url, let callbackScheme = URL(string: config.redirectUri)?.scheme else {
-                continuation.resume(throwing: AppError(mastodon: .invalidAuthorizationURL))
+            guard let url = comps.url,
+                  let scheme = URL(string: config.redirectUri)?.scheme else {
+                cont.resume(throwing: AppError(mastodon: .invalidAuthorizationURL))
                 return
             }
             
-            // Ensure the presentation happens on the main thread, and after the view is fully loaded
             DispatchQueue.main.async {
-                let session = ASWebAuthenticationSession(url: finalURL, callbackURLScheme: callbackScheme) { callbackURL, error in
-                    if let error = error {
-                        self.handleWebAuthError(error, continuation: continuation)
+                let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callbackURL, error in
+                    if let err = error {
+                        if let ae = err as? ASWebAuthenticationSessionError, ae.code == .canceledLogin {
+                            cont.resume(throwing: AppError(mastodon: .userCancelledAuth))
+                        } else {
+                            cont.resume(throwing: err)
+                        }
                         return
                     }
-                    
-                    guard let callbackURL = callbackURL,
-                          let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                    guard let code = URLComponents(url: callbackURL!, resolvingAgainstBaseURL: false)?
                         .queryItems?.first(where: { $0.name == "code" })?.value else {
-                        continuation.resume(throwing: AppError(mastodon: .missingAuthorizationCode))
+                        cont.resume(throwing: AppError(mastodon: .missingAuthorizationCode))
                         return
                     }
-                    
-                    continuation.resume(returning: code)
+                    cont.resume(returning: code)
                 }
                 
                 session.presentationContextProvider = self
                 session.prefersEphemeralWebBrowserSession = true
-                
                 if !session.start() {
-                    continuation.resume(throwing: AppError(mastodon: .webAuthSessionFailed))
+                    cont.resume(throwing: AppError(mastodon: .webAuthSessionFailed))
                 }
-                
                 self.webAuthSession = session
             }
-        }
-    }
-    
-    private func handleWebAuthError(_ error: Error, continuation: CheckedContinuation<String, Error>) {
-        if let authError = error as? ASWebAuthenticationSessionError, authError.code == .canceledLogin {
-            continuation.resume(throwing: AppError(mastodon: .userCancelledAuth))
-        } else {
-            continuation.resume(throwing: error)
         }
     }
     
@@ -388,37 +279,29 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         logger.info("Saved instance URL to Keychain")
     }
     
-    private func fetchAndUpdateUser(instanceURL: URL) async throws {
-        currentUser = try await networkService.fetchCurrentUser(instanceURL: instanceURL)
+    private func fetchAndUpdateUser() async throws {
+        currentUser = try await mastodonAPIService.fetchCurrentUser()
         NotificationCenter.default.post(name: .didAuthenticate, object: currentUser)
-        logger.info("Updated authenticated user: \(self.currentUser?.username ?? "Unknown")")
+        logger.info("Updated authenticated user: \(currentUser?.username ?? "Unknown")")
     }
-    func updateAuthenticatedUser(_ user: User) {
-            currentUser = user
-            logger.info("Manually updated user: \(user.username)")
-        }
-        
-        // MARK: - Logout
-        
-        func logout() async {
-            do {
-                try await clearCredentials()
-                logger.info("User logged out successfully")
-            } catch {
-                logger.error("Logout failed: \(error.localizedDescription)")
-            }
-        }
-        
-        func clearCredentials() async throws {
-            let accounts = ["baseURL", "accessToken", "clientID", "clientSecret", "createdAt", "expiresIn"]
-            
-            for account in accounts {
-                try await KeychainHelper.shared.delete(service: keychainService, account: account)
-            }
-            
-            currentUser = nil
-            isAuthenticated = false  // Ensure isAuthenticated is set to false
-            NotificationCenter.default.post(name: .authenticationFailed, object: nil)
-            logger.info("Cleared all authentication credentials")
+    
+    func logout() async {
+        do {
+            try await clearCredentials()
+            logger.info("User logged out successfully")
+        } catch {
+            logger.error("Logout failed: \(error.localizedDescription)")
         }
     }
+    
+    func clearCredentials() async throws {
+        let keys = ["baseURL","accessToken","clientID","clientSecret","expiresIn"]
+        for k in keys {
+            try await KeychainHelper.shared.delete(service: keychainService, account: k)
+        }
+        currentUser = nil
+        isAuthenticated = false
+        NotificationCenter.default.post(name: .authenticationFailed, object: nil)
+        logger.info("Cleared all authentication credentials")
+    }
+}

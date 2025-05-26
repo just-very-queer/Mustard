@@ -34,7 +34,7 @@ struct PostData: Codable {
         // Decode createdAt safely
         let createdDate: Date
         if let createdAtString = created_at,
-           let parsedDate = NetworkService.iso8601DateFormatter.date(from: createdAtString) { //Use Centralised Date
+           let parsedDate = NetworkSessionManager.iso8601DateFormatter.date(from: createdAtString) { // Using NetworkSessionManager
             createdDate = parsedDate
         } else {
             print("Invalid or missing date format for post \(id), defaulting to current date.")
@@ -181,7 +181,7 @@ struct FieldData: Codable {
     func toField() -> Field {
         // Use centralized date formatter for verification date
         let verifiedDate = verified_at.flatMap {
-            NetworkService.iso8601DateFormatter.date(from: $0)
+            NetworkSessionManager.iso8601DateFormatter.date(from: $0) // Using NetworkSessionManager
         }
         
         return Field(

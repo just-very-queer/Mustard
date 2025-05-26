@@ -8,89 +8,80 @@
 import Foundation
 import OSLog
 
-class TrendingService {
-    private let networkService: NetworkService
+/// Service responsible for fetching trending content like hashtags and posts.
+@MainActor
+final class TrendingService: ObservableObject {
+    private let mastodonAPIService: MastodonAPIService
     private let cacheService: CacheService
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "TrendingService")
 
-    init(networkService: NetworkService, cacheService: CacheService) {
-        self.networkService = networkService
+    init(mastodonAPIService: MastodonAPIService, cacheService: CacheService) {
+        self.mastodonAPIService = mastodonAPIService
         self.cacheService = cacheService
+        logger.info("TrendingService initialized with MastodonAPIService and CacheService.")
     }
 
     // MARK: - Fetch Trending Hashtags
 
-    /// Fetches trending hashtags from the Mastodon API.
-    /// - Returns: An array of `Post` objects representing trending hashtags.
-    /// - Throws: `AppError` if the request fails.
-    func fetchTrendingHashtags() async throws -> [Post] {
-        let cacheKey = "trendingHashtags"
-        return try await fetchTrendingData(endpoint: "/api/v1/trends", cacheKey: cacheKey)
-    }
+    /// Fetches trending hashtags from Mastodon with caching.
+    /// - Parameter limit: The maximum number of tags to return. Defaults to 10.
+    /// - Returns: An array of `Tag` objects representing trending hashtags.
+    /// - Throws: An `AppError` if fetching fails.
+    func fetchTrendingHashtags(limit: Int = 10) async throws -> [Tag] {
+        logger.debug("Attempting to fetch trending hashtags (limit: \(limit))...")
+        let cacheKey = CacheService.CacheKey.trendingTags.rawValue
 
-    // MARK: - Fetch Top Posts
-
-    /// Fetches trending posts (used in TimelineService to get the top posts).
-    /// - Returns: An array of `Post` objects representing trending posts.
-    /// - Throws: `AppError` if the request fails.
-    func fetchTopPosts() async throws -> [Post] {
-        let cacheKey = "trendingPosts"
-        return try await fetchTrendingData(endpoint: "/api/v1/trends/statuses", cacheKey: cacheKey)
-    }
-
-    // MARK: - Helper Methods
-
-    /// Fetches trending data (hashtags or posts) from the network or cache.
-    /// - Parameters:
-    ///   - endpoint: The API endpoint to fetch data from.
-    ///   - cacheKey: The cache key to use for storing/retrieving data.
-    /// - Returns: An array of `Post` objects.
-    /// - Throws: `AppError` if the request fails.
-    private func fetchTrendingData(endpoint: String, cacheKey: String) async throws -> [Post] {
-        // First, try fetching from cache
-        let cachedPosts = await cacheService.loadPostsFromCache(forKey: cacheKey)
-        if !cachedPosts.isEmpty {
-            logger.info("Cache hit for \(cacheKey)")
-            return cachedPosts
-        } else {
-            logger.info("Cache miss for \(cacheKey) or error loading from cache")
+        if let cachedTags: [TagData] = cacheService.load(forKey: cacheKey),
+           let lastFetched = cacheService.fetchDate(forKey: cacheKey),
+           Date().timeIntervalSince(lastFetched) < (15 * 60) {
+            logger.info("Returning trending hashtags from cache.")
+            return cachedTags.map { $0.toTag() }.prefix(limit).map { $0 }
         }
 
-        // If cache is unavailable, fetch from the network
+        logger.info("Cache miss or expired for trending hashtags. Fetching from network.")
         do {
-            let url = try await networkService.endpointURL(endpoint)
-            let fetchedPosts = try await networkService.fetchData(url: url, method: "GET", type: [Post].self)
-
-            // Cache the fetched posts for future use
-            Task {
-                await cacheService.cachePosts(fetchedPosts, forKey: cacheKey)
-            }
-
-            logger.info("Successfully fetched and cached \(fetchedPosts.count) posts for \(cacheKey)")
-            return fetchedPosts
-        } catch let decodingError as DecodingError {
-            logger.error("Decoding error while fetching trending data: \(decodingError)")
-            handleDecodingError(decodingError)
-            throw AppError(type: .mastodon(.decodingError), underlyingError: decodingError)
+            let tags = try await mastodonAPIService.fetchTrendingTags(limit: limit)
+            cacheService.save(tags, forKey: cacheKey)
+            logger.info("Successfully fetched and cached trending hashtags.")
+            return tags.map { $0.toTag() }
+        } catch let error as AppError {
+            logger.error("Error fetching trending hashtags: \(error.localizedDescription)")
+            throw error
         } catch {
-            logger.error("Failed to fetch trending data: \(error.localizedDescription)")
-            throw AppError(message: "Failed to fetch trending data", underlyingError: error)
+            logger.error("Unexpected error while fetching trending hashtags: \(error.localizedDescription)")
+            throw AppError.networkError(type: .unknown, message: error.localizedDescription)
         }
     }
 
-    /// Logs and categorizes decoding errors.
-    private func handleDecodingError(_ error: DecodingError) {
-        switch error {
-        case .dataCorrupted(let context):
-            logger.error("Data corrupted: \(context.debugDescription)")
-        case .keyNotFound(let key, let context):
-            logger.error("Key '\(key.stringValue)' not found: \(context.debugDescription)")
-        case .valueNotFound(let type, let context):
-            logger.error("Value of type '\(type)' not found: \(context.debugDescription)")
-        case .typeMismatch(let type, let context):
-            logger.error("Type '\(type)' mismatch: \(context.debugDescription)")
-        @unknown default:
-            logger.error("Unknown decoding error")
+    // MARK: - Fetch Trending Posts
+
+    /// Fetches trending posts (statuses) from Mastodon with caching.
+    /// - Parameter limit: The maximum number of posts to return. Defaults to 20.
+    /// - Returns: An array of `Post` objects.
+    /// - Throws: An `AppError` if fetching fails.
+    func fetchTrendingPosts(limit: Int = 20) async throws -> [Post] {
+        logger.debug("Attempting to fetch trending posts (limit: \(limit))...")
+        let cacheKey = CacheService.CacheKey.trendingPosts.rawValue
+
+        if let cachedPosts: [PostData] = cacheService.load(forKey: cacheKey),
+           let lastFetched = cacheService.fetchDate(forKey: cacheKey),
+           Date().timeIntervalSince(lastFetched) < (15 * 60) {
+            logger.info("Returning trending posts from cache.")
+            return cachedPosts.map { $0.toPost(using: NetworkSessionManager.shared.iso8601DateFormatter) }.prefix(limit).map { $0 }
+        }
+
+        logger.info("Cache miss or expired for trending posts. Fetching from network.")
+        do {
+            let posts = try await mastodonAPIService.fetchTrendingStatuses(limit: limit)
+            cacheService.save(posts, forKey: cacheKey)
+            logger.info("Successfully fetched and cached trending posts.")
+            return posts.map { $0.toPost(using: NetworkSessionManager.shared.iso8601DateFormatter) }
+        } catch let error as AppError {
+            logger.error("Error fetching trending posts: \(error.localizedDescription)")
+            throw error
+        } catch {
+            logger.error("Unexpected error while fetching trending posts: \(error.localizedDescription)")
+            throw AppError.networkError(type: .unknown, message: error.localizedDescription)
         }
     }
 }

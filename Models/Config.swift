@@ -14,7 +14,7 @@ struct OAuthConfig: Decodable, Sendable {
     let clientSecret: String
     let redirectUri: String
     let scope: String
-    
+
     enum CodingKeys: String, CodingKey {
         case clientId = "client_id"
         case clientSecret = "client_secret"
@@ -34,7 +34,7 @@ struct RegisterResponse: Decodable {
     let clientId: String // Mastodon returns `client_id` -> clientId
     let clientSecret: String // Mastodon returns `client_secret` -> clientSecret
     let redirectUri: String // Mastodon returns `redirect_uri` -> redirectUri
-    
+
     // If Mastodon includes extra fields like `scopes`, `redirect_uris`, etc.
     // .convertFromSnakeCase will decode them if you list them here in camelCase, e.g.:
     // let scopes: [String]?   // Mastodon might return `scopes:["read","write","follow","push"]`
@@ -48,11 +48,11 @@ struct TokenResponse: Codable, Sendable {
     let scope: String
     let createdAt: String?
     let expiresIn: Int? // Add this back, but make it optional
-    
+
     // Removed expiresIn as per recommendations for targeted decoding and if not essential for your app.
     // If you need expiresIn, keep it and consider making it optional if the API is inconsistent.
     // let expiresIn: Int?
-    
+
     // Removed CodingKeys as per recommendations to use .convertFromSnakeCase
     // in JSONDecoder and property names match camelCase versions of API keys.
     // If you still face issues, reinstate CodingKeys and adjust mappings as needed.
@@ -63,69 +63,6 @@ struct TokenResponse: Codable, Sendable {
     //  case createdAt = "created_at"
     //  case expiresIn = "expires_in"
     // }
-}
-
-// MARK: - WeatherData
-
-struct WeatherData: Decodable {
-    let temperature: Double
-    let description: String
-    let cityName: String
-}
-
-struct OpenWeatherResponse: Decodable {
-    struct Main: Decodable {
-        let temp: Double
-        let feels_like: Double
-        let temp_min: Double
-        let temp_max: Double
-        let pressure: Int
-        let humidity: Int
-        let sea_level: Int?
-        let grnd_level: Int?
-    }
-    
-    struct Weather: Decodable {
-        let id: Int
-        let main: String
-        let description: String
-        let icon: String
-    }
-    
-    struct Wind: Decodable {
-        let speed: Double
-        let deg: Int
-        let gust: Double? //gust is optional
-    }
-    
-    struct Clouds: Decodable {
-        let all: Int
-    }
-    struct Sys: Decodable {
-        let type: Int?
-        let id: Int?
-        let country: String
-        let sunrise: Int
-        let sunset: Int
-    }
-    let coord: Coordinates
-    let weather: [Weather]
-    let base: String
-    let main: Main
-    let visibility: Int
-    let wind: Wind
-    let clouds: Clouds
-    let dt: Int
-    let sys: Sys
-    let timezone: Int
-    let id: Int
-    let name: String
-    let cod: Int
-    
-    struct Coordinates: Decodable {
-        let lon: Double
-        let lat: Double
-    }
 }
 
 // MARK: - Cached
@@ -229,7 +166,7 @@ struct InstanceInfo: Decodable {
     let title: String
     let description: String
     let thumbnail: URL?
-    
+
     enum CodingKeys: String, CodingKey {
         case title, description, thumbnail
     }
