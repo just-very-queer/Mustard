@@ -23,7 +23,9 @@ struct MustardApp: App {
     @StateObject private var locationManager = LocationManager()
     
     // MARK: - SwiftData Container
-    let container: ModelContainer
+    // Make container static and accessible for services like RecommendationService
+    static var sharedModelContainer: ModelContainer!
+    private let container: ModelContainer // Keep instance property for scene modifier
     
     // MARK: - Service Environment
     @StateObject private var appServices: AppServices
@@ -34,11 +36,14 @@ struct MustardApp: App {
         do {
             let schema = Schema([
                 Account.self, MediaAttachment.self, Post.self, ServerModel.self,
-                Tag.self, Item.self, InstanceModel.self, InstanceInformationModel.self
+                Tag.self, Item.self, InstanceModel.self, InstanceInformationModel.self,
+                Interaction.self, UserAffinity.self, HashtagAffinity.self // Added new analytics models
             ])
             let modelConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-            self.container = try ModelContainer(for: schema, configurations: [modelConfig])
-            print("[MustardApp] ModelContainer initialized.")
+            let newContainer = try ModelContainer(for: schema, configurations: [modelConfig])
+            self.container = newContainer // Assign to instance property
+            MustardApp.sharedModelContainer = newContainer // Assign to static property
+            print("[MustardApp] ModelContainer initialized and assigned to static sharedModelContainer.")
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }

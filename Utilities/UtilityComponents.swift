@@ -31,6 +31,8 @@ import SafariServices // Required for SFSafariViewController
 
 struct LinkPreview: View {
     let card: Card
+    let postID: String? // Added to associate link click with a post
+    let currentUserAccountID: String? // Added for logging
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -93,16 +95,22 @@ struct LinkPreview: View {
         )
         .onTapGesture {
             if let urlToOpen = URL(string: card.embedUrl ?? card.url) {
-                // In a real app, you'd use SFSafariViewController or similar
-                // For worker environment, this action might not be directly testable
-                // but the structure is important.
                 print("Attempting to open URL: \(urlToOpen)")
+
+                // Log .linkOpen interaction
+                RecommendationService.shared.logInteraction(
+                    statusID: postID, // Can be nil if card is not directly tied to a post
+                    actionType: .linkOpen,
+                    accountID: currentUserAccountID,
+                    authorAccountID: nil, // Card doesn't directly store post author ID
+                    postURL: postID != nil ? card.url : nil, // Log postURL only if postID is present
+                    tags: nil, // Tags are not directly available on Card model
+                    linkURL: urlToOpen.absoluteString
+                )
+
                 #if canImport(UIKit) && !os(watchOS)
                 UIApplication.shared.open(urlToOpen)
                 #else
-                // Fallback for environments where UIApplication is not available
-                // This could involve opening in a default browser if possible
-                // For now, just print.
                 print("UIApplication not available to open URL.")
                 #endif
             }

@@ -204,7 +204,9 @@ final class TimelineViewModel: ObservableObject {
         self.posts = [] // Clear posts on significant error
     }
     
-    
+    // Placeholder for current user ID - In a real app, this would come from AuthenticationService/ViewModel
+    private var currentUserAccountID: String? = "USER_ID_PLACEHOLDER" // TODO: Replace with actual ID
+
     // MARK: - Post Actions
     
     func toggleLike(for post: Post) {
@@ -253,6 +255,16 @@ final class TimelineViewModel: ObservableObject {
                 }
                 self.alertError = AppError(message: "Failed to like post", underlyingError: error)
             }
+            // Log interaction after the attempt, using the state *after* the toggle
+            // The `isFavourited` on `post` object here reflects the optimistic update.
+            RecommendationService.shared.logInteraction(
+                statusID: post.id,
+                actionType: post.isFavourited ? .like : .unlike, // This reflects the new state
+                accountID: self.currentUserAccountID,
+                authorAccountID: post.account?.id,
+                postURL: post.url,
+                tags: post.tags?.compactMap { $0.name } // Assuming Tag has a 'name' property
+            )
         }
     }
     
@@ -300,6 +312,15 @@ final class TimelineViewModel: ObservableObject {
                 }
                 self.alertError = AppError(message: "Failed to repost", underlyingError: error)
             }
+            // Log interaction
+            RecommendationService.shared.logInteraction(
+                statusID: post.id,
+                actionType: post.isReblogged ? .repost : .unrepost, // Reflects new state
+                accountID: self.currentUserAccountID,
+                authorAccountID: post.account?.id,
+                postURL: post.url,
+                tags: post.tags?.compactMap { $0.name }
+            )
         }
     }
     
@@ -323,6 +344,16 @@ final class TimelineViewModel: ObservableObject {
                 self.showingCommentSheet = false
                 self.selectedPostForComments = nil
                 self.logger.info("Commented on post \(post.id)")
+                
+                // Log interaction
+                RecommendationService.shared.logInteraction(
+                    statusID: post.id,
+                    actionType: .comment,
+                    accountID: self.currentUserAccountID,
+                    authorAccountID: post.account?.id,
+                    postURL: post.url,
+                    tags: post.tags?.compactMap { $0.name }
+                )
             } catch {
                 // Use self. here
                 self.logger.error("Failed to comment on post \(post.id): \(error.localizedDescription)")

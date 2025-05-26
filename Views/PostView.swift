@@ -23,13 +23,17 @@ struct PostView: View {
     @State private var showImageViewer = false
     @State private var showBrowserView = false // Assuming this uses post.url
 
+    // Assuming TimelineViewModel exposes currentUserAccountID or a similar property
+    // For now, let's assume viewModel.currentUserAccountID is available.
+    // If not, this would need to be plumbed through.
+
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             // User Header - Pass profile navigation action
             UserHeaderView(post: post, viewProfileAction: viewProfileAction)
 
             // Content
-            PostContentView(post: post, showFullText: $showFullText)
+            PostContentView(post: post, showFullText: $showFullText, currentUserAccountID: viewModel.currentUserAccountID) // Pass it here
 
             // Media attachments - Trigger local state for viewer
             MediaAttachmentView(post: post, onImageTap: {
@@ -142,6 +146,7 @@ struct PostActionsViewRevised: View {
 struct PostContentView: View {
     let post: Post
     @Binding var showFullText: Bool
+    let currentUserAccountID: String? // Added to receive current user ID
 
     // State to hold the computed attributed string
     @State private var displayedAttributedString: AttributedString? = nil
@@ -178,7 +183,7 @@ struct PostContentView: View {
                     .padding(.horizontal)
                     .frame(maxWidth: .infinity, alignment: .center)
             } else if let card = detectedLinkCard {
-                LinkPreview(card: card)
+                LinkPreview(card: card, postID: post.id, currentUserAccountID: currentUserAccountID) // Pass postID and currentUserAccountID
                     .padding(.horizontal) // Add padding around the LinkPreview
                     .padding(.top, 5) // Add some space above the LinkPreview
             }
@@ -191,6 +196,16 @@ struct PostContentView: View {
             // 2. Link Preview Logic
             self.detectedLinkCard = nil // Reset
             self.isLoadingLinkPreview = false // Reset
+
+            // Log .view interaction
+            RecommendationService.shared.logInteraction(
+                statusID: post.id,
+                actionType: .view,
+                accountID: currentUserAccountID, // Passed in
+                authorAccountID: post.account?.id,
+                postURL: post.url,
+                tags: post.tags?.compactMap { $0.name } // Assuming Tag has 'name'
+            )
 
             if let existingCard = post.card {
                 self.detectedLinkCard = existingCard
