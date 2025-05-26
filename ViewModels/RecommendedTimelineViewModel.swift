@@ -81,16 +81,97 @@ class RecommendedTimelineViewModel: ObservableObject {
     }
     
     // Placeholder for loadMore (will be part of Subtask 5.5)
+    @MainActor
     func loadMoreContentIfNeeded(currentItem item: Post?, section: RecommendedTimelineSection) async {
-        // Implementation in Subtask 5.5
-        logger.debug("Load more content called for section \(section), item \(item?.id ?? "nil") (Placeholder)")
+        // For now, we only paginate the chronological section,
+        // and the "For You" section is a re-score of all loaded chronological posts.
+        guard section == .chronological else {
+            logger.debug("Pagination attempted for non-chronological section, skipping.")
+            return
+        }
+
+        guard !isLoading else {
+            logger.debug("Already loading, skipping pagination call.")
+            return
+        }
+
+        guard canLoadMoreHomeTimeline else {
+            logger.debug("Cannot load more chronological posts, end reached or limit too low.")
+            return
+        }
+
+        // Determine if we are near the end of the current list
+        let threshold = 5 // Load when 5 items from end are visible
+        var shouldLoad = false
+        if let item = item, !chronologicalPosts.isEmpty {
+            if let itemIndex = chronologicalPosts.firstIndex(where: { $0.id == item.id }) {
+                if chronologicalPosts.count - itemIndex <= threshold {
+                    shouldLoad = true
+                }
+            }
+        } else if item == nil && chronologicalPosts.isEmpty { // For initial empty list but can still load.
+             shouldLoad = true
+        }
+
+
+        guard shouldLoad else {
+            // logger.debug("Not near end of list or item is nil when list not empty, skipping pagination.")
+            return
+        }
+
+        logger.info("Loading more chronological posts (current maxID: \(self.homeTimelineMaxID ?? "nil"))...")
+        isLoading = true
+        alertError = nil
+
+        do {
+            let olderPosts = try await timelineService.WorkspaceHomeTimeline(
+                maxId: self.homeTimelineMaxID,
+                minId: nil,
+                limit: 20 // Standard limit
+            )
+
+            if !olderPosts.isEmpty {
+                self.chronologicalPosts.append(contentsOf: olderPosts)
+                self.homeTimelineMaxID = olderPosts.last?.id
+                logger.info("Loaded \(olderPosts.count) more posts. New maxID: \(self.homeTimelineMaxID ?? "nil")")
+
+                if olderPosts.count < 20 { // Assuming 20 was the limit
+                    canLoadMoreHomeTimeline = false
+                    logger.info("End of chronological timeline reached.")
+                }
+                
+                // Re-score the entire chronological list to update "For You"
+                // This could be optimized if performance becomes an issue
+                self.forYouPosts = await recommendationService.scoredTimeline(self.chronologicalPosts)
+                logger.info("For You posts re-scored after pagination.")
+
+            } else {
+                canLoadMoreHomeTimeline = false
+                logger.info("No older posts returned, end of chronological timeline.")
+            }
+            
+        } catch let error as AppError {
+            // self.alertError = error // handleError will set it
+            handleError(error, context: "Loading more chronological posts")
+        } catch {
+            let appError = AppError.custom(message: "An unexpected error occurred while loading more posts.", underlyingError: error)
+            // self.alertError = appError // handleError will set it
+            handleError(appError, context: "Loading more chronological posts")
+        }
+        isLoading = false
     }
 
     // Placeholder for pull-to-refresh (will be part of Subtask 5.5)
+    @MainActor
     func refreshTimeline() async {
-        // Implementation in Subtask 5.5
-        logger.info("Refresh timeline called (Placeholder)")
-        await initialLoad() // Simplest refresh is to call initialLoad
+        logger.info("Refreshing timeline...")
+        isLoading = true // Indicate general loading for refresh
+        // initialLoad already handles errors and sets isLoading to false at the end.
+        await initialLoad()
+        // Explicitly set isLoading to false here if initialLoad's final isLoading=false
+        // isn't guaranteed to cover the refresh scenario adequately, though it should.
+        isLoading = false
+        logger.info("Timeline refresh completed.")
     }
     
     // Error Handling (similar to other ViewModels)
