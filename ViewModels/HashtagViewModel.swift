@@ -8,6 +8,7 @@
 import Combine
 import SwiftUI
 
+@MainActor // Added @MainActor to the class
 class HashtagViewModel: ObservableObject {
     @Published var posts: [Post] = []
     @Published var isLoading = false

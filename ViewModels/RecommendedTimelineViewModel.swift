@@ -15,8 +15,9 @@ class RecommendedTimelineViewModel: ObservableObject {
     // MARK: - Services
     private let timelineService: TimelineServiceProtocol
     private let recommendationService: RecommendationService
+    private let postActionService: PostActionServiceProtocol // Added for PostView actions
     // Optional: Store current user ID if needed for recommendations or context
-    // private let currentUserAccountID: String?
+    private var currentUserAccountID: String? = "USER_ID_PLACEHOLDER_RECO_VM" // TODO: Replace
 
     // MARK: - State for Pagination
     private var homeTimelineMaxID: String? = nil
@@ -26,12 +27,24 @@ class RecommendedTimelineViewModel: ObservableObject {
 
     // MARK: - Initializer
     init(timelineService: TimelineServiceProtocol,
-         recommendationService: RecommendationService = .shared /*, currentUserAccountID: String? = nil */) {
+         recommendationService: RecommendationService = .shared,
+         postActionService: PostActionServiceProtocol /*, currentUserAccountID: String? = nil */) {
         self.timelineService = timelineService
         self.recommendationService = recommendationService
+        self.postActionService = postActionService // Store it
         // self.currentUserAccountID = currentUserAccountID
         logger.info("RecommendedTimelineViewModel initialized.")
     }
+
+    // MARK: - Published Properties for PostView actions (if needed, or handled via methods)
+    @Published var selectedPostForComments: Post?
+    @Published var showingCommentSheet = false
+    @Published var commentText: String = ""
+    // Minimal loading states for individual posts if PostView expects this from its VM
+    // For simplicity, we might not replicate all of TimelineViewModel's published states here
+    // and PostView might need to be adapted to a simpler action protocol.
+    @Published private(set) var postLoadingStates: [String: Bool] = [:]
+
 
     // MARK: - Public Methods
     func initialLoad() async {
@@ -185,6 +198,163 @@ class RecommendedTimelineViewModel: ObservableObject {
                  self.alertError = AppError.custom(message: "Error in \(context): \(error.localizedDescription)", underlyingError: error)
              }
         }
+    }
+
+    // MARK: - Methods for PostView Actions
+    // These methods will be called by PostView. They mirror some functionality of TimelineViewModel.
+    
+    func toggleLike(for post: Post) {
+        // Find which list the post is in and update it
+        var postToUpdate: Post?
+        var listToUpdate: PostListType?
+
+        if let index = forYouPosts.firstIndex(where: { $0.id == post.id }) {
+            postToUpdate = forYouPosts[index]
+            listToUpdate = .forYou
+        } else if let index = chronologicalPosts.firstIndex(where: { $0.id == post.id }) {
+            postToUpdate = chronologicalPosts[index]
+            listToUpdate = .chronological
+        }
+
+        guard var P = postToUpdate else { return }
+        let originalIsFavourited = P.isFavourited
+        let originalFavouritesCount = P.favouritesCount
+
+        // Optimistic update
+        P.isFavourited.toggle()
+        P.favouritesCount += P.isFavourited ? 1 : -1
+        updatePostInLists(P, listTypeHint: listToUpdate)
+        
+        updatePostLoadingState(for: post.id, isLoading: true)
+        Task {
+            defer { updatePostLoadingState(for: post.id, isLoading: false) }
+            do {
+                let returnedPost = try await postActionService.toggleLike(postID: P.id, isCurrentlyFavourited: originalIsFavourited)
+                if let updatedPost = returnedPost {
+                    updatePostInLists(updatedPost, listTypeHint: listToUpdate)
+                }
+                 RecommendationService.shared.logInteraction(
+                    statusID: P.id, actionType: P.isFavourited ? .like : .unlike,
+                    accountID: currentUserAccountID, authorAccountID: P.account?.id,
+                    postURL: P.url, tags: P.tags?.compactMap { $0.name }
+                )
+            } catch {
+                logger.error("Failed toggleLike: \(error.localizedDescription)")
+                // Revert optimistic update
+                P.isFavourited = originalIsFavourited
+                P.favouritesCount = originalFavouritesCount
+                updatePostInLists(P, listTypeHint: listToUpdate)
+                handleError(error, context: "Toggling like for post \(P.id)")
+            }
+        }
+    }
+
+    func toggleRepost(for post: Post) {
+        var postToUpdate: Post?
+        var listToUpdate: PostListType?
+
+        if let index = forYouPosts.firstIndex(where: { $0.id == post.id }) {
+            postToUpdate = forYouPosts[index]
+            listToUpdate = .forYou
+        } else if let index = chronologicalPosts.firstIndex(where: { $0.id == post.id }) {
+            postToUpdate = chronologicalPosts[index]
+            listToUpdate = .chronological
+        }
+        
+        guard var P = postToUpdate else { return }
+        let originalIsReblogged = P.isReblogged
+        let originalReblogsCount = P.reblogsCount
+
+        P.isReblogged.toggle()
+        P.reblogsCount += P.isReblogged ? 1 : -1
+        updatePostInLists(P, listTypeHint: listToUpdate)
+
+        updatePostLoadingState(for: post.id, isLoading: true)
+        Task {
+            defer { updatePostLoadingState(for: post.id, isLoading: false) }
+            do {
+                let returnedPost = try await postActionService.toggleRepost(postID: P.id, isCurrentlyReblogged: originalIsReblogged)
+                if let updatedPost = returnedPost {
+                    updatePostInLists(updatedPost, listTypeHint: listToUpdate)
+                }
+                RecommendationService.shared.logInteraction(
+                    statusID: P.id, actionType: P.isReblogged ? .repost : .unrepost,
+                    accountID: currentUserAccountID, authorAccountID: P.account?.id,
+                    postURL: P.url, tags: P.tags?.compactMap { $0.name }
+                )
+            } catch {
+                logger.error("Failed toggleRepost: \(error.localizedDescription)")
+                P.isReblogged = originalIsReblogged
+                P.reblogsCount = originalReblogsCount
+                updatePostInLists(P, listTypeHint: listToUpdate)
+                handleError(error, context: "Toggling repost for post \(P.id)")
+            }
+        }
+    }
+
+    func comment(on post: Post, content: String) {
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        updatePostLoadingState(for: post.id, isLoading: true)
+        Task {
+            defer { updatePostLoadingState(for: post.id, isLoading: false) }
+            do {
+                _ = try await postActionService.comment(postID: post.id, content: content)
+                
+                var P = post
+                P.repliesCount += 1 // Optimistic update
+                updatePostInLists(P) // Update both lists as comment count changes
+
+                self.commentText = ""
+                self.showingCommentSheet = false
+                // self.selectedPostForComments = nil // This state is managed by the View if it shows the sheet
+                logger.info("Commented on post \(post.id)")
+                RecommendationService.shared.logInteraction(
+                     statusID: post.id, actionType: .comment,
+                     accountID: currentUserAccountID, authorAccountID: post.account?.id,
+                     postURL: post.url, tags: post.tags?.compactMap { $0.name }
+                 )
+            } catch {
+                logger.error("Failed to comment: \(error.localizedDescription)")
+                handleError(error, context: "Commenting on post \(post.id)")
+            }
+        }
+    }
+    
+    func showComments(for post: Post) {
+        selectedPostForComments = post
+        showingCommentSheet = true // This will be observed by the View to present a sheet
+    }
+    
+    // Helper to update posts in both lists to maintain consistency
+    private func updatePostInLists(_ post: Post, listTypeHint: PostListType? = nil) {
+        if listTypeHint == .forYou || listTypeHint == nil {
+            if let index = forYouPosts.firstIndex(where: { $0.id == post.id }) {
+                forYouPosts[index] = post
+            }
+        }
+        if listTypeHint == .chronological || listTypeHint == nil {
+            if let index = chronologicalPosts.firstIndex(where: { $0.id == post.id }) {
+                chronologicalPosts[index] = post
+            }
+        }
+    }
+    
+    private enum PostListType { case forYou, chronological }
+
+    // Loading state for individual posts
+    func isLoading(for post: Post) -> Bool {
+        return postLoadingStates[post.id] ?? false
+    }
+
+    private func updatePostLoadingState(for postId: String, isLoading: Bool) {
+        postLoadingStates[postId] = isLoading
+    }
+    
+    // Minimal navigation path for profile, if needed directly from PostView actions
+    @Published var navigationPath = NavigationPath()
+
+    func navigateToProfile(_ user: User) {
+        navigationPath.append(user)
     }
 }
 
