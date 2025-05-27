@@ -237,7 +237,7 @@ struct TimelineContentView: View {
                              viewModel: viewModel,
                              viewProfileAction: { user in
                                  viewModel.navigateToProfile(user)
-                             }
+                             }, interestScore: Double
                          )
                          // Example: How to potentially add image tap handling
                          // This assumes PostView calls this closure when an image is tapped

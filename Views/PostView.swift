@@ -331,7 +331,7 @@ struct ExpandedCommentsSection: View {
                             // Option 2: Could potentially dismiss the detail view and navigate
                         })
                         // Display reply content
-                        PostContentView(post: reply, showFullText: .constant(true)) // Always show full text for replies
+                            PostContentView(post: reply, showFullText: .constant(true), currentUserAccountID: String?) // Always show full text for replies
 
                     }
                     .padding(.bottom, 5)

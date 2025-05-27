@@ -444,9 +444,3 @@ struct EditProfileView: View {
         }
     }
 }
-
-
-// Ensure CustomDivider, AvatarView, HTMLUtils etc. are defined.
-// struct CustomDivider: View { /* ... */ }
-// struct AvatarView: View { /* ... */ }
-// struct HTMLUtils { static func convertHTMLToPlainText(html: String) -> String { /* ... */ } }
