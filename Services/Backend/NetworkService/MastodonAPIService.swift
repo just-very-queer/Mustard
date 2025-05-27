@@ -52,7 +52,12 @@ public class MastodonAPIService {
 
     /// Constructs a full URL for a given API path and optional query items.
     func endpointURL(_ path: String, baseURLOverride: URL? = nil, queryItems: [URLQueryItem]? = nil) async throws -> URL {
-        let baseURL = try await baseURLOverride ?? getBaseURL()
+        let baseURL: URL
+        if let override = baseURLOverride {
+            baseURL = override
+        } else {
+            baseURL = try await getBaseURL()
+        }
 
         var urlComponents = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
         // Append existing query items from path if any, then add new ones

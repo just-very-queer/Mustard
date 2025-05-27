@@ -67,7 +67,7 @@ class SearchViewModel: ObservableObject {
 
     // MARK: - Initialization
     // ***** FIXED: Use NetworkService.shared instance *****
-    init(searchService: SearchService = SearchService) {
+    init(searchService: SearchService = SearchService()) {
         self.searchService = searchService
         setupDebounce()
     }

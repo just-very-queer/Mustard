@@ -17,7 +17,7 @@ class RecommendedTimelineViewModel: ObservableObject {
     private let recommendationService: RecommendationService
     private let postActionService: PostActionServiceProtocol // Added for PostView actions
     // Optional: Store current user ID if needed for recommendations or context
-    private var currentUserAccountID: String? = "USER_ID_PLACEHOLDER_RECO_VM" // TODO: Replace
+    var currentUserAccountID: String? = "USER_ID_PLACEHOLDER_RECO_VM" // TODO: Replace
 
     // MARK: - State for Pagination
     private var homeTimelineMaxID: String? = nil
@@ -203,7 +203,7 @@ class RecommendedTimelineViewModel: ObservableObject {
     // MARK: - Methods for PostView Actions
     // These methods will be called by PostView. They mirror some functionality of TimelineViewModel.
     
-    func toggleLike(for post: Post) {
+    func toggleLike(for post: Post) async {
         // Find which list the post is in and update it
         var postToUpdate: Post?
         var listToUpdate: PostListType?
@@ -249,7 +249,7 @@ class RecommendedTimelineViewModel: ObservableObject {
         }
     }
 
-    func toggleRepost(for post: Post) {
+    func toggleRepost(for post: Post) async {
         var postToUpdate: Post?
         var listToUpdate: PostListType?
 
@@ -292,7 +292,7 @@ class RecommendedTimelineViewModel: ObservableObject {
         }
     }
 
-    func comment(on post: Post, content: String) {
+    func comment(on post: Post, content: String) async {
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         updatePostLoadingState(for: post.id, isLoading: true)
         Task {
@@ -320,7 +320,7 @@ class RecommendedTimelineViewModel: ObservableObject {
         }
     }
     
-    func showComments(for post: Post) {
+    func showComments(for post: Post) async {
         selectedPostForComments = post
         showingCommentSheet = true // This will be observed by the View to present a sheet
     }
@@ -353,7 +353,7 @@ class RecommendedTimelineViewModel: ObservableObject {
     // Minimal navigation path for profile, if needed directly from PostView actions
     @Published var navigationPath = NavigationPath()
 
-    func navigateToProfile(_ user: User) {
+    func navigateToProfile(_ user: User) async {
         navigationPath.append(user)
     }
 }

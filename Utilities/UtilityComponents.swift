@@ -27,7 +27,7 @@ struct LoadingOverlay: View {
     }
 }
 
-import SafariServices // Required for SFSafariViewController
+// SafariServices import removed as SFSafariViewController is no longer used in this file.
 
 struct LinkPreview: View {
     let card: Card
@@ -121,16 +121,7 @@ struct LinkPreview: View {
 // Helper to use SFSafariViewController if available (typically in a UIViewControllerRepresentable)
 // This part is more for a full app context and might not be directly usable/testable in the worker
 // without additional setup. For now, `UIApplication.shared.open` is a simpler approach.
+// The SafariView struct previously here has been removed to consolidate with the one in Utilities/WebView.swift
 #if canImport(UIKit) && !os(watchOS)
-struct SafariView: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: UIViewControllerRepresentableContext<SafariView>) -> SFSafariViewController {
-        return SFSafariViewController(url: url)
-    }
-
-    func updateUIViewController(_ uiViewController: SFSafariViewController, context: UIViewControllerRepresentableContext<SafariView>) {
-        // No update needed
-    }
-}
+// struct SafariView has been removed.
 #endif

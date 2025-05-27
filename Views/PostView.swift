@@ -73,8 +73,8 @@ struct PostView: View {
             }
         }
         // Alert for errors (Handled by parent view using viewModel.alertError)
+        .interestHighlight(isActive: interestScore > 5.0, score: interestScore) // Threshold = 5.0
     }
-    .interestHighlight(isActive: interestScore > 5.0, score: interestScore) // Threshold = 5.0
 }
 
 // MARK: - Revised PostActionsView

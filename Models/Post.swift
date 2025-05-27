@@ -7,6 +7,41 @@
 import Foundation
 import SwiftData
 
+// Card model for representing link previews
+struct Card: Codable, Hashable, Equatable {
+    let url: String
+    let title: String
+    let description: String
+    let type: String
+    let image: String?
+    let authorName: String?
+    let authorUrl: String?
+    let providerName: String?
+    let providerUrl: String?
+    let html: String?
+    let width: Int?
+    let height: Int?
+    let embedUrl: String?
+    let blurhash: String?
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case title
+        case description
+        case type
+        case image
+        case authorName = "author_name"
+        case authorUrl = "author_url"
+        case providerName = "provider_name"
+        case providerUrl = "provider_url"
+        case html
+        case width
+        case height
+        case embedUrl = "embed_url"
+        case blurhash
+    }
+}
+
 /// Represents a Mastodon post, previously known as Status.
 @Model
 final class Post: Identifiable, Hashable, Codable, Equatable {
@@ -44,7 +79,8 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
         replies: [Post]? = nil, // Replies can be nil or empty array
         mentions: [Mention]? = nil, // Added mentions to init
         tags: [Tag]? = nil, // Added tags to init
-        card: Card? = nil // Added card to init
+        card: Card? = nil, // Added card to init
+        url: String? = nil // Added url to init
         
     ) {
         self.id = id
@@ -61,6 +97,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable {
         self.mentions = mentions
         self.tags = tags // Initialize tags
         self.card = card // Initialize card
+        self.url = url // Initialize url
     }
     
     // MARK: - Codable Conformance

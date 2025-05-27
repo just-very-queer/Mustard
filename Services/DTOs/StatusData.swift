@@ -58,7 +58,9 @@ struct PostData: Codable {
             favouritesCount: favourites_count,
             repliesCount: replies_count,
             mentions: postMentions,
-            tags: postTags
+            tags: postTags,
+            card: nil, // Pass nil for card
+            url: self.url // Pass the url from PostData
         )
     }
 }

@@ -16,7 +16,7 @@ struct MustardApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     // MARK: - Shared Instances & Managers
-    static private let mastodonAPIServiceInstance = MastodonAPIService() // single instance
+    static let mastodonAPIServiceInstance = MastodonAPIService() // single instance
     
     @StateObject private var cacheService: CacheService   // will be initialized in init()
     @StateObject private var authViewModel = AuthenticationViewModel()
