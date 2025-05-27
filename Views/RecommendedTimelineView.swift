@@ -182,16 +182,16 @@ protocol PostViewActionsDelegate: ObservableObject {
     var commentText: String { get set }
     
     // Methods PostView calls for actions
-    func toggleLike(for post: Post)
-    func toggleRepost(for post: Post)
-    func comment(on post: Post, content: String)
-    func showComments(for post: Post)
+    func toggleLike(for post: Post) async
+    func toggleRepost(for post: Post) async
+    func comment(on post: Post, content: String) async
+    func showComments(for post: Post) async
     
     // Method for individual post loading state
     func isLoading(for post: Post) -> Bool
     
     // Method for navigation to profile
-    func navigateToProfile(_ user: User)
+    func navigateToProfile(_ user: User) async
 
     // Placeholder for current user ID, for interaction logging within PostView itself if necessary,
     // though it's better if interaction logging is centralized in the ViewModel's action methods.
@@ -243,9 +243,9 @@ struct MockPostActionService: PostActionServiceProtocol {
     func comment(postID: String, content: String) async throws -> Post? { return nil }
 }
 
-// Define a Tag struct that matches what Post expects, if not already globally available
-// This is based on the assumption from previous steps (e.g., Post.swift uses [Tag]?)
-struct Tag: Codable, Hashable, Identifiable { // Add Identifiable if used in ForEach directly
+// Define a PreviewTag struct that matches what Post expects, if not already globally available
+// This is based on the assumption from previous steps (e.g., Post.swift uses [PreviewTag]?)
+struct PreviewTag: Codable, Hashable, Identifiable { // Add Identifiable if used in ForEach directly
     var id: String { name } // Assuming name is unique for Identifiable
     let name: String
     let url: String? // Optional URL

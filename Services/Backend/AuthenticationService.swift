@@ -281,8 +281,8 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     
     private func fetchAndUpdateUser() async throws {
         currentUser = try await mastodonAPIService.fetchCurrentUser()
-        NotificationCenter.default.post(name: .didAuthenticate, object: currentUser)
-        logger.info("Updated authenticated user: \(currentUser?.username ?? "Unknown")")
+        NotificationCenter.default.post(name: .didAuthenticate, object: self.currentUser)
+        logger.info("Updated authenticated user: \(self.currentUser?.username ?? "Unknown")")
     }
     
     func logout() async {

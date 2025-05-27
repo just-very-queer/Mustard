@@ -17,7 +17,7 @@ class HashtagViewModel: ObservableObject {
     private let searchService: SearchService // Inject SearchService
     private var cancellables = Set<AnyCancellable>()
 
-     init(searchService: SearchService = SearchService) {
+     init(searchService: SearchService = SearchService()) {
           self.searchService = searchService
       }
 
