@@ -143,15 +143,18 @@ struct UserPostsView: View {
         } else {
             // Iterate over userPosts from profileViewModel
             ForEach(profileViewModel.userPosts) { post in
-                PostView(
-                    post: post,
-                    viewModel: timelineViewModel, // Use timelineViewModel for actions
-                    viewProfileAction: { profileUser in
-                        // Already on a profile, maybe prevent recursive navigation
-                         print("Profile tapped within UserPostsView: \(profileUser.id)")
-                    },
-                    interestScore: 0.0 // FIX: Changed Double type to 0.0 value
-                )
+                NavigationLink(value: post) {
+                    PostView(
+                        post: post,
+                        viewModel: timelineViewModel, // Use timelineViewModel for actions
+                        viewProfileAction: { profileUser in
+                            // Already on a profile, maybe prevent recursive navigation
+                             print("Profile tapped within UserPostsView: \(profileUser.id)")
+                        },
+                        interestScore: 0.0 // FIX: Changed Double type to 0.0 value
+                    )
+                }
+                .buttonStyle(.plain)
                 CustomDivider().padding(.horizontal)
             }
         }
@@ -173,14 +176,17 @@ struct UserPostsAndRepliesView: View {
                  .frame(maxWidth: .infinity)
         } else {
              ForEach(postsAndReplies) { post in
-                 PostView(
-                     post: post,
-                     viewModel: timelineViewModel, // Use timelineViewModel for actions
-                     viewProfileAction: { profileUser in
-                         print("Profile tapped within UserPostsAndRepliesView: \(profileUser.id)")
-                     },
-                     interestScore: 0.0 // FIX: Added missing interestScore parameter with 0.0 value
-                 )
+                 NavigationLink(value: post) {
+                     PostView(
+                         post: post,
+                         viewModel: timelineViewModel, // Use timelineViewModel for actions
+                         viewProfileAction: { profileUser in
+                             print("Profile tapped within UserPostsAndRepliesView: \(profileUser.id)")
+                         },
+                         interestScore: 0.0 // FIX: Added missing interestScore parameter with 0.0 value
+                     )
+                 }
+                 .buttonStyle(.plain)
                  CustomDivider().padding(.horizontal)
              }
          }

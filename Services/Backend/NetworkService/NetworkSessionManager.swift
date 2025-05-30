@@ -16,6 +16,7 @@ public class NetworkSessionManager {
     // MARK: - Private Properties
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "NetworkSessionManager")
     private let rateLimiter = RateLimiter(capacity: 40, refillRate: 1.0)
+    private let urlSession: URLSession
 
     // MARK: - JSON Coders (Accessible for reuse)
     public let jsonDecoder: JSONDecoder = {
@@ -56,6 +57,9 @@ public class NetworkSessionManager {
     // MARK: - Initialization
     private init() {
         // Private initializer for singleton
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 30 // Default timeout: 30 seconds
+        self.urlSession = URLSession(configuration: configuration)
     }
 
     // MARK: - Core Request Execution
@@ -68,7 +72,8 @@ public class NetworkSessionManager {
     /// - Throws: `AppError` for network, decoding, or rate limiting issues.
     func performRequest<T: Decodable>(
         request: URLRequest,
-        responseType: T.Type
+        responseType: T.Type,
+        timeoutInterval: TimeInterval? = nil
     ) async throws -> T {
         guard await rateLimiter.tryConsume() else {
             logger.warning("Rate limit exceeded for request: \(request.url?.absoluteString ?? "Unknown URL")")
@@ -76,8 +81,12 @@ public class NetworkSessionManager {
         }
 
         do {
-            logRequest(request)
-            let (data, response) = try await URLSession.shared.data(for: request)
+            var currentRequest = request
+            if let timeoutInterval = timeoutInterval {
+                currentRequest.timeoutInterval = timeoutInterval
+            }
+            logRequest(currentRequest)
+            let (data, response) = try await urlSession.data(for: currentRequest)
             logResponse(response, data: data)
             try validateResponse(response, data: data)
             return try jsonDecoder.decode(T.self, from: data)
@@ -104,7 +113,8 @@ public class NetworkSessionManager {
     /// - Throws: `AppError` for network or rate limiting issues.
     func performRequestOptional<T: Decodable>(
         request: URLRequest,
-        responseType: T.Type
+        responseType: T.Type,
+        timeoutInterval: TimeInterval? = nil
     ) async throws -> T? {
         guard await rateLimiter.tryConsume() else {
             logger.warning("Rate limit exceeded for optional request: \(request.url?.absoluteString ?? "Unknown URL")")
@@ -112,8 +122,12 @@ public class NetworkSessionManager {
         }
 
         do {
-            logRequest(request)
-            let (data, response) = try await URLSession.shared.data(for: request)
+            var currentRequest = request
+            if let timeoutInterval = timeoutInterval {
+                currentRequest.timeoutInterval = timeoutInterval
+            }
+            logRequest(currentRequest)
+            let (data, response) = try await urlSession.data(for: currentRequest)
             logResponse(response, data: data)
             try validateResponse(response, data: data)
 

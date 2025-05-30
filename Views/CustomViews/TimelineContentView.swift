@@ -132,6 +132,11 @@ struct TimelineContentView: View {
                     timelineSection
                 }
             }
+            .task {
+                if viewModel.posts.isEmpty && !viewModel.isLoading {
+                    await viewModel.initializeTimelineData()
+                }
+            }
         }
         .refreshable {
             await viewModel.refreshTimeline()
