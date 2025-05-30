@@ -254,6 +254,10 @@ final class TimelineViewModel: ObservableObject {
         posts = []
     }
     
+    func fetchContextForPost(postId: String) async throws -> PostContext {
+        return try await timelineService.fetchPostContext(postId: postId)
+    }
+
     // MARK: - Post Actions
     
     func toggleLike(for post: Post) {

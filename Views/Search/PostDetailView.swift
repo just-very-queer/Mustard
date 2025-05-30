@@ -17,6 +17,11 @@ struct PostDetailView: View {
     @State private var isCommentSectionExpanded: Bool = true // Keep comments expanded by default in detail view
     @State private var commentInputText: String = "" // Text input specifically for this detail view
 
+    // State variables for fetching context
+    @State private var isLoadingContext: Bool = false
+    @State private var fetchedReplies: [Post] = []
+    @State private var contextError: String? = nil // Store error message as String
+
     var body: some View {
         NavigationView { // Wrap in NavigationView for a potential title and toolbar items
             ZStack(alignment: .topTrailing) {
@@ -38,19 +43,34 @@ struct PostDetailView: View {
                         )
                         .padding(.bottom, 10) // Add padding below the main post
 
-                        // ExpandedCommentsSection for this detail view
-                        ExpandedCommentsSection(
-                            post: post,
-                            isExpanded: $isCommentSectionExpanded, // Use local state for expansion control if needed
-                            commentText: $commentInputText, // Use local state for text input
-                            viewModel: viewModel // Pass the viewModel for posting action
-                        )
+                        // Display Loading/Error or Comments Section
+                        if isLoadingContext {
+                            ProgressView("Loading comments...")
+                                .padding()
+                        } else if let errorMsg = contextError {
+                            Text("Error: \(errorMsg)")
+                                .foregroundColor(.red)
+                                .padding()
+                        } else {
+                            // ExpandedCommentsSection for this detail view
+                            // This will be updated in the next step to use fetchedReplies
+                            ExpandedCommentsSection(
+                                post: post, // Keep post for new comment context
+                                actualReplies: fetchedReplies, // Pass fetched replies (will require ExpandedCommentsSection modification)
+                                isExpanded: $isCommentSectionExpanded, // Use local state for expansion control if needed
+                                commentText: $commentInputText, // Use local state for text input
+                                viewModel: viewModel // Pass the viewModel for posting action
+                            )
+                        }
                     }
                 }
                 // Removed the overlaying close button, use NavigationBarItem instead
             }
             .navigationTitle("Post Details") // Add a title
             .navigationBarTitleDisplayMode(.inline)
+            .task(id: post.id) { // Re-fetch if the post ID changes
+                await loadPostContext()
+            }
             // .toolbar { // Toolbar removed as "Done" button is the only item
             //     // Add a Done button to dismiss the view
             //     ToolbarItem(placement: .navigationBarTrailing) {
@@ -61,5 +81,24 @@ struct PostDetailView: View {
             // }
         }
         // Removed background and edgesIgnoringSafeArea, let NavigationView handle it
+    }
+
+    private func loadPostContext() async {
+        isLoadingContext = true
+        contextError = nil
+        fetchedReplies = [] // Clear previous replies
+
+        do {
+            // Call fetchContextForPost via the viewModel
+            let context = try await viewModel.fetchContextForPost(postId: post.id)
+            self.fetchedReplies = context.descendants
+        } catch let error as AppError {
+            self.contextError = error.message
+            // Log detailed error if needed: print(error.localizedDescription)
+        } catch {
+            self.contextError = "Failed to load comments: \(error.localizedDescription)"
+            // Log detailed error: print(error.localizedDescription)
+        }
+        isLoadingContext = false
     }
 }

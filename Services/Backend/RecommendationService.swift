@@ -50,8 +50,21 @@ class RecommendationService: ObservableObject {
         return context
     }
 
+    // Helper struct to pass interaction data to background actor
+    // Ensure InteractionType is Sendable (e.g., if it's an enum with raw values, it usually is)
+    struct CapturedInteraction: Sendable {
+        let statusID: String?
+        let actionType: InteractionType
+        let timestamp: Date
+        let accountID: String?
+        let authorAccountID: String?
+        let postURL: String?
+        let tags: [String]?
+        let viewDuration: Double?
+        let linkURL: String?
+    }
 
-    // Placeholder for interaction logging method
+    // This method can be called from any actor.
     func logInteraction(statusID: String? = nil, // Made optional as not all interactions are post-specific
                         actionType: InteractionType,
                         accountID: String? = nil, // User performing action (e.g., current authenticated user)
@@ -61,26 +74,55 @@ class RecommendationService: ObservableObject {
                         viewDuration: Double? = nil, // For timeSpent action
                         linkURL: String? = nil) { // For linkOpen action
         
-        guard let context = try? getContext() else {
-            logger.error("Failed to log interaction: ModelContext not available.")
-            return
+        Task { // Fire-and-forget task to dispatch to background
+            let interactionDetails = CapturedInteraction(
+                statusID: statusID, actionType: actionType, timestamp: Date(),
+                accountID: accountID, authorAccountID: authorAccountID, postURL: postURL,
+                tags: tags, viewDuration: viewDuration, linkURL: linkURL
+            )
+
+            // Get ModelContainer. self.modelContext is set on MainActor during configure.
+            // Accessing its .container property needs to be on MainActor.
+            let mc = await MainActor.run { self.modelContext?.container }
+
+            guard let modelContainer = mc else {
+                 logger.error("Failed to log interaction: ModelContainer not available for background logging.")
+                 return
+            }
+
+            await self.performBackgroundInteractionLogging(details: interactionDetails, modelContainer: modelContainer)
         }
+    }
+
+    @BackgroundActor
+    private func performBackgroundInteractionLogging(details: CapturedInteraction, modelContainer: ModelContainer) async {
+        let backgroundContext = ModelContext(modelContainer)
+        // If precise save control is needed:
+        // backgroundContext.autosaveEnabled = false
 
         let newInteraction = Interaction(
-            statusID: statusID,
-            actionType: actionType,
-            timestamp: Date(), // Current time
-            accountID: accountID,
-            authorAccountID: authorAccountID,
-            postURL: postURL,
-            tags: tags,
-            viewDuration: viewDuration,
-            linkURL: linkURL
+            statusID: details.statusID,
+            actionType: details.actionType,
+            timestamp: details.timestamp,
+            accountID: details.accountID,
+            authorAccountID: details.authorAccountID,
+            postURL: details.postURL,
+            tags: details.tags,
+            viewDuration: details.viewDuration,
+            linkURL: details.linkURL
         )
 
-        context.insert(newInteraction)
-        // Autosave is enabled via self.modelContext.autosaveEnabled = true in init()
-        logger.info("Logged interaction: \(actionType.rawValue, privacy: .public) for status \(statusID ?? "N/A", privacy: .public). User: \(accountID ?? "N/A"). Author: \(authorAccountID ?? "N/A")")
+        backgroundContext.insert(newInteraction)
+
+        // If not relying on main context's autosave or if backgroundContext.autosaveEnabled = false:
+        // do {
+        //     try backgroundContext.save()
+        //     logger.info("Background: Interaction data saved successfully.")
+        // } catch {
+        //     logger.error("Background: Error saving interaction: \(error.localizedDescription)")
+        // }
+
+        logger.info("Background: Logged interaction: \(details.actionType.rawValue, privacy: .public) for status \(details.statusID ?? "N/A", privacy: .public)")
     }
     
     // Placeholder for affinity calculation method

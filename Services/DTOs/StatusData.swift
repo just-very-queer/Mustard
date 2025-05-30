@@ -28,6 +28,7 @@ struct PostData: Codable {
     let application: ApplicationData?
     let mentions: [MentionData]?
     let tags: [TagData]?
+    let reblog: PostData? // Add this
 
     /// Converts `PostData` to the app's `Post` model.
     func toPost(instanceURL: URL) -> Post? {
@@ -42,25 +43,29 @@ struct PostData: Codable {
         }
 
         let acc = account.toAccount(instanceURL: instanceURL)
-        let attachments = media_attachments.map { $0.toMediaAttachment() }
+        let attachments = media_attachments.map { $0.toMediaAttachment() } // These are attachments on the reblog itself (rare)
         let postMentions = mentions?.map { $0.toMention() } ?? []
         let postTags = tags?.map { $0.toTag() } ?? []
 
+        // Convert the reblogged PostData (if any) to a Post model
+        let rebloggedPostModel = self.reblog?.toPost(instanceURL: instanceURL)
+
         return Post(
             id: id,
-            content: content,
+            content: content, // Content of the reblog itself (often empty)
             createdAt: createdDate, // Always valid
-            account: acc,
-            mediaAttachments: attachments,
+            account: acc, // Account of the reblogger
+            mediaAttachments: attachments, // Media on the reblog itself (rare)
             isFavourited: favourited ?? false,
-            isReblogged: reblogged ?? false,
+            isReblogged: rebloggedPostModel != nil ? true : (reblogged ?? false), // A post with a 'reblog' content IS a reblog
             reblogsCount: reblogs_count,
             favouritesCount: favourites_count,
             repliesCount: replies_count,
-            mentions: postMentions,
-            tags: postTags,
-            card: nil, // Pass nil for card
-            url: self.url // Pass the url from PostData
+            mentions: postMentions, // Mentions in the reblog's own text (if any)
+            tags: postTags,         // Tags in the reblog's own text (if any)
+            card: nil, // Card for the reblog itself (rare) - API doesn't provide card for the boost itself
+            url: self.url,
+            reblog: rebloggedPostModel // Assign the converted reblogged Post
         )
     }
 }

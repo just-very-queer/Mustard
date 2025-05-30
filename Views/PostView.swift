@@ -14,7 +14,7 @@ import SwiftSoup // If needed for HTML parsing in subviews
 // MARK: - PostView (Main View)
 struct PostView: View {
     // Properties
-    let post: Post
+    @ObservedObject var post: Post // <--- Changed to @ObservedObject var
     @ObservedObject var viewModel: TimelineViewModel // Use the ViewModel directly
     var viewProfileAction: (User) -> Void // Keep for context-dependent navigation
 
@@ -28,23 +28,40 @@ struct PostView: View {
     let interestScore: Double // Added for interest highlighting
 
     var body: some View {
+        let displayPost = post.reblog ?? post // Prioritize reblogged post for content display
+
         VStack(alignment: .leading, spacing: 15) {
-            // User Header - Pass profile navigation action
-            UserHeaderView(post: post, viewProfileAction: viewProfileAction)
+            // Reblog Indicator
+            if post.reblog != nil {
+                HStack {
+                    Image(systemName: "arrow.2.squarepath") // Or your app's repost icon
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text("\(post.account?.displayName ?? post.account?.username ?? "Someone") reblogged")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, -10) // Adjust spacing to be closer to the UserHeaderView
+            }
 
-            // Content
-            PostContentView(post: post, showFullText: $showFullText, currentUserAccountID: viewModel.currentUserAccountID) // Pass it here
+            // User Header - Pass profile navigation action, using displayPost for content
+            UserHeaderView(post: displayPost, viewProfileAction: viewProfileAction)
 
-            // Media attachments - Trigger local state for viewer
-            MediaAttachmentView(post: post, onImageTap: {
+            // Content - using displayPost
+            PostContentView(post: displayPost, showFullText: $showFullText, currentUserAccountID: viewModel.currentUserAccountID)
+
+            // Media attachments - Trigger local state for viewer, using displayPost
+            MediaAttachmentView(post: displayPost, onImageTap: {
                 self.showImageViewer.toggle()
             })
 
-            // Post actions - Directly call ViewModel methods
+            // Post actions - Directly call ViewModel methods on original 'post' (the reblog wrapper)
             PostActionsViewRevised(post: post, viewModel: viewModel)
                 .padding(.top, 5)
 
-            // Loading Indicator - Check state from ViewModel
+            // Loading Indicator - Check state from ViewModel, for the original 'post'
             if viewModel.isLoading(for: post) {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -59,15 +76,15 @@ struct PostView: View {
         .dynamicTypeSize(.medium)
         // Sheet for FullScreenImageView (Uses local state)
         .sheet(isPresented: $showImageViewer) {
-            // Assuming first attachment is the one to show fullscreen
-            if let imageURL = post.mediaAttachments.first?.url {
+            // Use displayPost for media attachments
+            if let imageURL = displayPost.mediaAttachments.first?.url {
                 FullScreenImageView(imageURL: imageURL, isPresented: $showImageViewer)
             }
         }
         // Sheet for WebView (Uses local state and post data)
         .sheet(isPresented: $showBrowserView) {
-            // Assuming post.url contains the link to show
-            if let urlString = post.url, let url = URL(string: urlString) {
+            // Use displayPost.url for the link
+            if let urlString = displayPost.url, let url = URL(string: urlString) {
                  SafariView(url: url) // Assumes SafariView exists
             }
         }
@@ -315,7 +332,8 @@ struct UserHeaderView: View {
 
 // MARK: - ExpandedCommentsSection (Re-declared here)
 struct ExpandedCommentsSection: View {
-    let post: Post
+    let post: Post // Keep for context like posting a new reply to the original post
+    let actualReplies: [Post] // New property for displaying replies
     @Binding var isExpanded: Bool
     @Binding var commentText: String
     @ObservedObject var viewModel: TimelineViewModel
@@ -329,15 +347,14 @@ struct ExpandedCommentsSection: View {
                 .padding(.horizontal)
                 .foregroundColor(.primary)
 
-            if let replies = post.replies, !replies.isEmpty {
+            if !actualReplies.isEmpty { // Use actualReplies here
                 LazyVStack(spacing: 0) {
-                    ForEach(replies) { reply in
+                    ForEach(actualReplies) { reply in // Iterate over actualReplies
                         VStack(alignment: .leading, spacing: 5) {
                             UserHeaderView(post: reply, viewProfileAction: { user in
                                 viewModel.navigateToProfile(user)
                         })
                             // Display reply content
-                            // FIX: Pass viewModel.currentUserAccountID instead of the type String?
                             PostContentView(post: reply, showFullText: .constant(true), currentUserAccountID: viewModel.currentUserAccountID)
 
                     }
@@ -346,7 +363,7 @@ struct ExpandedCommentsSection: View {
                     }
                 }
             } else {
-                Text("No replies yet.")
+                Text("No replies yet.") // Or "No comments yet."
                     .font(.caption)
                     .foregroundColor(.gray)
                     .padding(.horizontal)

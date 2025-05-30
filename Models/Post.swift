@@ -85,6 +85,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         }
     }
     var card: Card? // This will now use the Card struct with 'summary'
+    @Relationship(deleteRule: .nullify, inverse: nil) var reblog: Post? // Add this
     
     @Relationship(deleteRule: .cascade) var replies: [Post]? = []
     
@@ -103,7 +104,8 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         mentions: [Mention]? = nil,
         tags: [Tag]? = nil,
         card: Card? = nil,
-        url: String? = nil
+        url: String? = nil,
+        reblog: Post? = nil // Add reblog parameter
         
     ) {
         self.id = id
@@ -121,10 +123,11 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         self.tags = tags
         self.card = card
         self.url = url
+        self.reblog = reblog // Assign reblog
     }
     
     private enum CodingKeys: String, CodingKey {
-        case id, content, createdAt, account, mediaAttachments, replies, mentions, tags, url, card
+        case id, content, createdAt, account, mediaAttachments, replies, mentions, tags, url, card, reblog // Add reblog
         case isFavourited = "favourited"
         case isReblogged = "reblogged"
         case reblogsCount = "reblogs_count"
@@ -153,6 +156,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         }
         self.url = try container.decodeIfPresent(String.self, forKey: .url)
         self.card = try container.decodeIfPresent(Card.self, forKey: .card)
+        self.reblog = try container.decodeIfPresent(Post.self, forKey: .reblog)
         
     }
     
@@ -173,6 +177,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         try container.encodeIfPresent(self.tags, forKey: .tags) // Uses the computed property's getter
         try container.encodeIfPresent(url, forKey: .url)
         try container.encodeIfPresent(card, forKey: .card)
+        try container.encodeIfPresent(self.reblog, forKey: .reblog)
         
     }
     
@@ -189,6 +194,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         hasher.combine(mediaAttachments)
         hasher.combine(tags) // Add tags to hashable
         hasher.combine(card)
+        hasher.combine(reblog) // Add reblog
     }
     
     static func == (lhs: Post, rhs: Post) -> Bool {
@@ -205,6 +211,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         lhs.mentions == rhs.mentions &&
         lhs.tags == rhs.tags &&
         lhs.url == rhs.url &&
-        lhs.card == rhs.card
+        lhs.card == rhs.card &&
+        lhs.reblog == rhs.reblog // Add reblog comparison
     }
 }
