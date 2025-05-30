@@ -39,13 +39,13 @@ final class SearchService: ObservableObject {
             let results = try await mastodonAPIService.search(
                 query: query,
                 type: type,
+                limit: limit,
                 resolve: resolve,
                 excludeUnreviewed: excludeUnreviewed,
                 accountId: accountId,
                 maxId: maxId,
                 minId: minId,
-                offset: offset,
-                limit: limit
+                offset: offset
             )
             self.logger.info("Successfully fetched search results for query: '\(query)'")
             return results
@@ -54,7 +54,7 @@ final class SearchService: ObservableObject {
             throw error
         } catch {
             self.logger.error("An unexpected error occurred while searching for query '\(query)': \(error.localizedDescription)")
-            throw AppError.network(type: .unexpected, description: error.localizedDescription)
+            throw AppError(network: .networkError, underlyingError: error)
         }
     }
 
@@ -62,7 +62,7 @@ final class SearchService: ObservableObject {
     func fetchTrendingHashtags(limit: Int? = nil) async throws -> [Tag] {
         self.logger.debug("Fetching trending hashtags.")
         do {
-            let tags = try await mastodonAPIService.fetchTrendingTags(limit: limit)
+            let tags = try await mastodonAPIService.fetchTrendingTags()
             self.logger.info("Successfully fetched \(tags.count) trending hashtags.")
             return tags
         } catch let error as AppError {
@@ -70,7 +70,7 @@ final class SearchService: ObservableObject {
             throw error
         } catch {
             self.logger.error("An unexpected error occurred while fetching trending hashtags: \(error.localizedDescription)")
-            throw AppError.network(type: .unexpected, description: error.localizedDescription)
+            throw AppError(network: .networkError, underlyingError: error)
         }
     }
 
@@ -79,11 +79,7 @@ final class SearchService: ObservableObject {
         self.logger.debug("Fetching posts for hashtag: #\(hashtag)")
         do {
             let posts = try await mastodonAPIService.fetchHashtagTimeline(
-                hashtag: hashtag,
-                local: false,
-                onlyMedia: false,
-                maxId: maxId,
-                limit: limit
+                hashtag: hashtag
             )
             self.logger.info("Successfully fetched \(posts.count) posts for hashtag: #\(hashtag)")
             return posts
@@ -92,7 +88,7 @@ final class SearchService: ObservableObject {
             throw error
         } catch {
             self.logger.error("An unexpected error occurred while fetching posts for hashtag #\(hashtag): \(error.localizedDescription)")
-            throw AppError.network(type: .unexpected, description: error.localizedDescription)
+            throw AppError(network: .networkError, underlyingError: error)
         }
     }
 }

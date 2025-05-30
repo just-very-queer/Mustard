@@ -106,7 +106,7 @@ class TimelineService {
             logger.info("Background refresh succeeded")
         } catch {
             logger.error("Background refresh failed: \(error.localizedDescription)")
-            error = AppError(message: "Failed to refresh timeline", underlyingError: error)
+            self.error = AppError(message: "Failed to refresh timeline", underlyingError: error)
         }
         isLoading = false
     }

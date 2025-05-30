@@ -44,7 +44,7 @@ struct Card: Codable, Hashable, Equatable {
 
 /// Represents a Mastodon post, previously known as Status.
 @Model
-final class Post: Identifiable, Hashable, Codable, Equatable {
+final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendable {
     @Attribute(.unique) var id: String
     var content: String
     var createdAt: Date
