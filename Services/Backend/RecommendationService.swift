@@ -9,7 +9,7 @@ import Foundation
 import SwiftData
 import OSLog // For logging
 
-@MainActor // To ensure it can safely interact with MainActor-isolated ViewModels and publish changes
+// Removed @MainActor from class declaration
 class RecommendationService: ObservableObject {
     // Make shared a computed property or a function to ensure it's configured before use.
     // For simplicity here, we'll make it a regular instance and expect configuration.
@@ -85,37 +85,51 @@ class RecommendationService: ObservableObject {
     
     // Placeholder for affinity calculation method
     // Inside RecommendationService - calculateAffinities method
-    @MainActor // Ensure modelContext operations are on main thread
+    @MainActor // Ensure modelContext operations are on main thread for triggering
     func calculateAffinities() async {
-        guard let currentContext = try? getContext() else { return }
-        logger.info("Starting affinity calculation...")
-        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        logger.info("Starting affinity calculation (triggered on MainActor)...")
         
-        // Fetch recent interactions
+        guard let modelContainer = self.modelContext?.container else {
+            logger.error("ModelContainer not available for background affinity calculation.")
+            return
+        }
+
+        Task { // Launch a new unstructured task
+            await self.performBackgroundAffinityCalculation(modelContainer: modelContainer)
+        }
+    }
+
+    @BackgroundActor // Mark the new method to run on the background actor
+    private func performBackgroundAffinityCalculation(modelContainer: ModelContainer) async {
+        let backgroundContext = ModelContext(modelContainer)
+        // Optional: Disable autosave for more control, then save manually at the end.
+        // backgroundContext.autosaveEnabled = false
+
+        logger.info("Performing background affinity calculation on BackgroundActor...")
+
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
         var interactionDescriptor = FetchDescriptor<Interaction>(
             predicate: #Predicate { $0.timestamp >= thirtyDaysAgo },
             sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
         )
         
-        guard let interactions = try? currentContext.fetch(interactionDescriptor) else {
-            logger.error("Failed to fetch interactions.")
+        guard let interactions = try? backgroundContext.fetch(interactionDescriptor) else {
+            logger.error("Background: Failed to fetch interactions.")
             return
         }
 
         if interactions.isEmpty {
-            logger.info("No recent interactions to process for affinity calculation.")
+            logger.info("Background: No recent interactions to process.")
             return
         }
 
         let weights: [InteractionType: Double] = [
             .like: 1.0, .comment: 3.0, .repost: 2.0, .linkOpen: 1.5, .view: 0.2,
-            .unlike: -0.5, .unrepost: -0.5 // Optional: negative weights for "undo" actions
+            .unlike: -0.5, .unrepost: -0.5
         ]
 
-        // --- Author Affinity Calculation ---
         var authorScores: [String: Double] = [:]
         var authorInteractionCounts: [String: Int] = [:]
-
         for interaction in interactions {
             guard let authorId = interaction.authorAccountID else { continue }
             let scoreBoost = weights[interaction.actionType] ?? 0.0
@@ -125,18 +139,16 @@ class RecommendationService: ObservableObject {
 
         for (authorId, calculatedScore) in authorScores {
             let count = authorInteractionCounts[authorId] ?? 0
-            updateUserAffinity(authorAccountID: authorId, score: calculatedScore, interactionCount: count)
+            await self.updateUserAffinityOnBackground(authorAccountID: authorId, score: calculatedScore, interactionCount: count, context: backgroundContext)
         }
-        logger.info("Author affinities updated.")
+        logger.info("Background: Author affinities updated.")
 
-        // --- Hashtag Affinity Calculation ---
         var tagScores: [String: Double] = [:]
         var tagInteractionCounts: [String: Int] = [:]
-
         for interaction in interactions {
             guard let tags = interaction.tags, !tags.isEmpty else { continue }
             let scoreBoost = weights[interaction.actionType] ?? 0.0
-            for tagName in tags {
+            for tagName in tags { // Assuming tags is [String]
                 tagScores[tagName, default: 0.0] += scoreBoost
                 tagInteractionCounts[tagName, default: 0] += 1
             }
@@ -144,47 +156,51 @@ class RecommendationService: ObservableObject {
 
         for (tagName, calculatedScore) in tagScores {
             let count = tagInteractionCounts[tagName] ?? 0
-            updateHashtagAffinity(tag: tagName, score: calculatedScore, interactionCount: count)
+            await self.updateHashtagAffinityOnBackground(tag: tagName, score: calculatedScore, interactionCount: count, context: backgroundContext)
         }
-        logger.info("Hashtag affinities updated.")
-        logger.info("Affinity calculation completed.")
+        logger.info("Background: Hashtag affinities updated.")
+
+        // Explicitly save changes made in the background context if autosave is disabled
+        // do {
+        //    try backgroundContext.save()
+        //    logger.info("Background: Affinity data saved successfully.")
+        // } catch {
+        //    logger.error("Background: Error saving affinity data: \(error.localizedDescription)")
+        // }
+        logger.info("Background affinity calculation finished.")
     }
 
-    // Helper to update/create UserAffinity
-    @MainActor
-    private func updateUserAffinity(authorAccountID: String, score: Double, interactionCount: Int) {
-        guard let currentContext = try? getContext() else { return }
+    @BackgroundActor
+    private func updateUserAffinityOnBackground(authorAccountID: String, score: Double, interactionCount: Int, context: ModelContext) async {
         let fetchDescriptor = FetchDescriptor<UserAffinity>(predicate: #Predicate { $0.authorAccountID == authorAccountID })
         do {
-            if let existingAffinity = try currentContext.fetch(fetchDescriptor).first {
+            if let existingAffinity = try context.fetch(fetchDescriptor).first {
                 existingAffinity.score = score
                 existingAffinity.interactionCount = interactionCount
                 existingAffinity.lastUpdated = Date()
             } else {
                 let newAffinity = UserAffinity(authorAccountID: authorAccountID, score: score, lastUpdated: Date(), interactionCount: interactionCount)
-                currentContext.insert(newAffinity)
+                context.insert(newAffinity)
             }
         } catch {
-            logger.error("Error updating UserAffinity for \(authorAccountID): \(error.localizedDescription)")
+            logger.error("Background: Error updating UserAffinity for \(authorAccountID): \(error.localizedDescription)")
         }
     }
 
-    // Helper to update/create HashtagAffinity
-    @MainActor
-    private func updateHashtagAffinity(tag: String, score: Double, interactionCount: Int) {
-        guard let currentContext = try? getContext() else { return }
+    @BackgroundActor
+    private func updateHashtagAffinityOnBackground(tag: String, score: Double, interactionCount: Int, context: ModelContext) async {
         let fetchDescriptor = FetchDescriptor<HashtagAffinity>(predicate: #Predicate { $0.tag == tag })
         do {
-            if let existingAffinity = try currentContext.fetch(fetchDescriptor).first {
+            if let existingAffinity = try context.fetch(fetchDescriptor).first {
                 existingAffinity.score = score
                 existingAffinity.interactionCount = interactionCount
                 existingAffinity.lastUpdated = Date()
             } else {
                 let newAffinity = HashtagAffinity(tag: tag, score: score, lastUpdated: Date(), interactionCount: interactionCount)
-                currentContext.insert(newAffinity)
+                context.insert(newAffinity)
             }
         } catch {
-            logger.error("Error updating HashtagAffinity for \(tag): \(error.localizedDescription)")
+            logger.error("Background: Error updating HashtagAffinity for \(tag): \(error.localizedDescription)")
         }
     }
 

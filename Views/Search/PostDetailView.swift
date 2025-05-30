@@ -51,14 +51,14 @@ struct PostDetailView: View {
             }
             .navigationTitle("Post Details") // Add a title
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // Add a Done button to dismiss the view
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        showDetail = false
-                    }
-                }
-            }
+            // .toolbar { // Toolbar removed as "Done" button is the only item
+            //     // Add a Done button to dismiss the view
+            //     ToolbarItem(placement: .navigationBarTrailing) {
+            //         Button("Done") {
+            //             showDetail = false
+            //         }
+            //     }
+            // }
         }
         // Removed background and edgesIgnoringSafeArea, let NavigationView handle it
     }
