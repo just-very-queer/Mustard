@@ -154,27 +154,43 @@ struct PostContentView: View {
     @State private var plainTextContentForShowMore: String = "" // For "Show More" logic
     @State private var detectedLinkCard: Card? = nil
     @State private var isLoadingLinkPreview: Bool = false
+    @State private var isContentEffectivelyEmpty: Bool = false // New state variable
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Display the computed AttributedString (or fallback)
-            if let attrString = displayedAttributedString {
+            if isContentEffectivelyEmpty { // Check new state variable
+                Text("[Content is empty or not displayable]")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(.horizontal)
+            } else if let attrString = displayedAttributedString {
                 Text(attrString)
                     .font(.body) // Apply font modifier here if needed
                     .lineLimit(showFullText ? nil : 3)
                     .foregroundColor(.primary) // Apply color here
                     .padding(.horizontal)
             } else {
-                // Fallback to plain text while loading or if conversion fails
-                Text(HTMLUtils.convertHTMLToPlainText(html: post.content)) // Use plain text as fallback
-                    .font(.body)
-                    .lineLimit(showFullText ? nil : 3)
-                    .foregroundColor(.primary)
-                    .padding(.horizontal)
+                // Fallback to plain text (this path might also be empty if original content was empty)
+                // This specific 'else' might be hit if attributedStringFromHTML returns nil
+                // but convertHTMLToPlainText still yields something (e.g. if HTML is malformed for AS but not for SwiftSoup).
+                // The isContentEffectivelyEmpty check should ideally cover this too if plainText is also empty.
+                let plainText = HTMLUtils.convertHTMLToPlainText(html: post.content)
+                if plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("[Content is empty or not displayable]")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .padding(.horizontal)
+                } else {
+                    Text(plainText)
+                        .font(.body)
+                        .lineLimit(showFullText ? nil : 3)
+                        .foregroundColor(.primary)
+                        .padding(.horizontal)
+                }
             }
 
-            // "Show More" button
-            if !showFullText && plainTextContentForShowMore.count > 200 { // Use state variable
+            // "Show More" button (only if content is not empty)
+            if !isContentEffectivelyEmpty && !showFullText && plainTextContentForShowMore.count > 200 { // Use state variable
                  ShowMoreButton(showFullText: $showFullText)
             }
 
@@ -194,6 +210,16 @@ struct PostContentView: View {
             // 1. AttributedString and PlainText conversion (for Show More)
             self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
             self.plainTextContentForShowMore = HTMLUtils.convertHTMLToPlainText(html: post.content) // Calculate once
+
+            // Determine if content is effectively empty
+            if self.plainTextContentForShowMore.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Also check if the original HTML content itself was just decorative (e.g. only <p></p> or <p><br></p>)
+                // For simplicity, plainText check is usually sufficient.
+                // A more robust check might involve analyzing the structure of displayedAttributedString if it's not nil.
+                self.isContentEffectivelyEmpty = true
+            } else {
+                self.isContentEffectivelyEmpty = false
+            }
 
             // 2. Link Preview Logic
             self.detectedLinkCard = nil // Reset

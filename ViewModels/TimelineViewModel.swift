@@ -258,14 +258,26 @@ final class TimelineViewModel: ObservableObject {
     
     func toggleLike(for post: Post) {
         guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
-        let originalPost = posts[index]
         
+        // Store original values for potential revert
+        let originalIsFavourited = posts[index].isFavourited
+        let originalFavouritesCount = posts[index].favouritesCount
+
+        // Optimistic update
         posts[index].isFavourited.toggle()
         posts[index].favouritesCount += posts[index].isFavourited ? 1 : -1
         
+        // Explicitly signal change to SwiftUI for the main posts array
+        let updatedPostForUIMain = posts[index]
+        posts[index] = updatedPostForUIMain
+
         if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
+            // Optimistic update for topPosts
             topPosts[topIndex].isFavourited = posts[index].isFavourited
             topPosts[topIndex].favouritesCount = posts[index].favouritesCount
+            // Explicitly signal change to SwiftUI for the topPosts array
+            let updatedPostForUITop = topPosts[topIndex]
+            topPosts[topIndex] = updatedPostForUITop
         }
         
         updateLoadingState(for: post.id, isLoading: true)
@@ -287,9 +299,17 @@ final class TimelineViewModel: ObservableObject {
                 )
             } catch {
                 logger.error("Failed toggleLike: \(error.localizedDescription)")
-                posts[index] = originalPost
+                // Revert optimistic update
+                posts[index].isFavourited = originalIsFavourited
+                posts[index].favouritesCount = originalFavouritesCount
+                let revertedPostForUIMain = posts[index]
+                posts[index] = revertedPostForUIMain
+
                 if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
-                    topPosts[topIndex] = originalPost
+                    topPosts[topIndex].isFavourited = originalIsFavourited
+                    topPosts[topIndex].favouritesCount = originalFavouritesCount
+                    let revertedPostForUITop = topPosts[topIndex]
+                    topPosts[topIndex] = revertedPostForUITop
                 }
                 alertError = AppError(message: "Failed to like post", underlyingError: error)
             }
@@ -298,14 +318,26 @@ final class TimelineViewModel: ObservableObject {
     
     func toggleRepost(for post: Post) {
         guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
-        let originalPost = posts[index]
         
+        // Store original values for potential revert
+        let originalIsReblogged = posts[index].isReblogged
+        let originalReblogsCount = posts[index].reblogsCount
+
+        // Optimistic update
         posts[index].isReblogged.toggle()
         posts[index].reblogsCount += posts[index].isReblogged ? 1 : -1
         
+        // Explicitly signal change to SwiftUI for the main posts array
+        let updatedPostForUIMain = posts[index]
+        posts[index] = updatedPostForUIMain
+
         if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
+            // Optimistic update for topPosts
             topPosts[topIndex].isReblogged = posts[index].isReblogged
             topPosts[topIndex].reblogsCount = posts[index].reblogsCount
+            // Explicitly signal change to SwiftUI for the topPosts array
+            let updatedPostForUITop = topPosts[topIndex]
+            topPosts[topIndex] = updatedPostForUITop
         }
         
         updateLoadingState(for: post.id, isLoading: true)
@@ -327,9 +359,17 @@ final class TimelineViewModel: ObservableObject {
                 )
             } catch {
                 logger.error("Failed toggleRepost: \(error.localizedDescription)")
-                posts[index] = originalPost
+                // Revert optimistic update
+                posts[index].isReblogged = originalIsReblogged
+                posts[index].reblogsCount = originalReblogsCount
+                let revertedPostForUIMain = posts[index]
+                posts[index] = revertedPostForUIMain
+
                 if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
-                    topPosts[topIndex] = originalPost
+                    topPosts[topIndex].isReblogged = originalIsReblogged
+                    topPosts[topIndex].reblogsCount = originalReblogsCount
+                    let revertedPostForUITop = topPosts[topIndex]
+                    topPosts[topIndex] = revertedPostForUITop
                 }
                 alertError = AppError(message: "Failed to repost", underlyingError: error)
             }
@@ -339,16 +379,32 @@ final class TimelineViewModel: ObservableObject {
     func comment(on post: Post, content: String) {
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
+        // Store original replies count for potential revert (though less critical as it's just a count)
+        var originalRepliesCountMain: Int?
+        if let index = posts.firstIndex(where: { $0.id == post.id }) {
+            originalRepliesCountMain = posts[index].repliesCount
+        }
+        var originalRepliesCountTop: Int?
+        if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
+            originalRepliesCountTop = topPosts[topIndex].repliesCount
+        }
+
         updateLoadingState(for: post.id, isLoading: true)
         Task {
             defer { updateLoadingState(for: post.id, isLoading: false) }
             do {
                 _ = try await postActionService.comment(postID: post.id, content: content)
+
+                // Optimistic update for repliesCount
                 if let index = posts.firstIndex(where: { $0.id == post.id }) {
                     posts[index].repliesCount += 1
+                    let updatedPostForUIMain = posts[index]
+                    posts[index] = updatedPostForUIMain
                 }
                 if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
                     topPosts[topIndex].repliesCount += 1
+                    let updatedPostForUITop = topPosts[topIndex]
+                    topPosts[topIndex] = updatedPostForUITop
                 }
                 
                 commentText = ""
@@ -365,6 +421,17 @@ final class TimelineViewModel: ObservableObject {
                 )
             } catch {
                 logger.error("Failed to post comment: \(error.localizedDescription)")
+                // Revert optimistic update for repliesCount if originalRepliesCount was captured
+                if let index = posts.firstIndex(where: { $0.id == post.id }), let originalCount = originalRepliesCountMain {
+                    posts[index].repliesCount = originalCount
+                    let revertedPostForUIMain = posts[index]
+                    posts[index] = revertedPostForUIMain
+                }
+                if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }), let originalCount = originalRepliesCountTop {
+                    topPosts[topIndex].repliesCount = originalCount
+                    let revertedPostForUITop = topPosts[topIndex]
+                    topPosts[topIndex] = revertedPostForUITop
+                }
                 alertError = AppError(message: "Failed to post comment", underlyingError: error)
             }
         }

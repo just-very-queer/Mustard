@@ -58,7 +58,32 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
     @Relationship(deleteRule: .cascade) var mediaAttachments: [MediaAttachment]
     var mentions: [Mention]?
     var url: String?
-    var tags: [Tag]?
+    private var tagsData: Data?
+    // Ensure Tag itself is Codable. If Tag is an @Model, it should already be.
+    // If Tag is a simple struct, ensure it conforms to Codable.
+    var tags: [Tag]? {
+        get {
+            guard let data = tagsData else { return nil }
+            do {
+                return try JSONDecoder().decode([Tag].self, from: data)
+            } catch {
+                print("Error decoding tags: \(error)")
+                return nil
+            }
+        }
+        set {
+            if let newValue = newValue {
+                do {
+                    tagsData = try JSONEncoder().encode(newValue)
+                } catch {
+                    print("Error encoding tags: \(error)")
+                    tagsData = nil
+                }
+            } else {
+                tagsData = nil
+            }
+        }
+    }
     var card: Card? // This will now use the Card struct with 'summary'
     
     @Relationship(deleteRule: .cascade) var replies: [Post]? = []
@@ -121,7 +146,11 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         self.mediaAttachments = try container.decodeIfPresent([MediaAttachment].self, forKey: .mediaAttachments) ?? []
         self.replies = try container.decodeIfPresent([Post].self, forKey: .replies) ?? []
         self.mentions = try container.decodeIfPresent([Mention].self, forKey: .mentions)
-        self.tags = try container.decodeIfPresent([Tag].self, forKey: .tags)
+        if let tagsArray = try container.decodeIfPresent([Tag].self, forKey: .tags) {
+            self.tags = tagsArray // Uses the computed property's setter
+        } else {
+            self.tags = nil
+        }
         self.url = try container.decodeIfPresent(String.self, forKey: .url)
         self.card = try container.decodeIfPresent(Card.self, forKey: .card)
         
@@ -141,7 +170,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         try container.encode(mediaAttachments, forKey: .mediaAttachments)
         try container.encodeIfPresent(replies, forKey: .replies)
         try container.encodeIfPresent(mentions, forKey: .mentions)
-        try container.encodeIfPresent(tags, forKey: .tags)
+        try container.encodeIfPresent(self.tags, forKey: .tags) // Uses the computed property's getter
         try container.encodeIfPresent(url, forKey: .url)
         try container.encodeIfPresent(card, forKey: .card)
         
@@ -158,6 +187,7 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         hasher.combine(favouritesCount)
         hasher.combine(repliesCount)
         hasher.combine(mediaAttachments)
+        hasher.combine(tags) // Add tags to hashable
         hasher.combine(card)
     }
     
