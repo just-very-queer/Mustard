@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftData
 
 // MARK: - Utility Components
 
@@ -27,12 +28,11 @@ struct LoadingOverlay: View {
     }
 }
 
-// SafariServices import removed as SFSafariViewController is no longer used in this file.
 
 struct LinkPreview: View {
     let card: Card
-    let postID: String? // Added to associate link click with a post
-    let currentUserAccountID: String? // Added for logging
+    let postID: String?
+    let currentUserAccountID: String?
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -41,15 +41,15 @@ struct LinkPreview: View {
                     switch phase {
                     case .empty:
                         ProgressView()
-                            .frame(height: 150) // Placeholder height
+                            .frame(height: 150)
                     case .success(let image):
                         image
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                            .frame(maxHeight: 200) // Max height for the image
+                            .frame(maxHeight: 200)
                             .clipped()
                     case .failure:
-                        Image(systemName: "photo") // Placeholder for failure
+                        Image(systemName: "photo")
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(height: 150)
@@ -65,8 +65,9 @@ struct LinkPreview: View {
                     .font(.headline)
                     .lineLimit(2)
 
-                if !card.description.isEmpty {
-                    Text(card.description)
+                // FIX: Use card.summary instead of card.description
+                if !card.summary.isEmpty {
+                    Text(card.summary)
                         .font(.caption)
                         .foregroundColor(.gray)
                         .lineLimit(2)
@@ -82,12 +83,12 @@ struct LinkPreview: View {
                             .font(.footnote)
                             .foregroundColor(.blue)
                     }
-                    Spacer() // Pushes content to the left
+                    Spacer()
                 }
             }
             .padding([.horizontal, .bottom])
         }
-        .background(Color(UIColor.systemGray6)) // Light gray background
+        .background(Color(UIColor.systemGray6))
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -97,14 +98,14 @@ struct LinkPreview: View {
             if let urlToOpen = URL(string: card.embedUrl ?? card.url) {
                 print("Attempting to open URL: \(urlToOpen)")
 
-                // Log .linkOpen interaction
                 RecommendationService.shared.logInteraction(
-                    statusID: postID, // Can be nil if card is not directly tied to a post
-                    actionType: .linkOpen,
+                    statusID: postID,
+                    actionType: InteractionType.linkOpen,
                     accountID: currentUserAccountID,
-                    authorAccountID: nil, // Card doesn't directly store post author ID
-                    postURL: postID != nil ? card.url : nil, // Log postURL only if postID is present
-                    tags: nil, // Tags are not directly available on Card model
+                    authorAccountID: nil,
+                    postURL: postID != nil ? card.url : nil,
+                    tags: nil,
+                    viewDuration: nil,
                     linkURL: urlToOpen.absoluteString
                 )
 
@@ -117,11 +118,3 @@ struct LinkPreview: View {
         }
     }
 }
-
-// Helper to use SFSafariViewController if available (typically in a UIViewControllerRepresentable)
-// This part is more for a full app context and might not be directly usable/testable in the worker
-// without additional setup. For now, `UIApplication.shared.open` is a simpler approach.
-// The SafariView struct previously here has been removed to consolidate with the one in Utilities/WebView.swift
-#if canImport(UIKit) && !os(watchOS)
-// struct SafariView has been removed.
-#endif

@@ -1,7 +1,8 @@
-//  Post.swift
-//  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
+//  Post.swift
+//  Mustard
+//
+//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
 //
 
 import Foundation
@@ -11,7 +12,7 @@ import SwiftData
 struct Card: Codable, Hashable, Equatable {
     let url: String
     let title: String
-    let description: String
+    let summary: String // RENAMED from 'description'
     let type: String
     let image: String?
     let authorName: String?
@@ -27,7 +28,7 @@ struct Card: Codable, Hashable, Equatable {
     enum CodingKeys: String, CodingKey {
         case url
         case title
-        case description
+        case summary = "description" // MAP 'summary' to JSON key "description"
         case type
         case image
         case authorName = "author_name"
@@ -49,38 +50,35 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
     var content: String
     var createdAt: Date
     @Relationship(deleteRule: .cascade) var account: Account?
-    var isFavourited: Bool // Renamed from 'favourited' for clarity and consistency
-    var isReblogged: Bool // Renamed from 'reblogged' for clarity and consistency
+    var isFavourited: Bool
+    var isReblogged: Bool
     var reblogsCount: Int
     var favouritesCount: Int
     var repliesCount: Int
     @Relationship(deleteRule: .cascade) var mediaAttachments: [MediaAttachment]
-    var mentions: [Mention]? // Added mentions
+    var mentions: [Mention]?
     var url: String?
-    var tags: [Tag]?  // Added tags
-    var card: Card? // Added card
+    var tags: [Tag]?
+    var card: Card? // This will now use the Card struct with 'summary'
     
+    @Relationship(deleteRule: .cascade) var replies: [Post]? = []
     
-    // MARK: - Relationship (Replies) - Note: Direct nested decoding of replies might be complex
-    @Relationship(deleteRule: .cascade) var replies: [Post]? = [] // Initialize as optional and empty array
-    
-    // MARK: - Initializer
     init(
         id: String,
         content: String,
         createdAt: Date,
-        account: Account?, // Account can be optional in relationship
+        account: Account?,
         mediaAttachments: [MediaAttachment] = [],
         isFavourited: Bool = false,
         isReblogged: Bool = false,
         reblogsCount: Int = 0,
         favouritesCount: Int = 0,
         repliesCount: Int = 0,
-        replies: [Post]? = nil, // Replies can be nil or empty array
-        mentions: [Mention]? = nil, // Added mentions to init
-        tags: [Tag]? = nil, // Added tags to init
-        card: Card? = nil, // Added card to init
-        url: String? = nil // Added url to init
+        replies: [Post]? = nil,
+        mentions: [Mention]? = nil,
+        tags: [Tag]? = nil,
+        card: Card? = nil,
+        url: String? = nil
         
     ) {
         self.id = id
@@ -95,19 +93,18 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         self.mediaAttachments = mediaAttachments
         self.replies = replies
         self.mentions = mentions
-        self.tags = tags // Initialize tags
-        self.card = card // Initialize card
-        self.url = url // Initialize url
+        self.tags = tags
+        self.card = card
+        self.url = url
     }
     
-    // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
-        case id, content, createdAt, account, mediaAttachments, replies, mentions, tags, url, card // Added card
-        case isFavourited = "favourited" // Corrected to "favourited" as per Mastodon API
-        case isReblogged = "reblogged" // Corrected to "reblogged" as per Mastodon API
-        case reblogsCount = "reblogs_count" // Corrected to snake_case
-        case favouritesCount = "favourites_count" // Corrected to snake_case
-        case repliesCount = "replies_count" // Corrected to snake_case
+        case id, content, createdAt, account, mediaAttachments, replies, mentions, tags, url, card
+        case isFavourited = "favourited"
+        case isReblogged = "reblogged"
+        case reblogsCount = "reblogs_count"
+        case favouritesCount = "favourites_count"
+        case repliesCount = "replies_count"
     }
     
     required init(from decoder: Decoder) throws {
@@ -116,17 +113,17 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         self.content = try container.decode(String.self, forKey: .content)
         self.createdAt = try container.decode(Date.self, forKey: .createdAt)
         self.account = try container.decodeIfPresent(Account.self, forKey: .account)
-        self.isFavourited = try container.decodeIfPresent(Bool.self, forKey: .isFavourited) ?? false // Decode with default value
+        self.isFavourited = try container.decodeIfPresent(Bool.self, forKey: .isFavourited) ?? false
         self.isReblogged = try container.decodeIfPresent(Bool.self, forKey: .isReblogged) ?? false
         self.reblogsCount = try container.decodeIfPresent(Int.self, forKey: .reblogsCount) ?? 0
-        self.favouritesCount = try container.decodeIfPresent(Int.self, forKey: .favouritesCount) ?? 0 // Decode with default value
+        self.favouritesCount = try container.decodeIfPresent(Int.self, forKey: .favouritesCount) ?? 0
         self.repliesCount = try container.decodeIfPresent(Int.self, forKey: .repliesCount) ?? 0
-        self.mediaAttachments = try container.decodeIfPresent([MediaAttachment].self, forKey: .mediaAttachments) ?? [] // Decode with default value
-        self.replies = try container.decodeIfPresent([Post].self, forKey: .replies) ?? [] // Decode replies as optional, default to empty array
-        self.mentions = try container.decodeIfPresent([Mention].self, forKey: .mentions) // Decode with default value
-        self.tags = try container.decodeIfPresent([Tag].self, forKey: .tags) // Decode tags
+        self.mediaAttachments = try container.decodeIfPresent([MediaAttachment].self, forKey: .mediaAttachments) ?? []
+        self.replies = try container.decodeIfPresent([Post].self, forKey: .replies) ?? []
+        self.mentions = try container.decodeIfPresent([Mention].self, forKey: .mentions)
+        self.tags = try container.decodeIfPresent([Tag].self, forKey: .tags)
         self.url = try container.decodeIfPresent(String.self, forKey: .url)
-        self.card = try container.decodeIfPresent(Card.self, forKey: .card) // Decode card
+        self.card = try container.decodeIfPresent(Card.self, forKey: .card)
         
     }
     
@@ -135,36 +132,35 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         try container.encode(id, forKey: .id)
         try container.encode(content, forKey: .content)
         try container.encode(createdAt, forKey: .createdAt)
-        try container.encodeIfPresent(account, forKey: .account) // Encode optional account
+        try container.encodeIfPresent(account, forKey: .account)
         try container.encode(isFavourited, forKey: .isFavourited)
         try container.encode(isReblogged, forKey: .isReblogged)
         try container.encode(reblogsCount, forKey: .reblogsCount)
         try container.encode(favouritesCount, forKey: .favouritesCount)
         try container.encode(repliesCount, forKey: .repliesCount)
         try container.encode(mediaAttachments, forKey: .mediaAttachments)
-        try container.encodeIfPresent(replies, forKey: .replies) // Encode optional replies
+        try container.encodeIfPresent(replies, forKey: .replies)
         try container.encodeIfPresent(mentions, forKey: .mentions)
-        try container.encodeIfPresent(tags, forKey: .tags) // Encode tags
+        try container.encodeIfPresent(tags, forKey: .tags)
         try container.encodeIfPresent(url, forKey: .url)
-        try container.encodeIfPresent(card, forKey: .card) // Encode card
+        try container.encodeIfPresent(card, forKey: .card)
         
     }
     
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
         hasher.combine(content)
-        hasher.combine(account) // Account must be Hashable
+        hasher.combine(account)
         hasher.combine(createdAt)
-        hasher.combine(replies) // [Post] must be Hashable (recursive Hashable conformance!)
+        hasher.combine(replies)
         hasher.combine(url)
         hasher.combine(reblogsCount)
         hasher.combine(favouritesCount)
         hasher.combine(repliesCount)
-        hasher.combine(mediaAttachments) // [MediaAttachment] must be Hashable
-        hasher.combine(card) // Add card to hash
+        hasher.combine(mediaAttachments)
+        hasher.combine(card)
     }
     
-    // MARK: - Equatable Conformance
     static func == (lhs: Post, rhs: Post) -> Bool {
         return lhs.id == rhs.id &&
         lhs.content == rhs.content &&
@@ -177,10 +173,8 @@ final class Post: Identifiable, Hashable, Codable, Equatable, @unchecked Sendabl
         lhs.repliesCount == rhs.repliesCount &&
         lhs.mediaAttachments == rhs.mediaAttachments &&
         lhs.mentions == rhs.mentions &&
-        lhs.tags == rhs.tags && // Compare tags
+        lhs.tags == rhs.tags &&
         lhs.url == rhs.url &&
-        lhs.card == rhs.card // Compare card
-        // Note: 'replies' relationship is intentionally omitted from Equatable to avoid potential infinite recursion.
+        lhs.card == rhs.card
     }
 }
-

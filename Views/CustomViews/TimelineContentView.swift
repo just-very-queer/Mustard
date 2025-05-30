@@ -134,7 +134,7 @@ struct TimelineContentView: View {
             }
         }
         .refreshable {
-            viewModel.refreshTimeline()
+            await viewModel.refreshTimeline()
         }
         // --- Sheet Modifiers ---
         .sheet(isPresented: $isShowingFullScreenImage) {
@@ -237,12 +237,10 @@ struct TimelineContentView: View {
                              viewModel: viewModel,
                              viewProfileAction: { user in
                                  viewModel.navigateToProfile(user)
-                             }, interestScore: Double
+                             },
+                             interestScore: 0.0
                          )
-                         // Example: How to potentially add image tap handling
-                         // This assumes PostView calls this closure when an image is tapped
-                         // You would need to modify PostView to accept and call this closure.
-                         .onImageTap { imageUrl in // <<<< This modifier needs to be added to PostView's definition
+                         .onImageTap { imageUrl in
                              if let url = imageUrl {
                                  self.selectedImageURL = url
                                  self.isShowingFullScreenImage = true
@@ -255,11 +253,14 @@ struct TimelineContentView: View {
 
                     // Pagination Trigger
                     if post.id == viewModel.posts.last?.id && !viewModel.isFetchingMore {
-                         PostFooterView(isLoadingMore: viewModel.isFetchingMore, viewModel: viewModel) // Use the defined view
+                         PostFooterView(isLoadingMore: viewModel.isFetchingMore, viewModel: viewModel)
                              .padding(.vertical)
                              .onAppear {
                                  logger.debug("Last item appeared, fetching more.")
-                                 viewModel.fetchMoreTimeline()
+                                 // FIX: Wrap the async call in a Task
+                                 Task {
+                                     await viewModel.fetchMoreTimeline()
+                                 }
                              }
                      }
                 }

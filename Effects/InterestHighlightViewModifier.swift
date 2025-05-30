@@ -1,3 +1,9 @@
+//
+//  InterestHighlightViewModifier.swift
+//  Mustard
+//
+//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
+//
 import SwiftUI
 
 struct InterestHighlightViewModifier: ViewModifier {
@@ -8,6 +14,12 @@ struct InterestHighlightViewModifier: ViewModifier {
     private var showBadgeThreshold: Double = 7.0 // Example: Badge shows for scores > 7
     // Define a threshold for applying any glow
     private var glowThreshold: Double = 3.0 // Example: Glow starts for scores > 3
+
+    // Explicitly define the initializer to ensure it's accessible
+    init(isActive: Bool, score: Double) {
+        self.isActive = isActive
+        self.score = score
+    }
 
     func body(content: Content) -> some View {
         // Apply effects only if isActive is true (i.e., score is above a general threshold defined by the caller)

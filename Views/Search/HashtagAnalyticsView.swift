@@ -73,8 +73,8 @@ struct HashtagAnalyticsView: View {
         }
         .pickerStyle(SegmentedPickerStyle())
         .padding(.horizontal)
-        .onChange(of: selectedTimeRange) {
-            viewModel.filterPostsForHashtag(hashtag, timeRange: selectedTimeRange)
+        .onChange(of: selectedTimeRange) { newValue, oldValue in // Updated for newer iOS versions
+            viewModel.filterPostsForHashtag(hashtag, timeRange: newValue)
         }
     }
 
@@ -180,9 +180,14 @@ struct HashtagPostsView: View {
     var body: some View {
         LazyVStack(spacing: 0) {
             ForEach(posts) { post in
-                PostView(post: post, viewModel: timelineViewModel) { user in
-                    timelineViewModel.navigateToProfile(user)
-                }
+                PostView(
+                    post: post,
+                    viewModel: timelineViewModel,
+                    viewProfileAction: { user in
+                        timelineViewModel.navigateToProfile(user)
+                    },
+                    interestScore: 0.0 // FIX: Added missing interestScore parameter with a default value
+                )
                 Divider().padding(.horizontal)
             }
         }

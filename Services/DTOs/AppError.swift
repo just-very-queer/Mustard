@@ -21,6 +21,7 @@ struct AppError: Identifiable, Error {
         case network(NetworkError)
         case cache(CacheError)
         case other(String)
+        case custom(message: String)
     }
     
     enum MastodonError: Equatable {
@@ -69,6 +70,7 @@ struct AppError: Identifiable, Error {
         case unknownClient
         case invalidTokenResponse
         case tokenExpired
+        case custom(message: String)
         
         static func == (lhs: MastodonError, rhs: MastodonError) -> Bool {
             switch (lhs, rhs) {
@@ -118,6 +120,8 @@ struct AppError: Identifiable, Error {
             case (.networkError(let lhsMessage), .networkError(let rhsMessage)):
                 return lhsMessage == rhsMessage
             case (.oauthError(let lhsMessage), .oauthError(let rhsMessage)):
+                return lhsMessage == rhsMessage
+            case (.custom(let lhsMessage), .custom(let rhsMessage)):
                 return lhsMessage == rhsMessage
             default:
                 return false
@@ -192,6 +196,10 @@ struct AppError: Identifiable, Error {
         self.type = .cache(cache)
         self.underlyingError = underlyingError
     }
+
+    static func custom(message: String, underlyingError: Error? = nil) -> AppError {
+        return AppError(type: .custom(message: message), underlyingError: underlyingError)
+    }
     
     // MARK: - Computed Properties
     
@@ -211,6 +219,8 @@ struct AppError: Identifiable, Error {
             return describeCacheError(cacheError)
         case .other(let msg):
             return msg
+        case .custom(let message):
+            return message
         }
     }
     
@@ -306,6 +316,8 @@ struct AppError: Identifiable, Error {
             return "Invalid token response."
         case .tokenExpired:
             return "Token expired."
+        case .custom(let message):
+            return message
         }
     }
     
@@ -369,7 +381,7 @@ struct AppError: Identifiable, Error {
     
     var isRecoverable: Bool {
         switch type {
-        case .generic, .authentication, .weather, .other:
+        case .generic, .authentication, .weather, .other, .custom:
             return true
         case .mastodon(let error):
             switch error {
@@ -466,6 +478,8 @@ struct AppError: Identifiable, Error {
             }
         case .other(let msg):
             return "An error occurred: \(msg). Please try again."
+        case .custom(let message):
+            return "An error occurred: \(message). Please try again."
         }
     }
 }

@@ -285,6 +285,12 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         logger.info("Updated authenticated user: \(self.currentUser?.username ?? "Unknown")")
     }
     
+    /// Updates the currently authenticated user's data.
+    func updateAuthenticatedUser(_ user: User) {
+        self.currentUser = user
+        logger.info("Authenticated user data updated locally.")
+    }
+
     func logout() async {
         do {
             try await clearCredentials()

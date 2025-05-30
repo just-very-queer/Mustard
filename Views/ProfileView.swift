@@ -143,14 +143,14 @@ struct UserPostsView: View {
         } else {
             // Iterate over userPosts from profileViewModel
             ForEach(profileViewModel.userPosts) { post in
-                // *** FIXED: Use correct PostView signature ***
                 PostView(
                     post: post,
                     viewModel: timelineViewModel, // Use timelineViewModel for actions
                     viewProfileAction: { profileUser in
                         // Already on a profile, maybe prevent recursive navigation
                          print("Profile tapped within UserPostsView: \(profileUser.id)")
-                    }
+                    },
+                    interestScore: 0.0 // FIX: Changed Double type to 0.0 value
                 )
                 CustomDivider().padding(.horizontal)
             }
@@ -159,9 +159,6 @@ struct UserPostsView: View {
 }
 
 // --- UserPostsAndRepliesView ---
-// IMPORTANT: This requires profileViewModel.fetchUserPosts to fetch replies too.
-// The standard /statuses endpoint might need parameters like `exclude_replies=false`.
-// Adjust fetch logic in ProfileViewModel/ProfileService accordingly.
 struct UserPostsAndRepliesView: View {
     let user: User
     @EnvironmentObject var profileViewModel: ProfileViewModel // Assumes userPosts includes replies
@@ -176,13 +173,13 @@ struct UserPostsAndRepliesView: View {
                  .frame(maxWidth: .infinity)
         } else {
              ForEach(postsAndReplies) { post in
-                 // *** FIXED: Use correct PostView signature ***
                  PostView(
                      post: post,
                      viewModel: timelineViewModel, // Use timelineViewModel for actions
                      viewProfileAction: { profileUser in
                          print("Profile tapped within UserPostsAndRepliesView: \(profileUser.id)")
-                     }
+                     },
+                     interestScore: 0.0 // FIX: Added missing interestScore parameter with 0.0 value
                  )
                  CustomDivider().padding(.horizontal)
              }
@@ -222,7 +219,8 @@ struct UserMediaView: View {
                         ForEach(viewModel.mediaPosts) { post in
                             // Ensure there's a media attachment and a URL
                             if let firstAttachment = post.mediaAttachments.first,
-                               let thumbnailUrl = URL(string: firstAttachment.previewUrl ?? firstAttachment.url ?? "") {
+                               let thumbnailUrlString = firstAttachment.previewURL?.absoluteString ?? firstAttachment.url?.absoluteString, // Safely get string
+                               let thumbnailUrl = URL(string: thumbnailUrlString) { // Create URL from string
                                 
                                 Button(action: {
                                     self.selectedPost = post
@@ -231,18 +229,18 @@ struct UserMediaView: View {
                                         switch phase {
                                         case .empty:
                                             ProgressView()
-                                                .aspectRatio(1, contentMode: .fill) // Maintain square shape
+                                                .aspectRatio(1, contentMode: .fill)
                                         case .success(let image):
                                             image
                                                 .resizable()
                                                 .aspectRatio(1, contentMode: .fill)
                                         case .failure:
-                                            Image(systemName: "photo.fill") // Placeholder for failure
+                                            Image(systemName: "photo.fill")
                                                 .resizable()
                                                 .aspectRatio(1, contentMode: .fit)
                                                 .foregroundColor(.gray)
-                                                .padding() // Add some padding to placeholder
-                                                .background(Color.gray.opacity(0.1)) // Background for placeholder
+                                                .padding()
+                                                .background(Color.gray.opacity(0.1))
                                         @unknown default:
                                             EmptyView()
                                         }
@@ -250,15 +248,8 @@ struct UserMediaView: View {
                                 }
                                 .aspectRatio(1, contentMode: .fill)
                                 .clipped()
-                                .background(Color.gray.opacity(0.1)) // Placeholder background for the cell
-                                // Optional: Add .onAppear for the last item for pagination
-                                // if post == viewModel.mediaPosts.last {
-                                //     Text("").onAppear {
-                                //         // await viewModel.loadMoreMediaPosts(accountID: user.id)
-                                //     }
-                                // }
+                                .background(Color.gray.opacity(0.1))
                             } else {
-                                // Placeholder for posts that might not have valid media (should be rare)
                                 Rectangle()
                                     .fill(Color.gray.opacity(0.1))
                                     .aspectRatio(1, contentMode: .fill)
@@ -267,16 +258,12 @@ struct UserMediaView: View {
                     }
                 }
                 .sheet(item: $selectedPost) { postToDetail in
-                    // Assuming PostDetailView can be presented like this
-                    // PostDetailView needs to be adapted if it expects showDetail binding directly from parent
-                    // For simplicity, wrapping in a NavigationView if PostDetailView requires it
                     NavigationView {
                         PostDetailView(
                             post: postToDetail,
-                            viewModel: timelineViewModel, // Pass the timelineViewModel
-                            showDetail: .constant(true) // Binding to control presentation (might need adjustment)
+                            viewModel: timelineViewModel,
+                            showDetail: .constant(true)
                         )
-                        // Add a toolbar if PostDetailView doesn't manage its own dismissal from a sheet context
                         .toolbar {
                             ToolbarItem(placement: .navigationBarLeading) {
                                 Button("Close") {
@@ -288,9 +275,7 @@ struct UserMediaView: View {
                 }
             }
         }
-        .task(id: user.id) { // Use .task on UserMediaView itself or its top-level Group
-            // Only load if mediaPosts is empty or for a different user
-            // This simple check might need refinement based on how ProfileViewModel handles state
+        .task(id: user.id) {
             if viewModel.mediaPosts.isEmpty || (viewModel.mediaPosts.first?.account?.id != user.id && !viewModel.isLoadingMediaPosts) {
                  await viewModel.loadMediaPosts(accountID: user.id)
             }
@@ -298,7 +283,9 @@ struct UserMediaView: View {
     }
 }
 
-// MARK: - Subviews (ProfileHeaderView, ProfileStatsView, etc.) - No changes needed from previous version
+// MARK: - Subviews (ProfileHeaderView, ProfileStatsView, etc.)
+// These subviews are assumed to be correct from your provided code
+// and do not need changes for the reported errors.
 
 struct ProfileHeaderView: View {
     let user: User
@@ -314,7 +301,7 @@ struct ProfileHeaderView: View {
             }.frame(width: 100, height: 100)
             VStack(alignment: .leading) {
                 Text(user.display_name ?? user.username).font(.largeTitle).bold()
-                Text("@\(user.acct)").font(.subheadline).foregroundColor(.gray) // Use acct
+                Text("@\(user.acct)").font(.subheadline).foregroundColor(.gray)
             }
             Spacer()
         }.padding()
@@ -345,13 +332,10 @@ struct ProfileActionsView: View {
          if authViewModel.currentUser?.id == user.id {
              Button { showEditProfile.toggle() } label: { Label("Edit Profile", systemImage: "pencil").padding(.horizontal).padding(.vertical, 8) }.buttonStyle(.bordered).padding(.top)
          } else {
-             // Placeholder for Follow/Unfollow button
              Text("Follow Button Placeholder").font(.caption).foregroundColor(.gray).padding(.top)
          }
      }
 }
-
-// MARK: - Followers/Following List Views (No changes needed from previous version)
 
 struct FollowersListView: View {
     let userId: String

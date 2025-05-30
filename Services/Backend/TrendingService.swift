@@ -23,65 +23,54 @@ final class TrendingService: ObservableObject {
 
     // MARK: - Fetch Trending Hashtags
 
-    /// Fetches trending hashtags from Mastodon with caching.
-    /// - Parameter limit: The maximum number of tags to return. Defaults to 10.
+    /// Fetches trending hashtags from Mastodon.
+    /// - Parameter limit: The maximum number of tags to return. Note: The API endpoint used does not support a limit, so it will be applied after fetching.
     /// - Returns: An array of `Tag` objects representing trending hashtags.
     /// - Throws: An `AppError` if fetching fails.
     func fetchTrendingHashtags(limit: Int = 10) async throws -> [Tag] {
         logger.debug("Attempting to fetch trending hashtags (limit: \(limit))...")
-        let cacheKey = CacheService.CacheKey.trendingTags.rawValue
+        
+        // NOTE: Caching logic has been removed as the current CacheService implementation does not support it.
+        // This would be a good place to add caching back once CacheService is updated with generic capabilities.
 
-        if let cachedTags: [TagData] = cacheService.load(forKey: cacheKey),
-           let lastFetched = cacheService.fetchDate(forKey: cacheKey),
-           Date().timeIntervalSince(lastFetched) < (15 * 60) {
-            logger.info("Returning trending hashtags from cache.")
-            return cachedTags.map { $0.toTag() }.prefix(limit).map { $0 }
-        }
-
-        logger.info("Cache miss or expired for trending hashtags. Fetching from network.")
+        logger.info("Fetching trending hashtags from network.")
         do {
-            let tags = try await mastodonAPIService.fetchTrendingTags(limit: limit)
-            cacheService.save(tags, forKey: cacheKey)
-            logger.info("Successfully fetched and cached trending hashtags.")
-            return tags.map { $0.toTag() }
+            let tags = try await mastodonAPIService.fetchTrendingTags()
+            logger.info("Successfully fetched trending hashtags.")
+            // The API service already returns [Tag], so we apply the limit manually.
+            return Array(tags.prefix(limit))
         } catch let error as AppError {
             logger.error("Error fetching trending hashtags: \(error.localizedDescription)")
             throw error
         } catch {
             logger.error("Unexpected error while fetching trending hashtags: \(error.localizedDescription)")
-            throw AppError.networkError(type: .unknown, message: error.localizedDescription)
+            throw AppError(type: .other("Unexpected error fetching trending hashtags"), underlyingError: error)
         }
     }
 
     // MARK: - Fetch Trending Posts
 
-    /// Fetches trending posts (statuses) from Mastodon with caching.
-    /// - Parameter limit: The maximum number of posts to return. Defaults to 20.
+    /// Fetches trending posts (statuses) from Mastodon.
+    /// - Parameter limit: The maximum number of posts to return. Note: The API endpoint used does not support a limit, so it will be applied after fetching.
     /// - Returns: An array of `Post` objects.
     /// - Throws: An `AppError` if fetching fails.
     func fetchTrendingPosts(limit: Int = 20) async throws -> [Post] {
         logger.debug("Attempting to fetch trending posts (limit: \(limit))...")
-        let cacheKey = CacheService.CacheKey.trendingPosts.rawValue
+        
+        // NOTE: Caching logic has been removed.
 
-        if let cachedPosts: [PostData] = cacheService.load(forKey: cacheKey),
-           let lastFetched = cacheService.fetchDate(forKey: cacheKey),
-           Date().timeIntervalSince(lastFetched) < (15 * 60) {
-            logger.info("Returning trending posts from cache.")
-            return cachedPosts.map { $0.toPost(using: NetworkSessionManager.shared.iso8601DateFormatter) }.prefix(limit).map { $0 }
-        }
-
-        logger.info("Cache miss or expired for trending posts. Fetching from network.")
+        logger.info("Fetching trending posts from network.")
         do {
-            let posts = try await mastodonAPIService.fetchTrendingStatuses(limit: limit)
-            cacheService.save(posts, forKey: cacheKey)
-            logger.info("Successfully fetched and cached trending posts.")
-            return posts.map { $0.toPost(using: NetworkSessionManager.shared.iso8601DateFormatter) }
+            let posts = try await mastodonAPIService.fetchTrendingStatuses()
+            logger.info("Successfully fetched trending posts.")
+            // The API service already returns [Post], so we apply the limit manually.
+            return Array(posts.prefix(limit))
         } catch let error as AppError {
             logger.error("Error fetching trending posts: \(error.localizedDescription)")
             throw error
         } catch {
             logger.error("Unexpected error while fetching trending posts: \(error.localizedDescription)")
-            throw AppError.networkError(type: .unknown, message: error.localizedDescription)
+            throw AppError(type: .other("Unexpected error fetching trending posts"), underlyingError: error)
         }
     }
 }

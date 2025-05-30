@@ -33,7 +33,8 @@ struct PostDetailView: View {
                                 // Option 2: Dismiss and notify parent (more complex)
                                 // showDetail = false // Dismiss first? Needs coordination.
                                 print("Profile tapped in Detail View: \(user.username)")
-                            }
+                            },
+                            interestScore: 0.0 // FIX: Added missing interestScore with a default value
                         )
                         .padding(.bottom, 10) // Add padding below the main post
 

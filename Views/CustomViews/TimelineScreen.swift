@@ -17,9 +17,9 @@ struct TimelineScreen: View {
             viewModel: viewModel // Pass the single ViewModel instance
         )
         .onAppear {
-            // Always call initializeTimelineData() when the screen appears
-            // to ensure the latest data is fetched, overriding the cache check.
-            viewModel.initializeTimelineData()
+            Task {
+                await viewModel.initializeTimelineData()
+            }
         }
         // Modifiers like .navigationTitle should ideally be on the NavigationStack container
         // that holds TimelineScreen (e.g., in MainAppView or HomeView if used).

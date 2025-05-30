@@ -24,8 +24,7 @@ struct PostView: View {
     @State private var showBrowserView = false // Assuming this uses post.url
 
     // Assuming TimelineViewModel exposes currentUserAccountID or a similar property
-    // For now, let's assume viewModel.currentUserAccountID is available.
-    // If not, this would need to be plumbed through.
+    // This property is accessible if not private in TimelineViewModel
     let interestScore: Double // Added for interest highlighting
 
     var body: some View {
@@ -214,19 +213,11 @@ struct PostContentView: View {
                 self.detectedLinkCard = existingCard
             } else {
                 // Extract URL from post content (HTML string)
-                // NSDataDetector works better on plain text, but let's try with raw HTML first.
-                // For better results, consider extracting URLs from the plain text version.
-                let textToDetect = post.content // Or plainText for potentially cleaner URL detection
+                let textToDetect = post.content
                 if let firstURL = detectFirstURL(in: textToDetect) {
                     self.isLoadingLinkPreview = true
-                    // Asynchronously fetch metadata
                     let fetchedCard = await HTMLUtils.fetchLinkMetadata(from: firstURL)
-                    // Ensure the task has not been cancelled or post.id changed again
                     if Task.isCancelled { return }
-                    // Check if the current post context is still the same
-                    // This check might be overly cautious if id in .task(id: post.id) handles it well
-                    // but good for robustness if updates are frequent.
-                    // For simplicity here, we assume post.id check in .task is sufficient.
                     
                     self.detectedLinkCard = fetchedCard
                     self.isLoadingLinkPreview = false
@@ -297,48 +288,38 @@ struct UserHeaderView: View {
 }
 
 // MARK: - ExpandedCommentsSection (Re-declared here)
-// This struct defines the view for displaying comments and adding a new one.
-// It's used within PostDetailView or potentially the comment sheet shown by TimelineViewModel.
 struct ExpandedCommentsSection: View {
-    let post: Post // The post whose comments are being shown
-    @Binding var isExpanded: Bool // To control visibility (might not be needed if always shown in DetailView)
-    @Binding var commentText: String // Bound to the text field input
-    @ObservedObject var viewModel: TimelineViewModel // To handle posting the comment
+    let post: Post
+    @Binding var isExpanded: Bool
+    @Binding var commentText: String
+    @ObservedObject var viewModel: TimelineViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Separator
             Divider().padding(.horizontal)
 
-            // Title
-            Text("Replies") // Changed from "Comments" to "Replies" to match Mastodon term
+            Text("Replies")
                 .font(.headline)
                 .padding(.horizontal)
                 .foregroundColor(.primary)
 
-            // List existing replies (assuming post.replies is populated)
-            // Note: The `Post` model needs to correctly decode/fetch replies.
-            // If `post.replies` is nil or empty, this ForEach won't display anything.
             if let replies = post.replies, !replies.isEmpty {
-                LazyVStack(spacing: 0) { // Added LazyVStack for replies
+                LazyVStack(spacing: 0) {
                     ForEach(replies) { reply in
                         VStack(alignment: .leading, spacing: 5) {
-                            // Use UserHeaderView for consistency
                             UserHeaderView(post: reply, viewProfileAction: { user in
-                            // Decide how to handle profile taps from replies
-                            // Option 1: Use the viewModel's navigation
-                             viewModel.navigateToProfile(user)
-                            // Option 2: Could potentially dismiss the detail view and navigate
+                                viewModel.navigateToProfile(user)
                         })
-                        // Display reply content
-                            PostContentView(post: reply, showFullText: .constant(true), currentUserAccountID: String?) // Always show full text for replies
+                            // Display reply content
+                            // FIX: Pass viewModel.currentUserAccountID instead of the type String?
+                            PostContentView(post: reply, showFullText: .constant(true), currentUserAccountID: viewModel.currentUserAccountID)
 
                     }
                     .padding(.bottom, 5)
-                    Divider().padding(.leading, 60) // Indented divider
+                    Divider().padding(.leading, 60)
                     }
-                } // End of ForEach
-            } else { // End of LazyVStack
+                }
+            } else {
                 Text("No replies yet.")
                     .font(.caption)
                     .foregroundColor(.gray)
@@ -346,19 +327,15 @@ struct ExpandedCommentsSection: View {
                     .padding(.bottom, 10)
             }
 
-
-            // Add new comment input area
             HStack {
-                TextField("Add a reply...", text: $commentText, axis: .vertical) // Allow multiline
-                    .textFieldStyle(.plain) // Use plain style for better integration
+                TextField("Add a reply...", text: $commentText, axis: .vertical)
+                    .textFieldStyle(.plain)
                     .padding(8)
                     .background(Color(.systemGray6))
                     .cornerRadius(8)
 
-                // Post button - enabled only when text is not empty
                 Button {
                     viewModel.comment(on: post, content: commentText)
-                    // Clearing commentText is now handled within the viewModel after successful post
                 } label: {
                     Image(systemName: "paperplane.fill")
                         .foregroundColor(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .blue)
@@ -366,10 +343,9 @@ struct ExpandedCommentsSection: View {
                 .disabled(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal)
-            .padding(.bottom, 5) // Add some bottom padding
+            .padding(.bottom, 5)
         }
-        .padding(.vertical, 10) // Add vertical padding to the whole section
-        // Removed background and cornerRadius to let it blend with PostDetailView's ScrollView
+        .padding(.vertical, 10)
         .dynamicTypeSize(.medium)
     }
 }

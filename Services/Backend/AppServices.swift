@@ -3,7 +3,7 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 04/04/25.
-// (REVISED: Updated to use MastodonAPIService and ensure correct dependency injection)
+//  (REVISED: Updated to use MastodonAPIService and ensure correct dependency injection)
 
 import Foundation
 import OSLog
@@ -11,54 +11,48 @@ import OSLog
 @MainActor
 class AppServices: ObservableObject {
     // MARK: - Services
-    let mastodonAPIService: MastodonAPIService // Core Mastodon API interactions
+    let mastodonAPIService: MastodonAPIService
     let timelineService: TimelineService
     let trendingService: TrendingService
     let postActionService: PostActionService
     let profileService: ProfileService
     let searchService: SearchService
-    // InstanceService is independent and can be instantiated where needed or here if used globally
-    // let instanceService: InstanceService
-    // AuthenticationService is a shared instance, typically not directly managed by AppServices container
-    // CacheService and LocationManager are often managed at a higher level (e.g., MustardApp) and passed around or as EnvironmentObjects
+    let recommendationService: RecommendationService // Added service
 
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AppServices")
 
     // MARK: - Initialization
     init(
-        mastodonAPIService: MastodonAPIService, // Core networking dependency for Mastodon
+        mastodonAPIService: MastodonAPIService,
         cacheService: CacheService,
-        locationManager: LocationManager
-        // keychainHelper: KeychainHelper // If needed directly by AppServices, though usually a dependency of MastodonAPIService or AuthService
+        locationManager: LocationManager,
+        recommendationService: RecommendationService // Added to initializer
     ) {
-        self.logger.info("Initializing AppServices with MastodonAPIService...")
+        self.logger.info("Initializing AppServices...")
         self.mastodonAPIService = mastodonAPIService
+        self.recommendationService = recommendationService // Store the service
 
-        // 1. Initialize services that depend directly on MastodonAPIService
-        //    (Ensure these service's initializers are updated to accept MastodonAPIService)
+        // Initialize other services that depend on mastodonAPIService, cache, location, etc.
         let postActionService = PostActionService(mastodonAPIService: mastodonAPIService)
         let profileService = ProfileService(mastodonAPIService: mastodonAPIService)
-        let searchService = SearchService(mastodonAPIService: mastodonAPIService) //
+        let searchService = SearchService(mastodonAPIService: mastodonAPIService)
+        let trendingService = TrendingService(mastodonAPIService: mastodonAPIService, cacheService: cacheService)
 
-        // 2. Initialize services that might depend on other services or cache/location
-        let trendingService = TrendingService(mastodonAPIService: mastodonAPIService, cacheService: cacheService) //
-
-        // 3. TimelineService often depends on several other services
+        // TimelineService depends on other services but NOT directly on recommendationService
         let timelineService = TimelineService(
-            mastodonAPIService: mastodonAPIService, // Pass the main API service
+            mastodonAPIService: mastodonAPIService,
             cacheService: cacheService,
             postActionService: postActionService,
             locationManager: locationManager,
-            trendingService: trendingService // Pass the already initialized trending service
+            trendingService: trendingService
         )
 
-        // Assign services to properties
+        // Assign to properties
         self.postActionService = postActionService
         self.profileService = profileService
         self.searchService = searchService
         self.trendingService = trendingService
         self.timelineService = timelineService
-        // self.instanceService = InstanceService() // If managing it here
 
         self.logger.info("AppServices initialized successfully.")
     }

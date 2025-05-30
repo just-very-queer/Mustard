@@ -11,6 +11,9 @@
 		66292AE32D43CACE00883170 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66292AE22D43CACE00883170 /* Config.swift */; };
 		66397F592D9BBFBB00AD1475 /* AttributedTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66397F582D9BBFBB00AD1475 /* AttributedTextView.swift */; };
 		663A900F2D5F5E7C001FFE8C /* InstanceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */; };
+		664DEFBC2DE9DF57005A44BB /* HashtagAffinity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */; };
+		664DEFBD2DE9DF57005A44BB /* Interaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFBA2DE9DF57005A44BB /* Interaction.swift */; };
+		664DEFBE2DE9DF57005A44BB /* UserAffinity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFBB2DE9DF57005A44BB /* UserAffinity.swift */; };
 		664E08A22C96019600D547C7 /* ServerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664E089F2C96019600D547C7 /* ServerModel.swift */; };
 		666A1B622D63D4EA003F08FD /* SwiftSoupUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */; };
 		666A1B642D63D636003F08FD /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 666A1B632D63D636003F08FD /* SwiftSoup */; };
@@ -31,6 +34,9 @@
 		66292AE22D43CACE00883170 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		66397F582D9BBFBB00AD1475 /* AttributedTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttributedTextView.swift; sourceTree = "<group>"; };
 		663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceModel.swift; sourceTree = "<group>"; };
+		664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagAffinity.swift; sourceTree = "<group>"; };
+		664DEFBA2DE9DF57005A44BB /* Interaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Interaction.swift; sourceTree = "<group>"; };
+		664DEFBB2DE9DF57005A44BB /* UserAffinity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAffinity.swift; sourceTree = "<group>"; };
 		664E089F2C96019600D547C7 /* ServerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerModel.swift; sourceTree = "<group>"; };
 		666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftSoupUtils.swift; sourceTree = "<group>"; };
 		6687C34D2C95AE87000ECC5D /* Mustard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Mustard.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -57,6 +63,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		664DEFC32DE9DF94005A44BB /* WatchOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WatchOS;
+			sourceTree = "<group>";
+		};
 		6656FCA72D4CC31100785335 /* Effects */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Effects;
@@ -102,6 +113,7 @@
 		6687C3442C95AE87000ECC5D = {
 			isa = PBXGroup;
 			children = (
+				664DEFC32DE9DF94005A44BB /* WatchOS */,
 				6656FCA72D4CC31100785335 /* Effects */,
 				6687C3B52C95B61C000ECC5D /* Utilities */,
 				6687C3AE2C95B5CA000ECC5D /* Views */,
@@ -124,6 +136,9 @@
 		6687C37D2C95B147000ECC5D /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */,
+				664DEFBA2DE9DF57005A44BB /* Interaction.swift */,
+				664DEFBB2DE9DF57005A44BB /* UserAffinity.swift */,
 				6687C37E2C95B426000ECC5D /* Post.swift */,
 				6687C3822C95B44C000ECC5D /* Account.swift */,
 				6687C3862C95B46E000ECC5D /* MediaAttachment.swift */,
@@ -167,6 +182,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				664DEFC32DE9DF94005A44BB /* WatchOS */,
 				6656FCA72D4CC31100785335 /* Effects */,
 				6687C34F2C95AE87000ECC5D /* Mustard */,
 				6687C39B2C95B503000ECC5D /* Services */,
@@ -233,6 +249,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				664DEFBC2DE9DF57005A44BB /* HashtagAffinity.swift in Sources */,
+				664DEFBD2DE9DF57005A44BB /* Interaction.swift in Sources */,
+				664DEFBE2DE9DF57005A44BB /* UserAffinity.swift in Sources */,
 				66292ADF2D43CA9D00883170 /* User.swift in Sources */,
 				66397F592D9BBFBB00AD1475 /* AttributedTextView.swift in Sources */,
 				66A3F2B22D6890D700F86646 /* UtilityComponents.swift in Sources */,

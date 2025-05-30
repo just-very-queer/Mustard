@@ -13,66 +13,52 @@ struct SearchView: View {
     @EnvironmentObject var timelineViewModel: TimelineViewModel // For Post actions and navigation context
 
     // State Objects
-    @StateObject private var viewModel = SearchViewModel() // Owns search logic and state
+    // FIX 1: Correctly initialize SearchService with the MastodonAPIService instance
+    @StateObject private var viewModel = SearchViewModel(searchService: SearchService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)) // Owns search logic and state
 
     // Focus State
     @FocusState private var isSearchFieldFocused: Bool
 
     // Local State for Sheet Presentation
     @State private var showSearchFilters = false
-    @State private var selectedPostForDetail: Post? = nil // Use local state for detail view presentation
-    @State private var selectedHashtagForAnalytics: Tag? = nil // Use local state for analytics sheet
+    @State private var selectedPostForDetail: Post? = nil
+    @State private var selectedHashtagForAnalytics: Tag? = nil
 
-    // Navigation Path (if navigating from search results)
-    // Consider if navigation should be handled by a higher-level coordinator or TabView
     @State private var navigationPath = NavigationPath()
 
 
     var body: some View {
-        // Use NavigationStack for potential drill-down navigation
         NavigationStack(path: $navigationPath) {
-            VStack(spacing: 0) { // Use spacing 0 for tighter control
-                // --- Search Bar Area ---
+            VStack(spacing: 0) {
                 searchBarArea
                     .padding(.bottom, 8)
 
-                // --- Category Picker ---
                 categoryPicker
                     .padding(.bottom, 8)
 
-                // --- Results List ---
                 searchResultsList
             }
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { // Toolbar items
+            .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) { filterButton }
                 ToolbarItem(placement: .keyboard) { keyboardDoneButton }
             }
-             // --- Sheets ---
-            .sheet(isPresented: $showSearchFilters) { filtersSheet } // Filters
-            .sheet(item: $selectedHashtagForAnalytics) { tag in analyticsSheet(tag: tag) } // Analytics
-            .sheet(item: $selectedPostForDetail) { post in detailSheet(post: post) } // Post Detail
-
-             // --- Initial Data Load ---
-            .task { // Use .task for async operations on appear
-                // Load trending hashtags when the view first appears
+            .sheet(isPresented: $showSearchFilters) { filtersSheet }
+            .sheet(item: $selectedHashtagForAnalytics) { tag in analyticsSheet(tag: tag) }
+            .sheet(item: $selectedPostForDetail) { post in detailSheet(post: post) }
+            .task {
                 if viewModel.trendingHashtags.isEmpty {
                     await viewModel.loadTrendingHashtags()
                 }
             }
-             // --- Error Alert ---
-            .alert(item: $viewModel.error) { error in
-                 Alert(title: Text("Error"), message: Text(error.localizedDescription), dismissButton: .default(Text("OK")))
+            // FIX 2: Use errorContent.message in the alert
+            .alert(item: $viewModel.error) { errorContent in
+                 Alert(title: Text("Error"), message: Text(errorContent.message), dismissButton: .default(Text("OK")))
             }
-             // --- Navigation ---
-            .navigationDestination(for: User.self) { user in // Profile Navigation
+            .navigationDestination(for: User.self) { user in
                  ProfileView(user: user)
-                     // Pass necessary environment objects
                      .environmentObject(timelineViewModel)
-                     // Assuming ProfileView needs these:
-                     // .environmentObject(AuthViewModel_Instance)
-                     // .environmentObject(ProfileViewModel_Instance)
             }
         }
     }
@@ -83,25 +69,25 @@ struct SearchView: View {
             SearchBar(text: $viewModel.searchText, isFocused: $isSearchFieldFocused)
                 .padding(.horizontal)
 
-            // Conditional Cancel Button
             if !viewModel.searchText.isEmpty || isSearchFieldFocused {
                 HStack {
                     Spacer()
                     Button("Cancel") {
-                        viewModel.searchText = "" // Clear text
-                        viewModel.clearSearch() // Clear results
-                        isSearchFieldFocused = false // Dismiss keyboard
+                        viewModel.searchText = ""
+                        viewModel.clearSearch()
+                        isSearchFieldFocused = false
                     }
                     .padding(.trailing)
-                    .transition(.move(edge: .trailing).combined(with: .opacity)) // Add fade
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
-                .animation(.easeInOut(duration: 0.2), value: viewModel.searchText.isEmpty && !isSearchFieldFocused) // Animate appearance
+                .animation(.easeInOut(duration: 0.2), value: viewModel.searchText.isEmpty && !isSearchFieldFocused)
             }
         }
     }
 
     // MARK: - Category Picker
     private var categoryPicker: some View {
+        // FIX 3: This should resolve once ViewModel initialization is correct.
         Picker("Search Category", selection: $viewModel.selectedCategory) {
             ForEach(SearchViewModel.SearchCategory.allCases) { category in
                 Text(category.rawValue).tag(category)
@@ -109,9 +95,7 @@ struct SearchView: View {
         }
         .pickerStyle(SegmentedPickerStyle())
         .padding(.horizontal)
-        .onChange(of: viewModel.selectedCategory) { _, _ in // Use new onChange syntax
-             // Trigger search immediately when category changes
-             // Debouncing on searchText handles rapid typing
+        .onChange(of: viewModel.selectedCategory) { _, _ in
             Task {
                 await viewModel.search(query: viewModel.searchText)
             }
@@ -122,13 +106,11 @@ struct SearchView: View {
     @ViewBuilder
     private var searchResultsList: some View {
         if viewModel.isLoading && viewModel.searchResults.accounts.isEmpty && viewModel.searchResults.statuses.isEmpty && viewModel.searchResults.hashtags.isEmpty {
-             // Show loading indicator only when loading initial results
-            Spacer() // Pushes ProgressView to center
+            Spacer()
             ProgressView("Searching...")
             Spacer()
         } else {
             List {
-                // Display content based on the selected category
                 switch viewModel.selectedCategory {
                 case .all:      combinedResultsSections
                 case .accounts: accountResultsSection
@@ -137,8 +119,8 @@ struct SearchView: View {
                 case .trending: trendingHashtagsSection
                 }
             }
-            .listStyle(.plain) // Use plain style for less visual clutter
-            .overlay { // Show message if search is empty and not loading
+            .listStyle(.plain)
+            .overlay {
                  if !viewModel.isLoading && viewModel.searchText.isEmpty && viewModel.selectedCategory != .trending {
                      Text("Enter a query to search.")
                          .foregroundColor(.gray)
@@ -150,7 +132,6 @@ struct SearchView: View {
         }
     }
 
-    // Computed property to check if relevant sections are empty
     private var sectionsAreEmpty: Bool {
         switch viewModel.selectedCategory {
         case .all:
@@ -162,7 +143,7 @@ struct SearchView: View {
         case .hashtags:
             return viewModel.searchResults.hashtags.isEmpty
         case .trending:
-            return viewModel.trendingHashtags.isEmpty // Check trending separately
+            return viewModel.trendingHashtags.isEmpty
         }
     }
 
@@ -170,7 +151,6 @@ struct SearchView: View {
     // MARK: - List Section Views
     private var combinedResultsSections: some View {
         Group {
-            // Conditionally show sections only if they have content
             if !viewModel.searchResults.accounts.isEmpty { accountSection }
             if !viewModel.searchResults.statuses.isEmpty { postSection }
             if !viewModel.searchResults.hashtags.isEmpty { hashtagSection }
@@ -178,12 +158,10 @@ struct SearchView: View {
     }
 
     private var accountSection: some View {
-        Section(header: Text("Accounts").font(.headline)) { // Use prominent header
-            // Use viewModel.searchResults
+        Section(header: Text("Accounts").font(.headline)) {
             ForEach(viewModel.searchResults.accounts) { account in
-                // Navigate using value type User
                 NavigationLink(value: account.toUser()) {
-                    AccountRow(account: account) // Assuming AccountRow exists
+                    AccountRow(account: account)
                 }
             }
         }
@@ -192,46 +170,45 @@ struct SearchView: View {
     private var postSection: some View {
         Section(header: Text("Posts").font(.headline)) {
             ForEach(viewModel.searchResults.statuses) { post in
-                 // Use the revised PostView
+                // FIX 4: Added missing interestScore parameter
                 PostView(
                     post: post,
-                    viewModel: timelineViewModel, // Pass timelineViewModel for actions
+                    viewModel: timelineViewModel,
                     viewProfileAction: { user in
-                         navigationPath.append(user) // Navigate on profile tap
-                    }
+                         navigationPath.append(user)
+                    },
+                    interestScore: 0.0
                 )
-                .contentShape(Rectangle()) // Make whole area tappable
+                .contentShape(Rectangle())
                 .onTapGesture {
-                     selectedPostForDetail = post // Show detail view on tap
+                     selectedPostForDetail = post
                 }
-                .listRowInsets(EdgeInsets()) // Remove default padding for custom PostView layout
-                .padding(.vertical, 5) // Add vertical padding between posts
+                .listRowInsets(EdgeInsets())
+                .padding(.vertical, 5)
             }
         }
     }
 
     private var hashtagSection: some View {
         Section(header: Text("Hashtags").font(.headline)) {
-            ForEach(viewModel.searchResults.hashtags, id: \.name) { hashtag in // Use name as ID if Tag isn't Identifiable
+            // FIX 5: Removed id: \.name, relying on Identifiable conformance of Tag
+            ForEach(viewModel.searchResults.hashtags) { hashtag in
                 HStack {
                     Text("#\(hashtag.name)")
-                        .foregroundColor(.blue) // Style hashtags
+                        .foregroundColor(.blue)
                     Spacer()
-                    // Optionally show usage count if available (API v1 doesn't provide it here)
-                    Image(systemName: "chart.line.uptrend.xyaxis") // Indicate analytics available
+                    Image(systemName: "chart.line.uptrend.xyaxis")
                         .foregroundColor(.gray)
                 }
-                .contentShape(Rectangle()) // Make whole row tappable
+                .contentShape(Rectangle())
                 .onTapGesture {
-                    selectedHashtagForAnalytics = hashtag // Show analytics sheet
+                    selectedHashtagForAnalytics = hashtag
                 }
             }
         }
     }
 
-    // Specific sections for filtered views
     private var accountResultsSection: some View {
-        // Contents are the same as accountSection, just shown alone
         ForEach(viewModel.searchResults.accounts) { account in
              NavigationLink(value: account.toUser()) {
                  AccountRow(account: account)
@@ -240,9 +217,14 @@ struct SearchView: View {
     }
 
     private var postResultsSection: some View {
-         // Contents are the same as postSection, just shown alone
          ForEach(viewModel.searchResults.statuses) { post in
-             PostView(post: post, viewModel: timelineViewModel, viewProfileAction: { user in navigationPath.append(user) })
+             // FIX 6: Added missing interestScore parameter
+             PostView(
+                post: post,
+                viewModel: timelineViewModel,
+                viewProfileAction: { user in navigationPath.append(user) },
+                interestScore: 0.0
+             )
                  .contentShape(Rectangle())
                  .onTapGesture { selectedPostForDetail = post }
                  .listRowInsets(EdgeInsets())
@@ -251,8 +233,8 @@ struct SearchView: View {
     }
 
     private var hashtagResultsSection: some View {
-         // Contents are the same as hashtagSection, just shown alone
-         ForEach(viewModel.searchResults.hashtags, id: \.name) { hashtag in
+         // FIX 7: Removed id: \.name, relying on Identifiable conformance of Tag
+         ForEach(viewModel.searchResults.hashtags) { hashtag in
              HStack {
                  Text("#\(hashtag.name)").foregroundColor(.blue)
                  Spacer()
@@ -263,23 +245,20 @@ struct SearchView: View {
          }
     }
 
-
-    // Section for Trending Hashtags
     private var trendingHashtagsSection: some View {
         Section(header: Text("Trending Today").font(.headline)) {
-            // Use viewModel.trendingHashtags
-            ForEach(viewModel.trendingHashtags, id: \.name) { hashtag in // Use name as ID
+            // FIX 8: Removed id: \.name, relying on Identifiable conformance of Tag
+            ForEach(viewModel.trendingHashtags) { hashtag in
                  HStack {
                      Text("#\(hashtag.name)").foregroundColor(.blue)
                      Spacer()
-                     // Optionally show history graph icon if history data exists
                      if hashtag.history?.isEmpty == false {
                           Image(systemName: "chart.line.uptrend.xyaxis").foregroundColor(.gray)
                      }
                  }
                  .contentShape(Rectangle())
                  .onTapGesture {
-                     selectedHashtagForAnalytics = hashtag // Show analytics sheet
+                     selectedHashtagForAnalytics = hashtag
                  }
             }
         }
@@ -302,12 +281,10 @@ struct SearchView: View {
 
     // MARK: - Sheet Views
     private var filtersSheet: some View {
-        // Assuming SearchFiltersView exists and takes a binding
-        NavigationView { // Add NavigationView for title/buttons
+        NavigationView {
             SearchFiltersView(filters: $viewModel.searchFilters) {
-                 // Apply filters logic (triggers a new search)
                  Task { await viewModel.search(query: viewModel.searchText) }
-                 showSearchFilters = false // Dismiss sheet
+                 showSearchFilters = false
             }
             .navigationTitle("Filters")
             .toolbar {
@@ -325,60 +302,48 @@ struct SearchView: View {
     }
 
     private func analyticsSheet(tag: Tag) -> some View {
-         // Assuming HashtagAnalyticsView exists
-         // Pass necessary data and bindings
          HashtagAnalyticsView(
              hashtag: tag.name,
-             // Map History? to TagHistory if needed, or ensure models match
              history: tag.history?.compactMap { TagHistory(day: $0.day, uses: $0.uses, accounts: $0.accounts) } ?? [],
              selectedTimeRange: $viewModel.selectedTimeRange,
-             showHashtagAnalytics: Binding( // Create binding to dismiss sheet
+             showHashtagAnalytics: Binding(
                  get: { selectedHashtagForAnalytics != nil },
                  set: { if !$0 { selectedHashtagForAnalytics = nil } }
              ),
-             viewModel: viewModel // Pass the SearchViewModel
+             viewModel: viewModel
          )
-         .environmentObject(timelineViewModel) // Pass TimelineViewModel if needed
+         .environmentObject(timelineViewModel)
     }
 
      private func detailSheet(post: Post) -> some View {
-         // Assuming PostDetailView exists
-         // Pass the post and necessary view models
          PostDetailView(
              post: post,
-             viewModel: timelineViewModel, // Pass timelineViewModel for actions
-             showDetail: Binding( // Create binding to dismiss sheet
+             viewModel: timelineViewModel,
+             showDetail: Binding(
                  get: { selectedPostForDetail != nil },
                  set: { if !$0 { selectedPostForDetail = nil } }
              )
          )
-         // Pass other environment objects if PostDetailView needs them
-         // .environmentObject(AuthViewModel_Instance)
-         // .environmentObject(ProfileViewModel_Instance)
      }
 }
 
 
 // MARK: - Placeholder Views (Ensure these exist)
-
-// Placeholder for SearchFiltersView. Create a real view for your filters.
 struct SearchFiltersView: View {
     @Binding var filters: SearchViewModel.SearchFilters
-    var onApply: () -> Void // Closure to apply filters
+    var onApply: () -> Void
 
-    // Environment for dismissing the sheet
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
-        // Replace with your actual filter UI elements
         Form {
              Section("General") {
                  Toggle("Include Full Profile Data (Resolve)", isOn: Binding(
-                     get: { filters.resolve ?? true }, // Default to true
+                     get: { filters.resolve ?? true },
                      set: { filters.resolve = $0 }
                  ))
                  Toggle("Exclude Unreviewed Content", isOn: Binding(
-                      get: { filters.excludeUnreviewed ?? false }, // Default to false
+                      get: { filters.excludeUnreviewed ?? false },
                       set: { filters.excludeUnreviewed = $0 }
                  ))
              }
@@ -398,11 +363,8 @@ struct SearchFiltersView: View {
                  Stepper("Limit: \(filters.limit ?? 20)", value: Binding(
                      get: { filters.limit ?? 20 },
                      set: { filters.limit = $0 }
-                 ), in: 5...40, step: 5) // Limit between 5 and 40
+                 ), in: 5...40, step: 5)
              }
-             // Add more filter options as needed (e.g., following, accountId)
          }
-         // No need for explicit Apply button if using toolbar in SearchView
-         // .navigationBarItems(...) // Handled in SearchView's sheet modifier
     }
 }

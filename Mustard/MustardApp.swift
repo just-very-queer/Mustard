@@ -18,9 +18,9 @@ struct MustardApp: App {
     // MARK: - Shared Instances & Managers
     static let mastodonAPIServiceInstance = MastodonAPIService() // single instance
     
-    @StateObject private var cacheService: CacheService   // will be initialized in init()
+    @StateObject private var cacheService: CacheService
     @StateObject private var authViewModel = AuthenticationViewModel()
-    @StateObject private var locationManager = LocationManager()
+    @StateObject private var locationManager: LocationManager
     
     // MARK: - SwiftData Container
     // Make container static and accessible for services like RecommendationService
@@ -36,27 +36,36 @@ struct MustardApp: App {
         do {
             let schema = Schema([
                 Account.self, MediaAttachment.self, Post.self, ServerModel.self,
-                Tag.self, Item.self, InstanceModel.self, InstanceInformationModel.self,
-                Interaction.self, UserAffinity.self, HashtagAffinity.self // Added new analytics models
+                Tag.self, InstanceModel.self, InstanceInformationModel.self,
+                Interaction.self, UserAffinity.self, HashtagAffinity.self
             ])
             let modelConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
             let newContainer = try ModelContainer(for: schema, configurations: [modelConfig])
-            self.container = newContainer // Assign to instance property
-            MustardApp.sharedModelContainer = newContainer // Assign to static property
-            print("[MustardApp] ModelContainer initialized and assigned to static sharedModelContainer.")
+            self.container = newContainer
+            MustardApp.sharedModelContainer = newContainer
+            
+            // Configure the shared RecommendationService with the model context
+            RecommendationService.shared.configure(modelContext: ModelContext(newContainer))
+            
+            print("[MustardApp] ModelContainer and RecommendationService configured.")
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // 2. Initialize CacheService with MastodonAPIService instance
+        // 2. Create LocationManager instance locally before using it in StateObject and AppServices
+        let locManager = LocationManager()
+        _locationManager = StateObject(wrappedValue: locManager)
+        
+        // 3. Initialize CacheService with MastodonAPIService instance
         let initialCache = CacheService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)
         _cacheService = StateObject(wrappedValue: initialCache)
 
-        // 3. Initialize AppServices using the shared instances
+        // 4. Initialize AppServices with all required dependencies
         let services = AppServices(
             mastodonAPIService: MustardApp.mastodonAPIServiceInstance,
             cacheService: initialCache,
-            locationManager: self.locationManager
+            locationManager: locManager,
+            recommendationService: RecommendationService.shared
         )
         _appServices = StateObject(wrappedValue: services)
 
@@ -64,31 +73,37 @@ struct MustardApp: App {
         Logger(subsystem: "titan.mustard.app", category: "App").info("AppServices initialized.")
     }
 
+    // Extract view builder into a computed property
+    @ViewBuilder
+    private var contentView: some View {
+        switch authViewModel.authState {
+        case .checking:
+            ProgressView("Loading...")
+        case .unauthenticated, .authenticating:
+            LoginView()
+                .environmentObject(authViewModel)
+                .environmentObject(locationManager)
+        case .authenticated:
+            MainAppView(
+                timelineService: appServices.timelineService,
+                trendingService: appServices.trendingService,
+                postActionService: appServices.postActionService,
+                profileService: appServices.profileService,
+                searchService: appServices.searchService,
+                cacheService: cacheService,
+                locationManager: locationManager,
+                recommendationService: RecommendationService.shared
+            )
+            .environmentObject(authViewModel)
+            .environmentObject(locationManager)
+            .environmentObject(cacheService)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
-                switch authViewModel.authState {
-                case .checking:
-                    ProgressView("Loading...")
-                case .unauthenticated, .authenticating:
-                    LoginView()
-                        .environmentObject(authViewModel)
-                        .environmentObject(locationManager)
-                case .authenticated:
-                    MainAppView(
-                        timelineService: appServices.timelineService,
-                        trendingService: appServices.trendingService,
-                        postActionService: appServices.postActionService,
-                        profileService: appServices.profileService,
-                        searchService: appServices.searchService,
-                        cacheService: cacheService,
-                        locationManager: locationManager
-                        // Removed: direct mastodonAPIService injection
-                    )
-                    .environmentObject(authViewModel)
-                    .environmentObject(locationManager)
-                    .environmentObject(cacheService)
-                }
+                contentView
             }
             .modelContainer(container)
         }

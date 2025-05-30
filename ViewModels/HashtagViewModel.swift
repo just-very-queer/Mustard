@@ -8,18 +8,25 @@
 import Combine
 import SwiftUI
 
-@MainActor // Added @MainActor to the class
+@MainActor
 class HashtagViewModel: ObservableObject {
     @Published var posts: [Post] = []
     @Published var isLoading = false
     @Published var error: Error?
-    
-    private let searchService: SearchService // Inject SearchService
+
+    private let searchService: SearchService
     private var cancellables = Set<AnyCancellable>()
 
-     init(searchService: SearchService = SearchService()) {
-          self.searchService = searchService
-      }
+    @MainActor
+    init(searchService: SearchService) {
+        self.searchService = searchService
+    }
+
+    // Async convenience initializer to get main actor-isolated service
+    static func create() async -> HashtagViewModel {
+        let service =  MustardApp.mastodonAPIServiceInstance
+        return HashtagViewModel(searchService: SearchService(mastodonAPIService: service))
+    }
 
     @MainActor
     func fetchPosts(for hashtag: String) async {
@@ -29,11 +36,11 @@ class HashtagViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // Use the injected searchService to fetch posts
             posts = try await searchService.fetchHashtagPosts(hashtag: hashtag)
         } catch {
-            self.error = error  // No need to wrap in IdentifiableError here (it's handled in HashtagAnalyticsView)
+            self.error = error
             posts = []
         }
     }
 }
+

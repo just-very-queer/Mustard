@@ -16,12 +16,12 @@ struct MainAppView: View {
     @EnvironmentObject var cacheService: CacheService // Receives from environment
 
     // Services (Passed from MustardApp - stored for ViewModel initialization)
-    // These are the services created by AppServices, which should now be using MastodonAPIService
     let timelineService: TimelineService
     let trendingService: TrendingService
     let postActionService: PostActionService
     let profileService: ProfileService
-    let searchService: SearchService // Assuming SearchService is also passed via AppServices
+    let searchService: SearchService
+    let recommendationService: RecommendationService // Added to store the passed instance
 
     // State Objects (Initialized here, single source of truth for these ViewModels within MainAppView scope)
     @StateObject private var timelineViewModel: TimelineViewModel
@@ -34,15 +34,17 @@ struct MainAppView: View {
         trendingService: TrendingService,
         postActionService: PostActionService,
         profileService: ProfileService,
-        searchService: SearchService, // Added SearchService
+        searchService: SearchService,
         cacheService: CacheService,
         locationManager: LocationManager,
+        recommendationService: RecommendationService // Added parameter
     ) {
         self.timelineService = timelineService
         self.trendingService = trendingService
         self.postActionService = postActionService
         self.profileService = profileService
         self.searchService = searchService
+        self.recommendationService = recommendationService // Store the instance
 
         // Initialize the ViewModels, passing all required dependencies
         _timelineViewModel = StateObject(
@@ -51,7 +53,8 @@ struct MainAppView: View {
                 locationManager: locationManager,
                 trendingService: trendingService,
                 postActionService: postActionService,
-                cacheService: cacheService
+                cacheService: cacheService,
+                recommendationService: recommendationService // FIX: Pass the instance
             )
         )
 
@@ -59,8 +62,6 @@ struct MainAppView: View {
             wrappedValue: ProfileViewModel(profileService: profileService)
         )
 
-        // Initialize SearchViewModel, ensuring SearchService is correctly configured
-        // SearchService itself should have been initialized with MastodonAPIService by AppServices
         _searchViewModel = StateObject(
             wrappedValue: SearchViewModel(searchService: searchService)
         )
@@ -69,7 +70,7 @@ struct MainAppView: View {
     var body: some View {
         TabView {
             // MARK: - Home Tab
-            NavigationStack(path: $timelineViewModel.navigationPath) { // Use ViewModel's path
+            NavigationStack(path: $timelineViewModel.navigationPath) {
                 TimelineScreen(viewModel: timelineViewModel)
                     .navigationTitle("Timeline")
             }
@@ -79,9 +80,8 @@ struct MainAppView: View {
 
             // MARK: - Profile Tab
             NavigationStack {
-                if let currentUser = authViewModel.currentUser { //
-                    ProfileView(user: currentUser) //
-                    // EnvironmentObjects for ProfileView and its children are provided globally below
+                if let currentUser = authViewModel.currentUser {
+                    ProfileView(user: currentUser)
                 } else {
                     Text("Please log in to view your profile.")
                         .foregroundColor(.gray)
@@ -93,9 +93,7 @@ struct MainAppView: View {
 
             // MARK: - Search Tab
             NavigationStack {
-                SearchView() //
-                // EnvironmentObjects for SearchView are provided globally below
-                // It uses its own @StateObject for SearchViewModel
+                SearchView()
             }
             .tabItem {
                 Label("Search", systemImage: "magnifyingglass")
@@ -103,19 +101,20 @@ struct MainAppView: View {
 
             // MARK: - Settings Tab
             NavigationStack {
-                SettingsView() //
-                // EnvironmentObjects for SettingsView are provided globally below
+                SettingsView()
             }
             .tabItem {
                 Label("Settings", systemImage: "gearshape")
             }
         }
         // Inject ViewModels and other objects into the environment for descendant views
-        .environmentObject(authViewModel) //
-        .environmentObject(locationManager) //
-        .environmentObject(timelineViewModel) // Make timelineViewModel available globally
-        .environmentObject(profileViewModel)  // Make profileViewModel available globally
-        .environmentObject(searchViewModel) // Make searchViewModel available globally for search tab
-        .environmentObject(cacheService)     // Make cacheService available globally
+        .environmentObject(authViewModel)
+        .environmentObject(locationManager)
+        .environmentObject(timelineViewModel)
+        .environmentObject(profileViewModel)
+        .environmentObject(searchViewModel)
+        .environmentObject(cacheService)
+        // Note: recommendationService is not typically added to the environment unless multiple disconnected views need it.
+        // It's passed directly to ViewModels that require it during their initialization.
     }
 }

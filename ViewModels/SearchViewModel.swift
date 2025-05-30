@@ -66,8 +66,8 @@ class SearchViewModel: ObservableObject {
     }
 
     // MARK: - Initialization
-    // ***** FIXED: Use NetworkService.shared instance *****
-    init(searchService: SearchService = SearchService()) {
+    // FIX: Removed the default argument for searchService to ensure it's always explicitly provided.
+    init(searchService: SearchService) {
         self.searchService = searchService
         setupDebounce()
     }
@@ -131,11 +131,9 @@ class SearchViewModel: ObservableObject {
 
         } catch let fetchError where (fetchError as? URLError)?.code == .cancelled {
              logger.info("Search explicitly cancelled for query: '\(trimmedQuery)'.")
-             // No need to set isLoading = false here, as it might have been set by the defer in a surrounding task
         } catch let fetchError {
              guard !Task.isCancelled else {
                  logger.info("Search task cancelled during error handling for query: '\(trimmedQuery)'")
-                 // No need to set isLoading = false here either
                  return
              }
             logger.error("Search failed for query '\(trimmedQuery)': \(fetchError.localizedDescription)")
@@ -143,7 +141,6 @@ class SearchViewModel: ObservableObject {
             self.searchResults = SearchResults()
         }
 
-         // Ensure loading is always set to false eventually if the task wasn't cancelled
          if !Task.isCancelled {
              self.isLoading = false
          }
@@ -171,7 +168,6 @@ class SearchViewModel: ObservableObject {
         } catch let fetchError {
             logger.error("Failed to load trending hashtags: \(fetchError.localizedDescription)")
             self.error = IdentifiableError(message: "Could not load trending tags: \(fetchError.localizedDescription)")
-            // ***** FIXED: Added self. *****
             self.trendingHashtags = []
         }
         self.isLoading = false
@@ -205,16 +201,14 @@ class SearchViewModel: ObservableObject {
             case .year: startDate = calendar.date(byAdding: .year, value: -1, to: now)!
             }
 
-            // Filter the results
-            // ***** FIXED: Added self. *****
             self.filteredPosts = posts.filter { post in
                 post.createdAt >= startDate
              }
-             logger.debug("Filtered down to \(self.filteredPosts.count) posts for hashtag '\(hashtag)' in the last \(timeRange.rawValue).") // Use self here too for consistency
+             logger.debug("Filtered down to \(self.filteredPosts.count) posts for hashtag '\(hashtag)' in the last \(timeRange.rawValue).")
         } catch let fetchError {
             logger.error("Failed to fetch/filter posts for hashtag '\(hashtag)': \(fetchError.localizedDescription)")
             self.error = IdentifiableError(message: "Failed to load posts for hashtag: \(fetchError.localizedDescription)")
-            self.filteredPosts = [] // Also use self. here
+            self.filteredPosts = []
         }
     }
 
