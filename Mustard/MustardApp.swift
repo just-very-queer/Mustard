@@ -6,9 +6,14 @@
 //  Copyright © 2024 Mustard. All rights reserved.
 //
 
+// Change the conditional compilation from canImport(UIKit) to os(iOS)
+// to be more specific about the platform for this app entry point.
+#if os(iOS) // Changed from canImport(UIKit)
+
 import SwiftUI
 import SwiftData
 import OSLog
+import UIKit
 
 @main
 struct MustardApp: App {
@@ -23,9 +28,8 @@ struct MustardApp: App {
     @StateObject private var locationManager: LocationManager
     
     // MARK: - SwiftData Container
-    // Make container static and accessible for services like RecommendationService
     static var sharedModelContainer: ModelContainer!
-    private let container: ModelContainer // Keep instance property for scene modifier
+    private let container: ModelContainer
     
     // MARK: - Service Environment
     @StateObject private var appServices: AppServices
@@ -44,7 +48,6 @@ struct MustardApp: App {
             self.container = newContainer
             MustardApp.sharedModelContainer = newContainer
             
-            // Configure the shared RecommendationService with the model context
             RecommendationService.shared.configure(modelContext: ModelContext(newContainer))
             
             print("[MustardApp] ModelContainer and RecommendationService configured.")
@@ -52,15 +55,15 @@ struct MustardApp: App {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // 2. Create LocationManager instance locally before using it in StateObject and AppServices
+        // 2. Create LocationManager instance locally
         let locManager = LocationManager()
         _locationManager = StateObject(wrappedValue: locManager)
         
-        // 3. Initialize CacheService with MastodonAPIService instance
+        // 3. Initialize CacheService
         let initialCache = CacheService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)
         _cacheService = StateObject(wrappedValue: initialCache)
 
-        // 4. Initialize AppServices with all required dependencies
+        // 4. Initialize AppServices
         let services = AppServices(
             mastodonAPIService: MustardApp.mastodonAPIServiceInstance,
             cacheService: initialCache,
@@ -126,3 +129,4 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 }
+#endif // os(iOS)

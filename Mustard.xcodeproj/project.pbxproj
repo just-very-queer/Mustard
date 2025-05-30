@@ -14,6 +14,7 @@
 		664DEFBC2DE9DF57005A44BB /* HashtagAffinity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */; };
 		664DEFBD2DE9DF57005A44BB /* Interaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFBA2DE9DF57005A44BB /* Interaction.swift */; };
 		664DEFBE2DE9DF57005A44BB /* UserAffinity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFBB2DE9DF57005A44BB /* UserAffinity.swift */; };
+		664DF02C2DEA2580005A44BB /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 664DF02B2DEA2580005A44BB /* README.md */; };
 		664E08A22C96019600D547C7 /* ServerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664E089F2C96019600D547C7 /* ServerModel.swift */; };
 		666A1B622D63D4EA003F08FD /* SwiftSoupUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */; };
 		666A1B642D63D636003F08FD /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = 666A1B632D63D636003F08FD /* SwiftSoup */; };
@@ -37,6 +38,7 @@
 		664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagAffinity.swift; sourceTree = "<group>"; };
 		664DEFBA2DE9DF57005A44BB /* Interaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Interaction.swift; sourceTree = "<group>"; };
 		664DEFBB2DE9DF57005A44BB /* UserAffinity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAffinity.swift; sourceTree = "<group>"; };
+		664DF02B2DEA2580005A44BB /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		664E089F2C96019600D547C7 /* ServerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerModel.swift; sourceTree = "<group>"; };
 		666A1B612D63D4EA003F08FD /* SwiftSoupUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftSoupUtils.swift; sourceTree = "<group>"; };
 		6687C34D2C95AE87000ECC5D /* Mustard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Mustard.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -113,6 +115,7 @@
 		6687C3442C95AE87000ECC5D = {
 			isa = PBXGroup;
 			children = (
+				664DF02B2DEA2580005A44BB /* README.md */,
 				664DEFC32DE9DF94005A44BB /* WatchOS */,
 				6656FCA72D4CC31100785335 /* Effects */,
 				6687C3B52C95B61C000ECC5D /* Utilities */,
@@ -239,6 +242,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				664DF02C2DEA2580005A44BB /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -395,6 +399,7 @@
 		6687C3752C95AE8A000ECC5D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Mustard/Mustard.entitlements;
@@ -431,10 +436,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = titan.mustard.app.ao;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "xrsimulator xros watchsimulator watchos macosx iphonesimulator iphoneos driverkit appletvsimulator appletvos";
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2,3,4,6,7";
 				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Debug;
@@ -442,6 +448,7 @@
 		6687C3762C95AE8A000ECC5D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALLOW_TARGET_PLATFORM_SPECIALIZATION = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Mustard/Mustard.entitlements;
@@ -478,10 +485,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = titan.mustard.app.ao;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = "xrsimulator xros watchsimulator watchos macosx iphonesimulator iphoneos driverkit appletvsimulator appletvos";
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TARGETED_DEVICE_FAMILY = "1,2,3,4,6,7";
 				XROS_DEPLOYMENT_TARGET = 2.0;
 			};
 			name = Release;

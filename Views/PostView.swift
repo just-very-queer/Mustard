@@ -5,10 +5,12 @@
 //  Created by VAIBHAV SRIVASTAVA on 31/01/25.
 //
 
-
 import SwiftUI
-import LinkPresentation
+// import LinkPresentation // REMOVED: Not directly used in this file's current structure
+// Conditionally import SafariServices for UIKit-based platforms
+#if canImport(UIKit) && !os(watchOS) && !os(tvOS)
 import SafariServices
+#endif
 import SwiftSoup // If needed for HTML parsing in subviews
 
 // MARK: - PostView (Main View)
@@ -23,8 +25,6 @@ struct PostView: View {
     @State private var showImageViewer = false
     @State private var showBrowserView = false // Assuming this uses post.url
 
-    // Assuming TimelineViewModel exposes currentUserAccountID or a similar property
-    // This property is accessible if not private in TimelineViewModel
     let interestScore: Double // Added for interest highlighting
 
     var body: some View {
@@ -33,7 +33,7 @@ struct PostView: View {
             UserHeaderView(post: post, viewProfileAction: viewProfileAction)
 
             // Content
-            PostContentView(post: post, showFullText: $showFullText, currentUserAccountID: viewModel.currentUserAccountID) // Pass it here
+            PostContentView(post: post, showFullText: $showFullText, currentUserAccountID: viewModel.currentUserAccountID)
 
             // Media attachments - Trigger local state for viewer
             MediaAttachmentView(post: post, onImageTap: {
@@ -59,19 +59,25 @@ struct PostView: View {
         .dynamicTypeSize(.medium)
         // Sheet for FullScreenImageView (Uses local state)
         .sheet(isPresented: $showImageViewer) {
-            // Assuming first attachment is the one to show fullscreen
             if let imageURL = post.mediaAttachments.first?.url {
                 FullScreenImageView(imageURL: imageURL, isPresented: $showImageViewer)
             }
         }
         // Sheet for WebView (Uses local state and post data)
         .sheet(isPresented: $showBrowserView) {
-            // Assuming post.url contains the link to show
             if let urlString = post.url, let url = URL(string: urlString) {
-                 SafariView(url: url) // Assumes SafariView exists
+                #if canImport(UIKit) && !os(watchOS) && !os(tvOS)
+                SafariView(url: url) // Assumes SafariView is defined conditionally elsewhere
+                #else
+                // Fallback for platforms where SafariView (SFSafariViewController) is not available
+                // On macOS, you might use Link to open in default browser, or a WKWebView wrapper
+                Text("Web browser preview not available on this platform. URL: \(url.absoluteString)")
+                    .padding()
+                // Or, to open in the default browser on macOS:
+                // Link("Open URL", destination: url).padding()
+                #endif
             }
         }
-        // Alert for errors (Handled by parent view using viewModel.alertError)
         .interestHighlight(isActive: interestScore > 5.0, score: interestScore) // Threshold = 5.0
     }
 }
@@ -89,11 +95,11 @@ struct PostActionsViewRevised: View {
             } label: {
                 Image(systemName: post.isFavourited ? "heart.fill" : "heart")
                     .foregroundColor(post.isFavourited ? .red : .gray)
-                Text("\(post.favouritesCount)") // Display count
+                Text("\(post.favouritesCount)")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
-            .buttonStyle(PlainButtonStyle()) // Use PlainButtonStyle for better layout control
+            .buttonStyle(PlainButtonStyle())
 
             Spacer()
 
@@ -101,9 +107,9 @@ struct PostActionsViewRevised: View {
             Button {
                 viewModel.toggleRepost(for: post)
             } label: {
-                Image(systemName: post.isReblogged ? "arrow.2.squarepath" : "arrow.2.squarepath") // Use consistent icon
+                Image(systemName: post.isReblogged ? "arrow.2.squarepath" : "arrow.2.squarepath")
                     .foregroundColor(post.isReblogged ? .green : .gray)
-                 Text("\(post.reblogsCount)") // Display count
+                 Text("\(post.reblogsCount)")
                      .font(.caption)
                      .foregroundColor(.gray)
             }
@@ -117,7 +123,7 @@ struct PostActionsViewRevised: View {
             } label: {
                 Image(systemName: "bubble.left")
                     .foregroundColor(.gray)
-                Text("\(post.repliesCount)") // Display count
+                Text("\(post.repliesCount)")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
@@ -132,113 +138,76 @@ struct PostActionsViewRevised: View {
                         .foregroundColor(.gray)
                 }
             } else {
-                // Provide a disabled or different button if no URL
                  Image(systemName: "square.and.arrow.up")
                     .foregroundColor(.gray.opacity(0.5))
             }
         }
-        .padding(.horizontal) // Add padding for better spacing
+        .padding(.horizontal)
     }
 }
 
-// MARK: - Subviews (Keep relevant subviews like PostContentView, MediaAttachmentView, UserHeaderView)
+// MARK: - Subviews
 
-// Example: Keep PostContentView as is
 struct PostContentView: View {
     let post: Post
     @Binding var showFullText: Bool
-    let currentUserAccountID: String? // Added to receive current user ID
+    let currentUserAccountID: String?
 
-    // State to hold the computed attributed string
     @State private var displayedAttributedString: AttributedString? = nil
-    @State private var plainTextContentForShowMore: String = "" // For "Show More" logic
+    @State private var plainTextContentForShowMore: String = ""
     @State private var detectedLinkCard: Card? = nil
     @State private var isLoadingLinkPreview: Bool = false
-    @State private var isContentEffectivelyEmpty: Bool = false // New state variable
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if isContentEffectivelyEmpty { // Check new state variable
-                Text("[Content is empty or not displayable]")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .padding(.horizontal)
-            } else if let attrString = displayedAttributedString {
+            if let attrString = displayedAttributedString {
                 Text(attrString)
-                    .font(.body) // Apply font modifier here if needed
+                    .font(.body)
                     .lineLimit(showFullText ? nil : 3)
-                    .foregroundColor(.primary) // Apply color here
+                    .foregroundColor(.primary)
                     .padding(.horizontal)
             } else {
-                // Fallback to plain text (this path might also be empty if original content was empty)
-                // This specific 'else' might be hit if attributedStringFromHTML returns nil
-                // but convertHTMLToPlainText still yields something (e.g. if HTML is malformed for AS but not for SwiftSoup).
-                // The isContentEffectivelyEmpty check should ideally cover this too if plainText is also empty.
-                let plainText = HTMLUtils.convertHTMLToPlainText(html: post.content)
-                if plainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("[Content is empty or not displayable]")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .padding(.horizontal)
-                } else {
-                    Text(plainText)
-                        .font(.body)
-                        .lineLimit(showFullText ? nil : 3)
-                        .foregroundColor(.primary)
-                        .padding(.horizontal)
-                }
+                Text(HTMLUtils.convertHTMLToPlainText(html: post.content))
+                    .font(.body)
+                    .lineLimit(showFullText ? nil : 3)
+                    .foregroundColor(.primary)
+                    .padding(.horizontal)
             }
 
-            // "Show More" button (only if content is not empty)
-            if !isContentEffectivelyEmpty && !showFullText && plainTextContentForShowMore.count > 200 { // Use state variable
+            if !showFullText && plainTextContentForShowMore.count > 200 {
                  ShowMoreButton(showFullText: $showFullText)
             }
 
-            // Link Preview Section
             if isLoadingLinkPreview {
                 ProgressView()
                     .padding(.horizontal)
                     .frame(maxWidth: .infinity, alignment: .center)
             } else if let card = detectedLinkCard {
-                LinkPreview(card: card, postID: post.id, currentUserAccountID: currentUserAccountID) // Pass postID and currentUserAccountID
-                    .padding(.horizontal) // Add padding around the LinkPreview
-                    .padding(.top, 5) // Add some space above the LinkPreview
+                LinkPreview(card: card, postID: post.id, currentUserAccountID: currentUserAccountID)
+                    .padding(.horizontal)
+                    .padding(.top, 5)
             }
         }
         .padding(.vertical, 5)
-        .task(id: post.id) { // Re-run when post.id changes (safer than post.content for triggering)
-            // 1. AttributedString and PlainText conversion (for Show More)
+        .task(id: post.id) {
             self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
-            self.plainTextContentForShowMore = HTMLUtils.convertHTMLToPlainText(html: post.content) // Calculate once
+            self.plainTextContentForShowMore = HTMLUtils.convertHTMLToPlainText(html: post.content)
 
-            // Determine if content is effectively empty
-            if self.plainTextContentForShowMore.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // Also check if the original HTML content itself was just decorative (e.g. only <p></p> or <p><br></p>)
-                // For simplicity, plainText check is usually sufficient.
-                // A more robust check might involve analyzing the structure of displayedAttributedString if it's not nil.
-                self.isContentEffectivelyEmpty = true
-            } else {
-                self.isContentEffectivelyEmpty = false
-            }
+            self.detectedLinkCard = nil
+            self.isLoadingLinkPreview = false
 
-            // 2. Link Preview Logic
-            self.detectedLinkCard = nil // Reset
-            self.isLoadingLinkPreview = false // Reset
-
-            // Log .view interaction
             RecommendationService.shared.logInteraction(
                 statusID: post.id,
                 actionType: .view,
-                accountID: currentUserAccountID, // Passed in
+                accountID: currentUserAccountID,
                 authorAccountID: post.account?.id,
                 postURL: post.url,
-                tags: post.tags?.compactMap { $0.name } // Assuming Tag has 'name'
+                tags: post.tags?.compactMap { $0.name }
             )
 
             if let existingCard = post.card {
                 self.detectedLinkCard = existingCard
             } else {
-                // Extract URL from post content (HTML string)
                 let textToDetect = post.content
                 if let firstURL = detectFirstURL(in: textToDetect) {
                     self.isLoadingLinkPreview = true
@@ -264,7 +233,6 @@ struct PostContentView: View {
     }
 }
 
-// ShowMoreButton remains the same
 struct ShowMoreButton: View {
     @Binding var showFullText: Bool
 
@@ -279,7 +247,6 @@ struct ShowMoreButton: View {
     }
 }
 
-// UserHeaderView - Assuming viewProfileAction remains for flexibility
 struct UserHeaderView: View {
     let post: Post
     var viewProfileAction: (User) -> Void
@@ -313,7 +280,6 @@ struct UserHeaderView: View {
     }
 }
 
-// MARK: - ExpandedCommentsSection (Re-declared here)
 struct ExpandedCommentsSection: View {
     let post: Post
     @Binding var isExpanded: Bool
@@ -336,10 +302,7 @@ struct ExpandedCommentsSection: View {
                             UserHeaderView(post: reply, viewProfileAction: { user in
                                 viewModel.navigateToProfile(user)
                         })
-                            // Display reply content
-                            // FIX: Pass viewModel.currentUserAccountID instead of the type String?
                             PostContentView(post: reply, showFullText: .constant(true), currentUserAccountID: viewModel.currentUserAccountID)
-
                     }
                     .padding(.bottom, 5)
                     Divider().padding(.leading, 60)

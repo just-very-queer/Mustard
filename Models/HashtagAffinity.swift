@@ -1,3 +1,10 @@
+//
+//  HashtagAffinity.swift
+//  Mustard
+//
+//  Created by VAIBHAV SRIVASTAVA on 30/12/24.
+//
+
 import Foundation
 import SwiftData
 

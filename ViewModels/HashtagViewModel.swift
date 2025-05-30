@@ -24,8 +24,9 @@ class HashtagViewModel: ObservableObject {
 
     // Async convenience initializer to get main actor-isolated service
     static func create() async -> HashtagViewModel {
-        let service =  MustardApp.mastodonAPIServiceInstance
-        return HashtagViewModel(searchService: SearchService(mastodonAPIService: service))
+            // Use the new shared instance from MastodonAPIService
+            let service = MastodonAPIService.shared
+            return HashtagViewModel(searchService: SearchService(mastodonAPIService: service))
     }
 
     @MainActor

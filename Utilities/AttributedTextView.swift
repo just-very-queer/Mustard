@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+// Conditionally import UIKit for platforms where UITextView is used
+#if canImport(UIKit)
 import UIKit
 
 struct AttributedTextView: UIViewRepresentable {
@@ -110,3 +112,4 @@ struct AttributedTextView: UIViewRepresentable {
 
     }
 }
+#endif

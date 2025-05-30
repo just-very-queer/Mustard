@@ -13,8 +13,9 @@ class ProfileService {
     private let mastodonAPIService: MastodonAPIService
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "ProfileService")
 
-    /// Designated initializer — inject the shared MastodonAPIService instance
-    init(mastodonAPIService: MastodonAPIService = MustardApp.mastodonAPIServiceInstance) {
+    /// Designated initializer — inject the MastodonAPIService instance.
+    // FIX: Removed the default argument that referenced MustardApp.mastodonAPIServiceInstance
+    init(mastodonAPIService: MastodonAPIService) {
         self.mastodonAPIService = mastodonAPIService
     }
 

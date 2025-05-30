@@ -9,38 +9,43 @@ import Foundation
 import SwiftData
 import OSLog // For logging
 
-// Removed @MainActor from class declaration
-class RecommendationService: ObservableObject {
-    // Make shared a computed property or a function to ensure it's configured before use.
-    // For simplicity here, we'll make it a regular instance and expect configuration.
-    // A more robust approach might involve a `configureSharedInstance(modelContext:)` static func.
-    static let shared = RecommendationService() // Keep as is for now, will configure context
+// FIX: Define the custom global actor
+@globalActor
+actor BackgroundActor {
+    static let shared = BackgroundActor()
+}
 
-    private var modelContext: ModelContext? // Optional, to be configured
+// Removed @MainActor from class declaration as methods are now explicitly annotated
+class RecommendationService: ObservableObject {
+    static let shared = RecommendationService()
+
+    private var modelContext: ModelContext?
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "RecommendationService")
 
-    // Private init to enforce singleton pattern via `shared`
     private init() {
         logger.info("RecommendationService instance created. ModelContext needs configuration.")
     }
     
-    // Method to configure the ModelContext, callable from both app targets
+    // This method is likely called from a @MainActor context (e.g., App init)
     func configure(modelContext: ModelContext) {
-        if self.modelContext == nil { // Configure only once
+        if self.modelContext == nil {
             self.modelContext = modelContext
-            self.modelContext?.autosaveEnabled = true
+            // Ensure modelContext operations in configure are on the correct actor if needed
+            // For example, accessing modelContext.container should be fine here if modelContext was passed from main actor.
+            self.modelContext?.autosaveEnabled = true // This should be fine.
             logger.info("RecommendationService ModelContext configured.")
             
-            // Perform initial setup or load existing data if needed
-            Task {
-                await calculateAffinities() // Call on init after context is set
+            Task { // This Task inherits the actor context of `configure`
+                await calculateAffinities()
             }
         } else {
             logger.info("RecommendationService ModelContext already configured.")
         }
     }
     
-    // Guard for modelContext in methods that need it
+    // This method might be called from various contexts, ensure it's actor-safe
+    // or explicitly mark its actor context if it manipulates shared state
+    // that isn't already protected (modelContext is actor-isolated by itself).
     private func getContext() throws -> ModelContext {
         guard let context = modelContext else {
             let errorMsg = "RecommendationService ModelContext not configured."
@@ -50,17 +55,18 @@ class RecommendationService: ObservableObject {
         return context
     }
 
-
-    // Placeholder for interaction logging method
-    func logInteraction(statusID: String? = nil, // Made optional as not all interactions are post-specific
+    // logInteraction can be called from any actor, but ModelContext operations are safe.
+    func logInteraction(statusID: String? = nil,
                         actionType: InteractionType,
-                        accountID: String? = nil, // User performing action (e.g., current authenticated user)
-                        authorAccountID: String? = nil, // Post author
+                        accountID: String? = nil,
+                        authorAccountID: String? = nil,
                         postURL: String? = nil,
-                        tags: [String]? = nil, // Hashtags from the post
-                        viewDuration: Double? = nil, // For timeSpent action
-                        linkURL: String? = nil) { // For linkOpen action
+                        tags: [String]? = nil,
+                        viewDuration: Double? = nil,
+                        linkURL: String? = nil) {
         
+        // Operations on modelContext (like insert) are safe as ModelContext is Sendable
+        // and handles its own thread safety.
         guard let context = try? getContext() else {
             logger.error("Failed to log interaction: ModelContext not available.")
             return
@@ -69,7 +75,7 @@ class RecommendationService: ObservableObject {
         let newInteraction = Interaction(
             statusID: statusID,
             actionType: actionType,
-            timestamp: Date(), // Current time
+            timestamp: Date(),
             accountID: accountID,
             authorAccountID: authorAccountID,
             postURL: postURL,
@@ -79,31 +85,32 @@ class RecommendationService: ObservableObject {
         )
 
         context.insert(newInteraction)
-        // Autosave is enabled via self.modelContext.autosaveEnabled = true in init()
         logger.info("Logged interaction: \(actionType.rawValue, privacy: .public) for status \(statusID ?? "N/A", privacy: .public). User: \(accountID ?? "N/A"). Author: \(authorAccountID ?? "N/A")")
     }
     
-    // Placeholder for affinity calculation method
-    // Inside RecommendationService - calculateAffinities method
-    @MainActor // Ensure modelContext operations are on main thread for triggering
+    // This method is explicitly @MainActor to safely access modelContext.container
+    // and then dispatch work to the background.
+    @MainActor
     func calculateAffinities() async {
         logger.info("Starting affinity calculation (triggered on MainActor)...")
         
+        // Accessing self.modelContext and its container should be done on the MainActor
+        // if RecommendationService itself isn't @MainActor globally.
         guard let modelContainer = self.modelContext?.container else {
             logger.error("ModelContainer not available for background affinity calculation.")
             return
         }
 
-        Task { // Launch a new unstructured task
+        Task { // Launch a new unstructured task, it will run off the MainActor by default
+               // unless the operation it calls is isolated to another actor.
             await self.performBackgroundAffinityCalculation(modelContainer: modelContainer)
         }
     }
 
-    @BackgroundActor // Mark the new method to run on the background actor
+    @BackgroundActor // This method will run on the BackgroundActor
     private func performBackgroundAffinityCalculation(modelContainer: ModelContainer) async {
         let backgroundContext = ModelContext(modelContainer)
-        // Optional: Disable autosave for more control, then save manually at the end.
-        // backgroundContext.autosaveEnabled = false
+        // backgroundContext.autosaveEnabled = false // Optional: control saving manually
 
         logger.info("Performing background affinity calculation on BackgroundActor...")
 
@@ -139,6 +146,7 @@ class RecommendationService: ObservableObject {
 
         for (authorId, calculatedScore) in authorScores {
             let count = authorInteractionCounts[authorId] ?? 0
+            // This method is also marked @BackgroundActor, so this call is fine.
             await self.updateUserAffinityOnBackground(authorAccountID: authorId, score: calculatedScore, interactionCount: count, context: backgroundContext)
         }
         logger.info("Background: Author affinities updated.")
@@ -148,7 +156,7 @@ class RecommendationService: ObservableObject {
         for interaction in interactions {
             guard let tags = interaction.tags, !tags.isEmpty else { continue }
             let scoreBoost = weights[interaction.actionType] ?? 0.0
-            for tagName in tags { // Assuming tags is [String]
+            for tagName in tags {
                 tagScores[tagName, default: 0.0] += scoreBoost
                 tagInteractionCounts[tagName, default: 0] += 1
             }
@@ -156,16 +164,17 @@ class RecommendationService: ObservableObject {
 
         for (tagName, calculatedScore) in tagScores {
             let count = tagInteractionCounts[tagName] ?? 0
+            // This method is also marked @BackgroundActor.
             await self.updateHashtagAffinityOnBackground(tag: tagName, score: calculatedScore, interactionCount: count, context: backgroundContext)
         }
         logger.info("Background: Hashtag affinities updated.")
 
-        // Explicitly save changes made in the background context if autosave is disabled
+        // If autosaveEnabled was set to false for backgroundContext:
         // do {
-        //    try backgroundContext.save()
-        //    logger.info("Background: Affinity data saved successfully.")
+        //     try backgroundContext.save()
+        //     logger.info("Background: Affinity data saved successfully.")
         // } catch {
-        //    logger.error("Background: Error saving affinity data: \(error.localizedDescription)")
+        //     logger.error("Background: Error saving affinity data: \(error.localizedDescription)")
         // }
         logger.info("Background affinity calculation finished.")
     }
@@ -206,26 +215,25 @@ class RecommendationService: ObservableObject {
 
     // MARK: - Recommendation API Methods
 
+    // These methods interact with modelContext, so they should be on an actor that can safely access it.
+    // If RecommendationService is not @MainActor globally, these need to be.
     @MainActor
-    func topRecommendations(limit: Int) async -> [String] { // Returns Post IDs
-        guard let currentContext = try? getContext() else { return [] }
+    func topRecommendations(limit: Int) async -> [String] {
+        guard let currentContext = try? getContext() else { return [] } // getContext ensures modelContext is available
         logger.info("Fetching top recommendations (limit: \(limit))...")
-        var recommendedPostIDs: Set<String> = [] // Use Set to avoid duplicates initially
+        var recommendedPostIDs: Set<String> = []
 
-        // 1. Fetch top UserAffinities
         var userAffinityDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
         userAffinityDescriptor.fetchLimit = limit
         let topUserAffinities = (try? currentContext.fetch(userAffinityDescriptor)) ?? []
 
-        // 2. Fetch top HashtagAffinities
         var hashtagAffinityDescriptor = FetchDescriptor<HashtagAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
         hashtagAffinityDescriptor.fetchLimit = limit
         let topHashtagAffinities = (try? currentContext.fetch(hashtagAffinityDescriptor)) ?? []
 
-        // 3. For simplicity, fetch recent posts and then filter/score them
         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         let postDescriptor = FetchDescriptor<Post>(
-            predicate: #Predicate { $0.createdAt >= sevenDaysAgo }, // Recent posts
+            predicate: #Predicate { $0.createdAt >= sevenDaysAgo },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         let recentPosts = (try? currentContext.fetch(postDescriptor)) ?? []
@@ -235,7 +243,6 @@ class RecommendationService: ObservableObject {
             return []
         }
         
-        // --- Simplified Scoring & Selection ---
         let userAffinityMap = Dictionary(uniqueKeysWithValues: topUserAffinities.map { ($0.authorAccountID, $0.score) })
         let hashtagAffinityMap = Dictionary(uniqueKeysWithValues: topHashtagAffinities.map { ($0.tag, $0.score) })
 
@@ -251,17 +258,15 @@ class RecommendationService: ObservableObject {
                     postScore += hashtagAffinity
                 }
             }
-            // Add a small decay factor for older posts within the 7-day window
             let timeSinceCreation = Date().timeIntervalSince(post.createdAt)
             let decayFactor = max(0, 1.0 - (timeSinceCreation / (7.0 * 24.0 * 60.0 * 60.0)))
             postScore *= decayFactor
 
-            if postScore > 0.1 { // Only consider posts with some positive affinity score
+            if postScore > 0.1 {
                  scoredPosts.append((post.id, postScore))
             }
         }
         
-        // Sort by score and take top N
         scoredPosts.sort { $0.score > $1.score }
         recommendedPostIDs = Set(scoredPosts.prefix(limit).map { $0.postID })
         
@@ -275,7 +280,6 @@ class RecommendationService: ObservableObject {
         logger.info("Scoring timeline with \(timeline.count) posts...")
         if timeline.isEmpty { return [] }
 
-        // 1. Fetch affinities
         var userAffinityDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
         let userAffinities = (try? currentContext.fetch(userAffinityDescriptor)) ?? []
         let userAffinityMap = Dictionary(uniqueKeysWithValues: userAffinities.map { ($0.authorAccountID, $0.score) })
@@ -284,7 +288,6 @@ class RecommendationService: ObservableObject {
         let hashtagAffinities = (try? currentContext.fetch(hashtagAffinityDescriptor)) ?? []
         let hashtagAffinityMap = Dictionary(uniqueKeysWithValues: hashtagAffinities.map { ($0.tag, $0.score) })
         
-        // 2. Score each post in the timeline
         let scoredPostsTuples = timeline.map { post -> (post: Post, score: Double) in
             var postScore: Double = 0.0
             if let authorId = post.account?.id, let affinityScore = userAffinityMap[authorId] {
@@ -298,7 +301,6 @@ class RecommendationService: ObservableObject {
             return (post, postScore)
         }
 
-        // 3. Sort the timeline by the calculated score
         let reorderedTimeline = scoredPostsTuples.sorted { $0.score > $1.score }.map { $0.post }
         
         logger.info("Timeline scoring complete.")
@@ -310,7 +312,6 @@ class RecommendationService: ObservableObject {
         guard let currentContext = try? getContext() else { return 0.0 }
         var score: Double = 0.0
 
-        // Fetch user affinity for the author
         if let authorAccountID = authorAccountID, !authorAccountID.isEmpty {
             let userAffinityDescriptor = FetchDescriptor<UserAffinity>(predicate: #Predicate { $0.authorAccountID == authorAccountID })
             do {
@@ -322,7 +323,6 @@ class RecommendationService: ObservableObject {
             }
         }
 
-        // Fetch hashtag affinities for the tags
         if let postTags = tags, !postTags.isEmpty {
             var hashtagScore: Double = 0.0
             for tagName in postTags {

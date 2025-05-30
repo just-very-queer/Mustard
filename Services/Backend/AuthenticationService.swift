@@ -7,29 +7,37 @@
 //
 
 import Foundation
-import AuthenticationServices
+import AuthenticationServices // Keep for potential shared elements, but ASWebAuthenticationSession will be conditional
 import OSLog
 import Combine
 
+// Conditional import for UIKit and specific classes like UIApplication
+#if os(iOS)
+import UIKit
+#endif
+
 @MainActor
-class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPresentationContextProviding {
+class AuthenticationService: NSObject, ObservableObject {
     
     // MARK: - Published Properties
     
     @Published private(set) var isAuthenticated = false
-    @Published private(set) var isAuthenticating = false
+    @Published private(set) var isAuthenticating = false // May have limited use on watchOS
     @Published private(set) var currentUser: User?
     @Published var alertError: AppError?
     
     // MARK: - Private Properties
     
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AuthenticationService")
-    private let keychainService = "MustardKeychain"
+    private let keychainService = "MustardKeychain" // Ensure KeychainHelper uses App Groups for sharing
     private let mastodonAPIService: MastodonAPIService
     private let sessionManager: NetworkSessionManager
-    private var webAuthSession: ASWebAuthenticationSession?
     private var cancellables = Set<AnyCancellable>()
     private var alertErrorTimer: Timer?
+    
+    #if os(iOS)
+    private var webAuthSession: ASWebAuthenticationSession?
+    #endif
     
     // MARK: - Singleton Instance
     
@@ -57,7 +65,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         checkExistingCredentials()
     }
     
-    // MARK: - Credential Check
+    // MARK: - Credential Check (Shared Logic)
     
     private func checkExistingCredentials() {
         Task {
@@ -66,14 +74,14 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
                 logger.info("Credentials are valid.")
             } catch {
                 logger.error("Credentials check failed: \(error.localizedDescription)")
-                await MainActor.run { isAuthenticated = false }
+                self.isAuthenticated = false // Already on MainActor
                 try? await clearCredentials()
             }
         }
     }
     
     private func verifyCredentials() async throws {
-        // Validate by fetching current user
+        // This assumes a token is already in the Keychain (potentially shared from iOS)
         currentUser = try await mastodonAPIService.fetchCurrentUser()
         isAuthenticated = true
     }
@@ -81,6 +89,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     // MARK: - Authentication Flow
     
     func authenticate(to server: ServerModel) async throws {
+        #if os(iOS)
         guard !isAuthenticating else {
             throw AppError(mastodon: .operationInProgress)
         }
@@ -113,10 +122,16 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         }
         
         isAuthenticating = false
+        #else
+        // watchOS does not initiate this OAuth flow. It relies on shared tokens.
+        logger.warning("Full authentication flow is not supported on watchOS. Check for shared credentials.")
+        throw AppError(message: "Authentication flow not available on this platform.")
+        #endif
     }
     
-    // MARK: - OAuth Config
+    // MARK: - OAuth Config (iOS-specific)
     
+    #if os(iOS)
     private func obtainOAuthConfig(for server: ServerModel) async throws -> OAuthConfig {
         let (existingId, existingSecret) = try await fetchExistingOAuthCredentials()
         if let id = existingId, let secret = existingSecret,
@@ -155,9 +170,10 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         logger.info("Successfully registered and saved new OAuth app")
         return config
     }
+    #endif
     
-    // MARK: - Token Exchange
-    
+    // MARK: - Token Exchange (iOS-specific as part of its auth flow)
+    #if os(iOS)
     func exchangeAuthorizationCode(
         _ code: String,
         config: OAuthConfig,
@@ -204,30 +220,36 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         
         return tokenResp
     }
+    #endif
     
-    // MARK: - Error Handling
+    // MARK: - Error Handling (Shared Logic)
     
     func handleError(_ error: Error) {
         logger.error("Authentication error: \(error.localizedDescription)")
-        alertErrorTimer?.invalidate()
+        alertErrorTimer?.invalidate() // Invalidate existing timer
         
-        alertError = (error as? AppError) ?? AppError(message: "Authentication failed", underlyingError: error)
+        let appErr = (error as? AppError) ?? AppError(message: "Authentication failed", underlyingError: error)
+        self.alertError = appErr // This is fine as class is @MainActor
         
+        // Schedule a new timer
         alertErrorTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            self?.alertError = nil
+            // Ensure update to @MainActor property is done on the main actor
+            // Since the class is @MainActor, direct access to self?.alertError is okay here.
+            // The Swift 6 warning implies the closure itself might not inherit actor context
+            // as expected by the stricter checks. Dispatching explicitly is the safest.
+            DispatchQueue.main.async {
+                 self?.alertError = nil
+            }
         }
         
-        if case .mastodon(.tokenExpired) = (error as? AppError)?.type {
+        if case .mastodon(.tokenExpired) = appErr.type {
             Task { try? await clearCredentials() }
         }
     }
     
-    // MARK: - Web Auth
+    // MARK: - Web Auth (iOS-specific)
     
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        UIApplication.shared.windows.first { $0.isKeyWindow } ?? ASPresentationAnchor()
-    }
-    
+    #if os(iOS)
     func startWebAuthSession(config: OAuthConfig, instanceURL: URL) async throws -> String {
         try await withCheckedThrowingContinuation { cont in
             var comps = URLComponents(url: instanceURL.appendingPathComponent("/oauth/authorize"), resolvingAgainstBaseURL: false)!
@@ -244,7 +266,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
                 return
             }
             
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { // ASWebAuthenticationSession must be started on the main thread
                 let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callbackURL, error in
                     if let err = error {
                         if let ae = err as? ASWebAuthenticationSessionError, ae.code == .canceledLogin {
@@ -262,6 +284,7 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
                     cont.resume(returning: code)
                 }
                 
+                // 'self' conforms to ASWebAuthenticationPresentationContextProviding only on iOS
                 session.presentationContextProvider = self
                 session.prefersEphemeralWebBrowserSession = true
                 if !session.start() {
@@ -271,8 +294,9 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
             }
         }
     }
+    #endif
     
-    // MARK: - User Management
+    // MARK: - User Management (Shared Logic)
     
     private func saveInstanceURL(_ url: URL) async throws {
         try await KeychainHelper.shared.save(url.absoluteString, service: keychainService, account: "baseURL")
@@ -281,7 +305,10 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
     
     private func fetchAndUpdateUser() async throws {
         currentUser = try await mastodonAPIService.fetchCurrentUser()
+        // NotificationCenter might be used differently or not at all on watchOS for this
+        #if os(iOS)
         NotificationCenter.default.post(name: .didAuthenticate, object: self.currentUser)
+        #endif
         logger.info("Updated authenticated user: \(self.currentUser?.username ?? "Unknown")")
     }
     
@@ -307,7 +334,32 @@ class AuthenticationService: NSObject, ObservableObject, ASWebAuthenticationPres
         }
         currentUser = nil
         isAuthenticated = false
+        // NotificationCenter might be used differently or not at all on watchOS
+        #if os(iOS)
         NotificationCenter.default.post(name: .authenticationFailed, object: nil)
+        #endif
         logger.info("Cleared all authentication credentials")
     }
 }
+
+// Conditionally conform to ASWebAuthenticationPresentationContextProviding on iOS
+#if os(iOS)
+extension AuthenticationService: ASWebAuthenticationPresentationContextProviding {
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        // This needs to return the key window.
+        // Ensure this code runs on the main thread.
+        // @MainActor on the class handles this for the method itself.
+        guard let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene else {
+            // Fallback if no active window scene is found (e.g., app is in background)
+            // This might happen if the auth flow is triggered from a background task, which is unusual.
+            // Consider logging this case or returning a default ASPresentationAnchor from a newly created UIWindow if necessary,
+            // though that's more complex and usually not required for typical auth flows.
+            logger.warning("Could not find active UIWindowScene for ASWebAuthenticationSession. Using fallback anchor.")
+            return ASPresentationAnchor()
+        }
+        return windowScene.windows.first { $0.isKeyWindow } ?? ASPresentationAnchor() // Fallback to any window in the scene if no key window.
+    }
+}
+#endif
+
+// Removed the outer #if canImport(UIKit) ... #endif as the conditional compilation is now granular using #if os(iOS).

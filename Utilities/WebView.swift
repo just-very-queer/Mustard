@@ -5,6 +5,7 @@
 //
 
 import SwiftUI
+#if canImport(SafariServices)
 import SafariServices
 import SwiftSoup
 
@@ -34,3 +35,4 @@ struct SafariView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
+#endif
