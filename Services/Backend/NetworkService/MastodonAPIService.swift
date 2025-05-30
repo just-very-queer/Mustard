@@ -79,59 +79,59 @@ public class MastodonAPIService {
     // MARK: - Generic API Request Methods
 
     /// Performs a GET request to an endpoint and decodes the response.
-    func get<T: Decodable>(endpoint: String, queryItems: [URLQueryItem]? = nil, responseType: T.Type) async throws -> T {
+    func get<T: Decodable>(endpoint: String, queryItems: [URLQueryItem]? = nil, responseType: T.Type, timeoutInterval: TimeInterval? = nil) async throws -> T {
         guard let accessToken = await fetchAccessToken() else {
             throw AppError(mastodon: .missingCredentials)
         }
         let url = try await endpointURL(endpoint, queryItems: queryItems)
         let request = try sessionManager.buildRequest(url: url, method: HTTPMethod.get.rawValue, accessToken: accessToken)
-        return try await sessionManager.performRequest(request: request, responseType: responseType)
+        return try await sessionManager.performRequest(request: request, responseType: responseType, timeoutInterval: timeoutInterval)
     }
 
     /// Performs a POST request to an endpoint with a body and decodes the response.
-    func post<T: Decodable>(endpoint: String, body: [String: String]? = nil, contentType: String = "application/json", responseType: T.Type) async throws -> T {
+    func post<T: Decodable>(endpoint: String, body: [String: String]? = nil, contentType: String = "application/json", responseType: T.Type, timeoutInterval: TimeInterval? = nil) async throws -> T {
         guard let accessToken = await fetchAccessToken() else {
             throw AppError(mastodon: .missingCredentials)
         }
         let url = try await endpointURL(endpoint)
         let request = try sessionManager.buildRequest(url: url, method: HTTPMethod.post.rawValue, body: body, contentType: contentType, accessToken: accessToken)
-        return try await sessionManager.performRequest(request: request, responseType: responseType)
+        return try await sessionManager.performRequest(request: request, responseType: responseType, timeoutInterval: timeoutInterval)
     }
 
      /// Performs a POST request and attempts to optionally decode the response (e.g., for like/repost actions).
-     func postOptional<T: Decodable>(endpoint: String, body: [String: String]? = nil, contentType: String = "application/json", responseType: T.Type) async throws -> T? {
+     func postOptional<T: Decodable>(endpoint: String, body: [String: String]? = nil, contentType: String = "application/json", responseType: T.Type, timeoutInterval: TimeInterval? = nil) async throws -> T? {
          guard let accessToken = await fetchAccessToken() else {
              throw AppError(mastodon: .missingCredentials)
          }
          let url = try await endpointURL(endpoint)
          let request = try sessionManager.buildRequest(url: url, method: HTTPMethod.post.rawValue, body: body, contentType: contentType, accessToken: accessToken)
          // Use performRequestOptional which returns nil on decoding failure/empty body
-         return try await sessionManager.performRequestOptional(request: request, responseType: responseType)
+         return try await sessionManager.performRequestOptional(request: request, responseType: responseType, timeoutInterval: timeoutInterval)
      }
 
     // Add PATCH, PUT, DELETE methods similarly if needed
      /// Performs a PATCH request (e.g., for updating profile).
-     func patch<T: Decodable>(endpoint: String, body: [String: String]? = nil, contentType: String = "application/x-www-form-urlencoded", responseType: T.Type) async throws -> T {
+     func patch<T: Decodable>(endpoint: String, body: [String: String]? = nil, contentType: String = "application/x-www-form-urlencoded", responseType: T.Type, timeoutInterval: TimeInterval? = nil) async throws -> T {
          guard let accessToken = await fetchAccessToken() else {
              throw AppError(mastodon: .missingCredentials)
          }
          let url = try await endpointURL(endpoint)
          // Note: Profile updates often use form-urlencoded
          let request = try sessionManager.buildRequest(url: url, method: HTTPMethod.patch.rawValue, body: body, contentType: contentType, accessToken: accessToken)
-         return try await sessionManager.performRequest(request: request, responseType: responseType)
+         return try await sessionManager.performRequest(request: request, responseType: responseType, timeoutInterval: timeoutInterval)
      }
 
 
     // MARK: - Specific Mastodon API Endpoints
 
     // --- Timeline ---
-    func fetchHomeTimeline(maxId: String? = nil, minId: String? = nil, limit: Int? = nil) async throws -> [Post] {
+    func fetchHomeTimeline(maxId: String? = nil, minId: String? = nil, limit: Int? = nil, timeoutInterval: TimeInterval? = 60.0) async throws -> [Post] {
         var query: [URLQueryItem] = []
         if let maxId = maxId { query.append(URLQueryItem(name: "max_id", value: maxId)) }
         if let minId = minId { query.append(URLQueryItem(name: "min_id", value: minId)) }
         if let limit = limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }
 
-        return try await get(endpoint: "/api/v1/timelines/home", queryItems: query.isEmpty ? nil : query, responseType: [Post].self)
+        return try await get(endpoint: "/api/v1/timelines/home", queryItems: query.isEmpty ? nil : query, responseType: [Post].self, timeoutInterval: timeoutInterval)
     }
 
     // --- Statuses (Posts) ---
