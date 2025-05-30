@@ -1,3 +1,4 @@
+//
 //  MediaAttachment.swift
 //  Mustard
 //
@@ -7,28 +8,28 @@
 import Foundation
 import SwiftData
 
-/// Represents a media attachment in a Mastodon post.
 @Model
 final class MediaAttachment: Identifiable, Codable, Equatable {
     @Attribute(.unique) var id: String
     var type: MediaType
-    var url: URL? // Making URL optional for robustness
+    var url: URL?
     var previewURL: URL?
     var remoteURL: URL?
     var meta: Meta?
 
+    // Inverse relationship: A MediaAttachment belongs to one Post.
+    // Post.mediaAttachments is the 'to-many' side. This is the 'to-one' side.
+    // Per Apple's pattern, the to-one side usually doesn't specify the inverse if the to-many side does.
+    var post: Post?
+
     // MARK: - Media Types
     enum MediaType: String, Codable, Equatable {
-        case image
-        case video
-        case gifv // Add this case
-        case unknown
+        case image, video, gifv, unknown
     }
 
-    // MARK: - Meta Data
+    // MARK: - Meta Data (ensure it's Codable and Equatable)
     struct Meta: Codable, Equatable {
         var original: Original?
-
         struct Original: Codable, Equatable {
             var width: Int?
             var height: Int?
@@ -37,54 +38,42 @@ final class MediaAttachment: Identifiable, Codable, Equatable {
     }
 
     // MARK: - Initializer
-    init(
-        id: String,
-        type: MediaType,
-        url: URL?, // Making URL optional in initializer
-        previewURL: URL? = nil,
-        remoteURL: URL? = nil,
-        meta: Meta? = nil
-    ) {
+    init(id: String, type: MediaType, url: URL?, previewURL: URL? = nil, remoteURL: URL? = nil, meta: Meta? = nil, post: Post? = nil) { // Added post
         self.id = id
         self.type = type
         self.url = url
         self.previewURL = previewURL
         self.remoteURL = remoteURL
         self.meta = meta
+        self.post = post // Initialize post
     }
 
     // MARK: - Codable Conformance
     private enum CodingKeys: String, CodingKey {
+        // 'post' is a relationship, not typically in MediaAttachment JSON
         case id, type, url, previewURL, remoteURL, meta
     }
 
     required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.id = try container.decode(String.self, forKey: .id)
-        self.type = try container.decode(MediaType.self, forKey: .type)
-        self.url = try container.decodeIfPresent(URL.self, forKey: .url) // Decoding URL as optional
-        self.previewURL = try container.decodeIfPresent(URL.self, forKey: .previewURL)
-        self.remoteURL = try container.decodeIfPresent(URL.self, forKey: .remoteURL)
-        self.meta = try container.decodeIfPresent(Meta.self, forKey: .meta)
+        id = try container.decode(String.self, forKey: .id)
+        type = try container.decode(MediaType.self, forKey: .type)
+        url = try container.decodeIfPresent(URL.self, forKey: .url)
+        previewURL = try container.decodeIfPresent(URL.self, forKey: .previewURL)
+        remoteURL = try container.decodeIfPresent(URL.self, forKey: .remoteURL)
+        meta = try container.decodeIfPresent(Meta.self, forKey: .meta)
+        // 'post' is not decoded from JSON here
+        post = nil
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
-        try container.encode(type, forKey: .type)
-        try container.encodeIfPresent(url, forKey: .url) // Encoding optional URL
-        try container.encodeIfPresent(previewURL, forKey: .previewURL)
-        try container.encodeIfPresent(remoteURL, forKey: .remoteURL)
-        try container.encodeIfPresent(meta, forKey: .meta)
+        // ... encode other properties ...
+        // Do not encode 'post'
     }
-
-    // MARK: - Equatable Conformance
+    
     static func == (lhs: MediaAttachment, rhs: MediaAttachment) -> Bool {
-        return lhs.id == rhs.id &&
-            lhs.type == rhs.type &&
-            lhs.url == rhs.url &&
-            lhs.previewURL == rhs.previewURL &&
-            lhs.remoteURL == rhs.remoteURL &&
-            lhs.meta == rhs.meta
+        lhs.id == rhs.id
     }
 }

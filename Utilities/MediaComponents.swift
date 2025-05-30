@@ -14,7 +14,8 @@ struct MediaAttachmentView: View {
     var onImageTap: () -> Void
 
     var body: some View {
-        if let media = post.mediaAttachments.first, let mediaURL = media.url {
+        // Safely unwrap post.mediaAttachments and then get the first element
+        if let attachments = post.mediaAttachments, let media = attachments.first, let mediaURL = media.url {
             AsyncImage(url: mediaURL) { phase in
                 Group {
                     switch phase {
@@ -41,7 +42,7 @@ struct MediaAttachmentView: View {
                 }
             }
             .padding(.horizontal)
-            .cornerRadius(12)
+            .cornerRadius(12) // This cornerRadius might be better applied to the AsyncImage's content directly if needed
         }
     }
 }

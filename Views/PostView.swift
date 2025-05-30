@@ -1,95 +1,99 @@
 //
-//  PostView.swift
-//  Mustard
+//  PostView.swift
+//  Mustard
 //
-//  Created by VAIBHAV SRIVASTAVA on 31/01/25.
+//  Created by VAIBHAV SRIVASTAVA on 31/01/25.
 //
 
 import SwiftUI
-// import LinkPresentation // REMOVED: Not directly used in this file's current structure
-// Conditionally import SafariServices for UIKit-based platforms
 #if canImport(UIKit) && !os(watchOS) && !os(tvOS)
 import SafariServices
 #endif
-import SwiftSoup // If needed for HTML parsing in subviews
+import SwiftSoup
 
 // MARK: - PostView (Main View)
 struct PostView: View {
-    // Properties
-    let post: Post
-    @ObservedObject var viewModel: TimelineViewModel // Use the ViewModel directly
-    var viewProfileAction: (User) -> Void // Keep for context-dependent navigation
+    let post: Post          // Outer post, might be a reblog
+    @ObservedObject var viewModel: TimelineViewModel
+    var viewProfileAction: (User) -> Void
 
-    // Local UI State
-    @State private var showFullText = false
     @State private var showImageViewer = false
-    @State private var showBrowserView = false // Assuming this uses post.url
+    @State private var showBrowserView = false
 
-    let interestScore: Double // Added for interest highlighting
+    let interestScore: Double
+
+    // Show original post if reblog, else self
+    private var displayPost: Post {
+        post.reblog ?? post
+    }
+
+    // Account who reblogged (if any)
+    private var rebloggerAccount: Account? {
+        post.reblog != nil ? post.account : nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            // User Header - Pass profile navigation action
-            UserHeaderView(post: post, viewProfileAction: viewProfileAction)
+            UserHeaderView(
+                post: displayPost,
+                rebloggerAccount: rebloggerAccount,
+                viewProfileAction: viewProfileAction
+            )
 
-            // Content
-            PostContentView(post: post, showFullText: $showFullText, currentUserAccountID: viewModel.currentUserAccountID)
+            PostContentView(
+                post: displayPost,
+                currentUserAccountID: viewModel.currentUserAccountID
+            )
 
-            // Media attachments - Trigger local state for viewer
-            MediaAttachmentView(post: post, onImageTap: {
-                self.showImageViewer.toggle()
-            })
+            MediaAttachmentView(
+                post: displayPost,
+                onImageTap: { self.showImageViewer.toggle() }
+            )
 
-            // Post actions - Directly call ViewModel methods
-            PostActionsViewRevised(post: post, viewModel: viewModel)
-                .padding(.top, 5)
+            PostActionsViewRevised(
+                post: displayPost,
+                viewModel: viewModel
+            )
+            .padding(.top, 5)
 
-            // Loading Indicator - Check state from ViewModel
-            if viewModel.isLoading(for: post) {
+            if viewModel.isLoading(forPostId: displayPost.id) {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 5)
             }
         }
         .padding(.vertical, 12)
-        .background(Color(.systemBackground)) // Use adaptive background
+        .background(Color(.systemBackground))
         .cornerRadius(16)
         .padding(.horizontal, 8)
         .shadow(color: .primary.opacity(0.05), radius: 8, x: 0, y: 3)
         .dynamicTypeSize(.medium)
-        // Sheet for FullScreenImageView (Uses local state)
         .sheet(isPresented: $showImageViewer) {
-            if let imageURL = post.mediaAttachments.first?.url {
+            if let imageURL = displayPost.mediaAttachments?.first?.url {
                 FullScreenImageView(imageURL: imageURL, isPresented: $showImageViewer)
             }
         }
-        // Sheet for WebView (Uses local state and post data)
         .sheet(isPresented: $showBrowserView) {
-            if let urlString = post.url, let url = URL(string: urlString) {
-                #if canImport(UIKit) && !os(watchOS) && !os(tvOS)
-                SafariView(url: url) // Assumes SafariView is defined conditionally elsewhere
-                #else
-                // Fallback for platforms where SafariView (SFSafariViewController) is not available
-                // On macOS, you might use Link to open in default browser, or a WKWebView wrapper
+            if let urlString = displayPost.url, let url = URL(string: urlString) {
+    #if canImport(UIKit) && !os(watchOS) && !os(tvOS)
+                SafariView(url: url)
+    #else
                 Text("Web browser preview not available on this platform. URL: \(url.absoluteString)")
                     .padding()
-                // Or, to open in the default browser on macOS:
-                // Link("Open URL", destination: url).padding()
-                #endif
+    #endif
             }
         }
-        .interestHighlight(isActive: interestScore > 5.0, score: interestScore) // Threshold = 5.0
+        .interestHighlight(isActive: interestScore > 5.0, score: interestScore)
     }
 }
 
 // MARK: - Revised PostActionsView
 struct PostActionsViewRevised: View {
     let post: Post
-    @ObservedObject var viewModel: TimelineViewModel // Inject ViewModel
+    @ObservedObject var viewModel: TimelineViewModel
 
     var body: some View {
         HStack {
-            // Like Button
             Button {
                 viewModel.toggleLike(for: post)
             } label: {
@@ -103,21 +107,19 @@ struct PostActionsViewRevised: View {
 
             Spacer()
 
-            // Repost Button
             Button {
                 viewModel.toggleRepost(for: post)
             } label: {
-                Image(systemName: post.isReblogged ? "arrow.2.squarepath" : "arrow.2.squarepath")
+                Image(systemName: "arrow.2.squarepath")
                     .foregroundColor(post.isReblogged ? .green : .gray)
-                 Text("\(post.reblogsCount)")
-                     .font(.caption)
-                     .foregroundColor(.gray)
+                Text("\(post.reblogsCount)")
+                    .font(.caption)
+                    .foregroundColor(.gray)
             }
             .buttonStyle(PlainButtonStyle())
 
             Spacer()
 
-            // Comment Button - Shows sheet via ViewModel
             Button {
                 viewModel.showComments(for: post)
             } label: {
@@ -131,14 +133,13 @@ struct PostActionsViewRevised: View {
 
             Spacer()
 
-            // More Options Button (Example: Share)
             if let urlString = post.url, let url = URL(string: urlString) {
                 ShareLink(item: url) {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundColor(.gray)
                 }
             } else {
-                 Image(systemName: "square.and.arrow.up")
+                Image(systemName: "square.and.arrow.up")
                     .foregroundColor(.gray.opacity(0.5))
             }
         }
@@ -146,38 +147,57 @@ struct PostActionsViewRevised: View {
     }
 }
 
-// MARK: - Subviews
+// MARK: - PostContentView
 
 struct PostContentView: View {
     let post: Post
-    @Binding var showFullText: Bool
     let currentUserAccountID: String?
 
-    @State private var displayedAttributedString: AttributedString? = nil
-    @State private var plainTextContentForShowMore: String = ""
+    // For dynamically sizing the AttributedTextView
+    @State private var desiredTextHeight: CGFloat = 0
+    // State to hold the computed NSAttributedString
+    @State private var attributedContent: NSAttributedString = NSAttributedString()
+
     @State private var detectedLinkCard: Card? = nil
     @State private var isLoadingLinkPreview: Bool = false
 
+    // Environment to detect color scheme for theming
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let attrString = displayedAttributedString {
-                Text(attrString)
-                    .font(.body)
-                    .lineLimit(showFullText ? nil : 3)
-                    .foregroundColor(.primary)
-                    .padding(.horizontal)
-            } else {
-                Text(HTMLUtils.convertHTMLToPlainText(html: post.content))
-                    .font(.body)
-                    .lineLimit(showFullText ? nil : 3)
-                    .foregroundColor(.primary)
-                    .padding(.horizontal)
+            // If the post has HTML content, render it via AttributedTextView
+            if !post.content.isEmpty {
+                GeometryReader { geometry in
+                    AttributedTextView(
+                        attributedString: attributedContent, // Use the state variable
+                        maxLayoutWidth: geometry.size.width,
+                        onLinkTap: { url in
+                            // Log the tap interaction
+                            RecommendationService.shared.logInteraction(
+                                statusID: post.id,
+                                actionType: .linkOpen,
+                                accountID: currentUserAccountID,
+                                linkURL: url.absoluteString
+                            )
+
+                            // If it's a web URL, open in browser
+    #if canImport(UIKit) && !os(watchOS)
+                            if url.scheme?.starts(with: "http") == true || url.scheme?.starts(with: "https") == true {
+                                UIApplication.shared.open(url)
+                            }
+    #endif
+                            // You can add more logic for mention URLs (e.g., navigate to profile)
+                        },
+                        desiredHeight: $desiredTextHeight
+                    )
+                    .frame(minHeight: desiredTextHeight)
+                }
+                .frame(minHeight: desiredTextHeight)
+                .padding(.horizontal)
             }
 
-            if !showFullText && plainTextContentForShowMore.count > 200 {
-                 ShowMoreButton(showFullText: $showFullText)
-            }
-
+            // Link preview (if any)
             if isLoadingLinkPreview {
                 ProgressView()
                     .padding(.horizontal)
@@ -190,12 +210,13 @@ struct PostContentView: View {
         }
         .padding(.vertical, 5)
         .task(id: post.id) {
-            self.displayedAttributedString = HTMLUtils.attributedStringFromHTML(htmlString: post.content)
-            self.plainTextContentForShowMore = HTMLUtils.convertHTMLToPlainText(html: post.content)
+            // Compute the attributed string on a background thread as it can be heavy
+            // and update the state variable on the main thread.
+            await MainActor.run {
+                self.attributedContent = HTMLUtils.nsAttributedStringFromHTML(htmlString: post.content)
+            }
 
-            self.detectedLinkCard = nil
-            self.isLoadingLinkPreview = false
-
+            // Log "view" interaction
             RecommendationService.shared.logInteraction(
                 statusID: post.id,
                 actionType: .view,
@@ -205,15 +226,18 @@ struct PostContentView: View {
                 tags: post.tags?.compactMap { $0.name }
             )
 
+            // Fetch or use existing link preview
+            self.detectedLinkCard = nil
+            self.isLoadingLinkPreview = false
+
             if let existingCard = post.card {
                 self.detectedLinkCard = existingCard
             } else {
                 let textToDetect = post.content
-                if let firstURL = detectFirstURL(in: textToDetect) {
+                if !textToDetect.isEmpty, let firstURL = detectFirstURL(in: textToDetect) {
                     self.isLoadingLinkPreview = true
                     let fetchedCard = await HTMLUtils.fetchLinkMetadata(from: firstURL)
                     if Task.isCancelled { return }
-                    
                     self.detectedLinkCard = fetchedCard
                     self.isLoadingLinkPreview = false
                 }
@@ -221,6 +245,7 @@ struct PostContentView: View {
         }
     }
 
+    /// Detects the first URL in a given string
     private func detectFirstURL(in text: String) -> URL? {
         do {
             let detector = try NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
@@ -233,6 +258,8 @@ struct PostContentView: View {
     }
 }
 
+// MARK: - ShowMoreButton (No longer used, but kept for reference)
+/*
 struct ShowMoreButton: View {
     @Binding var showFullText: Bool
 
@@ -246,95 +273,58 @@ struct ShowMoreButton: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+*/
 
 struct UserHeaderView: View {
     let post: Post
+    let rebloggerAccount: Account?
     var viewProfileAction: (User) -> Void
 
     var body: some View {
-        HStack {
-            AvatarView(url: post.account?.avatar, size: 44)
-                .onTapGesture {
-                    if let user = post.account?.toUser() {
-                        viewProfileAction(user)
-                    }
+        VStack(alignment: .leading, spacing: 4) {
+            if let reblogger = rebloggerAccount {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.2.squarepath")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    AvatarView(url: reblogger.avatar, size: 20)
+                    Text(reblogger.display_name ?? reblogger.username)
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
+                    Text("reblogged")
+                        .font(.caption)
+                        .foregroundColor(.gray)
                 }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(post.account?.display_name ?? post.account?.username ?? "Unknown User")
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                Text("@\(post.account?.acct ?? "unknown")")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Text(post.createdAt.formatted(date: .abbreviated, time: .shortened))
-                .font(.caption)
-                .foregroundColor(.gray)
-                .lineLimit(1)
-        }
-        .padding(.horizontal)
-        .padding(.top, 5)
-    }
-}
-
-struct ExpandedCommentsSection: View {
-    let post: Post
-    @Binding var isExpanded: Bool
-    @Binding var commentText: String
-    @ObservedObject var viewModel: TimelineViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Divider().padding(.horizontal)
-
-            Text("Replies")
-                .font(.headline)
-                .padding(.horizontal)
-                .foregroundColor(.primary)
-
-            if let replies = post.replies, !replies.isEmpty {
-                LazyVStack(spacing: 0) {
-                    ForEach(replies) { reply in
-                        VStack(alignment: .leading, spacing: 5) {
-                            UserHeaderView(post: reply, viewProfileAction: { user in
-                                viewModel.navigateToProfile(user)
-                        })
-                            PostContentView(post: reply, showFullText: .constant(true), currentUserAccountID: viewModel.currentUserAccountID)
-                    }
-                    .padding(.bottom, 5)
-                    Divider().padding(.leading, 60)
-                    }
-                }
-            } else {
-                Text("No replies yet.")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .padding(.horizontal)
-                    .padding(.bottom, 10)
+                .padding(.leading)
+                .padding(.bottom, 2)
             }
 
             HStack {
-                TextField("Add a reply...", text: $commentText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .padding(8)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
+                AvatarView(url: post.account?.avatar, size: 44)
+                    .onTapGesture {
+                        if let user = post.account?.toUser() {
+                            viewProfileAction(user)
+                        }
+                    }
 
-                Button {
-                    viewModel.comment(on: post, content: commentText)
-                } label: {
-                    Image(systemName: "paperplane.fill")
-                        .foregroundColor(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .blue)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(post.account?.display_name ?? post.account?.username ?? "Unknown User")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                    Text("@\(post.account?.acct ?? "unknown")")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
                 }
-                .disabled(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Spacer()
+                Text(post.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .lineLimit(1)
             }
             .padding(.horizontal)
-            .padding(.bottom, 5)
         }
-        .padding(.vertical, 10)
-        .dynamicTypeSize(.medium)
+        .padding(.top, 5)
     }
 }

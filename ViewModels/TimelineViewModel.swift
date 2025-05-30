@@ -262,7 +262,7 @@ final class TimelineViewModel: ObservableObject {
         // Store original values for potential revert
         let originalIsFavourited = posts[index].isFavourited
         let originalFavouritesCount = posts[index].favouritesCount
-
+        
         // Optimistic update
         posts[index].isFavourited.toggle()
         posts[index].favouritesCount += posts[index].isFavourited ? 1 : -1
@@ -270,7 +270,7 @@ final class TimelineViewModel: ObservableObject {
         // Explicitly signal change to SwiftUI for the main posts array
         let updatedPostForUIMain = posts[index]
         posts[index] = updatedPostForUIMain
-
+        
         if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
             // Optimistic update for topPosts
             topPosts[topIndex].isFavourited = posts[index].isFavourited
@@ -304,7 +304,7 @@ final class TimelineViewModel: ObservableObject {
                 posts[index].favouritesCount = originalFavouritesCount
                 let revertedPostForUIMain = posts[index]
                 posts[index] = revertedPostForUIMain
-
+                
                 if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
                     topPosts[topIndex].isFavourited = originalIsFavourited
                     topPosts[topIndex].favouritesCount = originalFavouritesCount
@@ -322,7 +322,7 @@ final class TimelineViewModel: ObservableObject {
         // Store original values for potential revert
         let originalIsReblogged = posts[index].isReblogged
         let originalReblogsCount = posts[index].reblogsCount
-
+        
         // Optimistic update
         posts[index].isReblogged.toggle()
         posts[index].reblogsCount += posts[index].isReblogged ? 1 : -1
@@ -330,7 +330,7 @@ final class TimelineViewModel: ObservableObject {
         // Explicitly signal change to SwiftUI for the main posts array
         let updatedPostForUIMain = posts[index]
         posts[index] = updatedPostForUIMain
-
+        
         if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
             // Optimistic update for topPosts
             topPosts[topIndex].isReblogged = posts[index].isReblogged
@@ -364,7 +364,7 @@ final class TimelineViewModel: ObservableObject {
                 posts[index].reblogsCount = originalReblogsCount
                 let revertedPostForUIMain = posts[index]
                 posts[index] = revertedPostForUIMain
-
+                
                 if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
                     topPosts[topIndex].isReblogged = originalIsReblogged
                     topPosts[topIndex].reblogsCount = originalReblogsCount
@@ -388,13 +388,13 @@ final class TimelineViewModel: ObservableObject {
         if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
             originalRepliesCountTop = topPosts[topIndex].repliesCount
         }
-
+        
         updateLoadingState(for: post.id, isLoading: true)
         Task {
             defer { updateLoadingState(for: post.id, isLoading: false) }
             do {
                 _ = try await postActionService.comment(postID: post.id, content: content)
-
+                
                 // Optimistic update for repliesCount
                 if let index = posts.firstIndex(where: { $0.id == post.id }) {
                     posts[index].repliesCount += 1
@@ -445,6 +445,7 @@ final class TimelineViewModel: ObservableObject {
     // MARK: - Loading State Management
     
     private func initializeLoadingStates(for newPosts: [Post]) {
+        // No changes needed here, already uses post.id
         var newStates = postLoadingStates
         for post in newPosts where newStates[post.id] == nil {
             newStates[post.id] = false
@@ -452,11 +453,13 @@ final class TimelineViewModel: ObservableObject {
         postLoadingStates = newStates
     }
     
-    func isLoading(for post: Post) -> Bool {
-        postLoadingStates[post.id] ?? false
+    // CORRECTED METHOD:
+    func isLoading(forPostId postId: String) -> Bool {
+        postLoadingStates[postId] ?? false
     }
     
     private func updateLoadingState(for postId: String, isLoading: Bool) {
+        // No changes needed here, already uses String postId
         postLoadingStates[postId] = isLoading
     }
     
@@ -485,5 +488,25 @@ final class TimelineViewModel: ObservableObject {
     
     func navigateToDetail(for post: Post) {
         navigationPath.append(post)
+    }
+}
+
+// MARK: - Context Fetching Extension
+
+extension TimelineViewModel {
+    func fetchContext(for post: Post) async -> PostContext? {
+        logger.debug("Fetching context for post ID: \(post.id)")
+        do {
+            // timelineService.fetchPostContext(postId:) is already defined
+            // and calls mastodonAPIService.fetchPostContext(postId:)
+            let context = try await timelineService.fetchPostContext(postId: post.id)
+            logger.debug("Successfully fetched context for post ID: \(post.id). Ancestors: \(context.ancestors.count), Descendants (replies): \(context.descendants.count)")
+            return context
+        } catch {
+            logger.error("Failed to fetch context for post ID \(post.id): \(error.localizedDescription)")
+            // Optionally, you can set an error on the ViewModel to be displayed to the user
+            // self.alertError = AppError(message: "Could not load replies for the post.", underlyingError: error)
+            return nil // Return nil if fetching context fails
+        }
     }
 }

@@ -3,7 +3,7 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 07/02/25.
-// (REVISED: Added missing supporting view definitions)
+// (REVISED: Added missing supporting view definitions and reply loading for comment sheet)
 
 import SwiftUI
 import OSLog
@@ -11,35 +11,41 @@ import OSLog
 // MARK: - Supporting View: TrendingPostCardView
 
 struct TrendingPostCardView: View {
-    let post: Post
+    // This is the Post object whose content should be displayed (e.g., post.reblog ?? post)
+    private var displayPost: Post {
+        return post.reblog ?? post
+    }
+    
+    let post: Post // The outer post object
 
     private let lineLimit = 3
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Mini Header
+            // Mini Header - Shows original author of the content
             HStack {
-                AvatarView(url: post.account?.avatar, size: 30)
+                AvatarView(url: displayPost.account?.avatar, size: 30)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(post.account?.display_name ?? post.account?.username ?? "Unknown")
+                    Text(displayPost.account?.display_name ?? displayPost.account?.username ?? "Unknown")
                         .font(.caption).bold().lineLimit(1)
-                    Text("@\(post.account?.acct ?? "unknown")")
+                    Text("@\(displayPost.account?.acct ?? "unknown")")
                         .font(.caption2).foregroundColor(.gray).lineLimit(1)
                 }
                 Spacer()
             }
             .padding([.horizontal, .top], 8)
 
-            // Content Snippet
-            Text(HTMLUtils.convertHTMLToPlainText(html: post.content))
+            // Content Snippet - Shows original content
+            Text(HTMLUtils.convertHTMLToPlainText(html: displayPost.content))
                 .font(.footnote)
                 .lineLimit(lineLimit)
                 .padding(.horizontal, 8)
 
-            // Media Thumbnail
-            if let firstAttachment = post.mediaAttachments.first,
+            // Media Thumbnail - Shows original media
+            // CORRECTED LINE: Safely unwrap displayPost.mediaAttachments
+            if let attachments = displayPost.mediaAttachments, let firstAttachment = attachments.first,
                let previewUrl = firstAttachment.previewURL ?? firstAttachment.url {
-                Spacer()
+                Spacer() // Pushes AsyncImage to the bottom if content is short
                 AsyncImage(url: previewUrl) { phase in
                     if let image = phase.image {
                         image.resizable().aspectRatio(contentMode: .fill).frame(height: 60).clipped()
@@ -47,24 +53,24 @@ struct TrendingPostCardView: View {
                         Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 60)
                             .overlay(Image(systemName: "photo").foregroundColor(.gray))
                     } else {
-                        Rectangle().fill(Color.gray.opacity(0.1)).frame(height: 60)
+                        Rectangle().fill(Color.gray.opacity(0.1)).frame(height: 60) // Placeholder while loading
                     }
                 }
             } else {
-                 Spacer()
+                 Spacer() // Ensure consistent height if no media
             }
 
-            // Footer Counts
+            // Footer Counts - Shows original post's counts
             HStack {
                  Spacer()
                  Image(systemName: "heart").font(.caption2).foregroundColor(.gray)
-                 Text("\(post.favouritesCount)").font(.caption2).foregroundColor(.gray)
+                 Text("\(displayPost.favouritesCount)").font(.caption2).foregroundColor(.gray)
                  Image(systemName: "arrow.2.squarepath").font(.caption2).foregroundColor(.gray).padding(.leading, 5)
-                 Text("\(post.reblogsCount)").font(.caption2).foregroundColor(.gray)
+                 Text("\(displayPost.reblogsCount)").font(.caption2).foregroundColor(.gray)
             }
             .padding([.horizontal, .bottom], 8)
         }
-        .frame(width: 200, height: 170)
+        .frame(width: 200, height: 170) // Fixed height for consistency
         .background(Color(.secondarySystemBackground))
         .cornerRadius(10)
         .overlay(
@@ -78,14 +84,13 @@ struct TrendingPostCardView: View {
 
 struct PostFooterView: View {
     let isLoadingMore: Bool
-    @ObservedObject var viewModel: TimelineViewModel // Pass only if actions are needed directly here
+    // Removed viewModel, as it's not directly used for actions here
+    // @ObservedObject var viewModel: TimelineViewModel
 
     var body: some View {
         if isLoadingMore {
-            HStack { Spacer(); ProgressView(); Spacer() }.padding()
+            HStack { Spacer(); ProgressView("Loading more..."); Spacer() }.padding()
         } else {
-            // Provides a consistent space at the bottom when not loading more
-            // Adjust height as needed for visual spacing
             Spacer().frame(height: 40)
         }
     }
@@ -96,17 +101,18 @@ struct PostFooterView: View {
 
 struct TimelineContentView: View {
     @ObservedObject var viewModel: TimelineViewModel
-    // Logout button removed, so authViewModel is likely not needed directly here anymore
-    // @EnvironmentObject var authViewModel: AuthenticationViewModel
 
     @State private var isShowingFullScreenImage = false
     @State private var selectedImageURL: URL?
+    
+    // State for replies in the comment sheet
+    @State private var sheetReplies: [Post]? = nil
+    @State private var sheetIsLoadingReplies: Bool = false
 
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "TimelineContentView")
 
     var body: some View {
         VStack(spacing: 0) {
-            // --- Filter Picker ---
             Picker("Filter", selection: $viewModel.selectedFilter) {
                 ForEach(TimelineViewModel.TimelineFilter.allCases) { filter in
                     Text(filter.rawValue).tag(filter)
@@ -116,23 +122,18 @@ struct TimelineContentView: View {
             .padding(.horizontal)
             .padding(.bottom, 8)
 
-            // --- Main ScrollView ---
             ScrollView {
                 VStack(spacing: 16) {
-                    // --- Top Posts Section ---
                     topPostsSection
                         .padding(.top, 10)
 
-                    // --- Divider ---
                     if !viewModel.posts.isEmpty {
                         Divider().padding(.horizontal)
                     }
-
-                    // --- Main Timeline Section ---
                     timelineSection
                 }
             }
-            .task {
+            .task { // Replaces onAppear for async work tied to view lifecycle
                 if viewModel.posts.isEmpty && !viewModel.isLoading {
                     await viewModel.initializeTimelineData()
                 }
@@ -141,49 +142,70 @@ struct TimelineContentView: View {
         .refreshable {
             await viewModel.refreshTimeline()
         }
-        // --- Sheet Modifiers ---
         .sheet(isPresented: $isShowingFullScreenImage) {
             if let imageURL = selectedImageURL {
                 FullScreenImageView(imageURL: imageURL, isPresented: $isShowingFullScreenImage)
             }
         }
         .sheet(isPresented: $viewModel.showingCommentSheet) {
-             if let post = viewModel.selectedPostForComments {
-                  NavigationView {
-                      ExpandedCommentsSection(
-                          post: post,
-                          isExpanded: .constant(true),
-                          commentText: $viewModel.commentText,
-                          viewModel: viewModel
-                      )
-                      .navigationTitle("Reply")
-                      .navigationBarTitleDisplayMode(.inline)
-                      .toolbar{
-                          ToolbarItem(placement: .navigationBarLeading) {
-                              Button("Cancel") { viewModel.showingCommentSheet = false }
-                          }
-                          ToolbarItem(placement: .navigationBarTrailing) {
-                              Button("Post") {
-                                  viewModel.comment(on: post, content: viewModel.commentText)
-                              }
-                              .disabled(viewModel.commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                          }
-                      }
-                  }
-             }
+            if let postForSheet = viewModel.selectedPostForComments {
+                let targetPostForContext = postForSheet.reblog ?? postForSheet
+                
+                NavigationView {
+                    // Assuming ExpandedCommentsSection is defined in PostView.swift or PostDetailView.swift
+                    ExpandedCommentsSection(
+                        post: targetPostForContext,
+                        isExpanded: .constant(true),
+                        commentText: $viewModel.commentText,
+                        viewModel: viewModel,
+                        repliesToDisplay: sheetReplies,
+                        isLoadingReplies: $sheetIsLoadingReplies,
+                        currentDetailPost: targetPostForContext // <<< FIXED: Added missing argument
+                    )
+                    .navigationTitle("Reply to @\(targetPostForContext.account?.acct ?? "user")")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button("Cancel") {
+                                viewModel.showingCommentSheet = false
+                                sheetReplies = nil // Reset sheet-specific state
+                                sheetIsLoadingReplies = false
+                            }
+                        }
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Post") {
+                                viewModel.comment(on: targetPostForContext, content: viewModel.commentText)
+                                // Clearing commentText and potentially refreshing replies is handled in TimelineViewModel or PostDetailView's ExpandedCommentSection
+                            }
+                            .disabled(viewModel.commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .task(id: targetPostForContext.id) { // Load replies when the sheet appears or target post changes
+                        sheetIsLoadingReplies = true
+                        sheetReplies = nil // Clear old replies
+                        if let context = await viewModel.fetchContext(for: targetPostForContext) {
+                            sheetReplies = context.descendants
+                        } else {
+                            sheetReplies = [] // Default to empty on error
+                        }
+                        sheetIsLoadingReplies = false
+                    }
+                }
+                .onDisappear { // Ensure state is reset when the sheet is dismissed
+                    sheetReplies = nil
+                    sheetIsLoadingReplies = false
+                }
+            }
         }
-        // --- Navigation Destinations ---
         .navigationDestination(for: User.self) { user in
-             ProfileView(user: user) // Assumes ProfileViewModel injected higher up
+             ProfileView(user: user)
         }
         .navigationDestination(for: Post.self) { post in
-             PostDetailView(post: post, viewModel: viewModel, showDetail: .constant(true)) // Needs fixing if showDetail binding is incorrect
+             PostDetailView(post: post, viewModel: viewModel, showDetail: .constant(true))
         }
-        // --- Error Alert ---
         .alert(item: $viewModel.alertError) { error in
              Alert(title: Text("Error"), message: Text(error.message), dismissButton: .default(Text("OK")))
          }
-         // --- Loading Overlay ---
          .overlay {
              if viewModel.isLoading && viewModel.posts.isEmpty {
                  ProgressView("Loading \(viewModel.selectedFilter.rawValue)...")
@@ -193,9 +215,8 @@ struct TimelineContentView: View {
                      .transition(.opacity)
              }
          }
-    } // End of body
+    }
 
-    // MARK: - Top Posts Section
     @ViewBuilder
     private var topPostsSection: some View {
         if !viewModel.topPosts.isEmpty {
@@ -207,28 +228,28 @@ struct TimelineContentView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 15) {
                         ForEach(viewModel.topPosts) { post in
-                            NavigationLink(value: post) {
-                                 TrendingPostCardView(post: post) // Use the defined view
+                            NavigationLink(value: post.reblog ?? post) {
+                                 TrendingPostCardView(post: post)
                             }
                             .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal)
-                    .scrollTargetLayout()
+                    .scrollTargetLayout() // For newer iOS if targeting page scrolling behavior
                 }
-                .frame(height: 180)
+                .frame(height: 180) // Ensure consistent height
             }
             .padding(.bottom, 10)
-        } else if viewModel.isLoading {
+        } else if viewModel.isLoading && viewModel.selectedFilter != .trending { // Show placeholder only if not on trending tab already
+             // Placeholder for loading state of top posts if needed
              HStack { Spacer(); ProgressView(); Spacer() }
              .frame(height: 180)
              .padding(.bottom, 10)
         }
     }
 
-    // MARK: - Main Timeline Section
     private var timelineSection: some View {
-        LazyVStack(spacing: 0) {
+        LazyVStack(spacing: 0) { // Use LazyVStack for performance
             if viewModel.posts.isEmpty && !viewModel.isLoading {
                  Text(viewModel.selectedFilter == .latest ? "Your timeline is empty." : "No posts found for \(viewModel.selectedFilter.rawValue).")
                     .foregroundColor(.gray)
@@ -236,33 +257,27 @@ struct TimelineContentView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
             } else {
                 ForEach(viewModel.posts) { post in
-                    NavigationLink(value: post) {
+                    NavigationLink(value: post.reblog ?? post) { // Navigate to the content post
                          PostView(
-                             post: post,
+                             post: post, // Pass the wrapper post (which might be a reblog)
                              viewModel: viewModel,
                              viewProfileAction: { user in
                                  viewModel.navigateToProfile(user)
                              },
-                             interestScore: 0.0
+                             interestScore: 0.0 // Replace with actual score if available
                          )
-                         .onImageTap { imageUrl in
-                             if let url = imageUrl {
-                                 self.selectedImageURL = url
-                                 self.isShowingFullScreenImage = true
-                             }
-                         }
+                         // Removed .onImageTap as it's handled within PostView/MediaAttachmentView
                      }
-                     .buttonStyle(.plain)
+                     .buttonStyle(.plain) // Remove default button styling for the link
 
-                    CustomDivider().padding(.horizontal)
+                    CustomDivider().padding(.horizontal) // Visual separator
 
-                    // Pagination Trigger
-                    if post.id == viewModel.posts.last?.id && !viewModel.isFetchingMore {
-                         PostFooterView(isLoadingMore: viewModel.isFetchingMore, viewModel: viewModel)
+                    // Pagination trigger
+                    if post.id == viewModel.posts.last?.id && !viewModel.isFetchingMore && (viewModel.selectedFilter == .latest || viewModel.selectedFilter == .recommended) {
+                         PostFooterView(isLoadingMore: viewModel.isFetchingMore) // Shows loading or spacer
                              .padding(.vertical)
                              .onAppear {
-                                 logger.debug("Last item appeared, fetching more.")
-                                 // FIX: Wrap the async call in a Task
+                                 logger.debug("Last item appeared for filter \(viewModel.selectedFilter.rawValue), fetching more.")
                                  Task {
                                      await viewModel.fetchMoreTimeline()
                                  }
@@ -270,8 +285,8 @@ struct TimelineContentView: View {
                      }
                 }
 
-                // Loading indicator
-                 if viewModel.isFetchingMore {
+                // Show a loading indicator at the bottom if more posts are being fetched
+                 if viewModel.isFetchingMore && (viewModel.selectedFilter == .latest || viewModel.selectedFilter == .recommended) {
                      ProgressView().padding(.vertical).frame(maxWidth: .infinity)
                  }
             }
@@ -279,17 +294,7 @@ struct TimelineContentView: View {
     }
 }
 
-
-// MARK: - PostView Extension (Example for Image Tap)
-// Add this extension or integrate the `onImageTap` callback into your existing PostView definition
-
-extension PostView {
-    func onImageTap(_ action: @escaping (URL?) -> Void) -> some View {
-        // Modify PostView's internal structure to detect taps on its MediaAttachmentView
-        // and call the provided action. This is a conceptual example.
-        // You'll need to adapt this based on PostView's actual implementation.
-        // For instance, find the MediaAttachmentView inside PostView and add an onTapGesture there
-        // that calls `action(post.mediaAttachments.first?.url)`.
-        self // Return self for modifier chaining
-    }
-}
+// Ensure supporting views like AvatarView, FullScreenImageView, CustomDivider, HTMLUtils,
+// and the Post/User/Account models are correctly defined elsewhere.
+// The ExpandedCommentsSection definition is assumed to be in PostDetailView.swift
+// or another accessible location.

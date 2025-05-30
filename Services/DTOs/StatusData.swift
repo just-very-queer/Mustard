@@ -11,10 +11,10 @@ import SwiftData
 // MARK: - PostData
 
 /// Represents the data structure of a Mastodon post received from the API.
-struct PostData: Codable {
+class PostData: Codable { // Changed from struct to class
     let id: String
     let content: String
-    let created_at: String? // Keep as String for manual parsing
+    let created_at: String?
     let account: AccountData
     let media_attachments: [MediaAttachmentData]
     let favourited: Bool?
@@ -28,28 +28,57 @@ struct PostData: Codable {
     let application: ApplicationData?
     let mentions: [MentionData]?
     let tags: [TagData]?
+    let reblog: PostData? // This is now allowed because PostData is a class
+
+    // Since PostData is now a class, we need an initializer if we were to create it manually.
+    // However, for Codable conformance and decoding from JSON, this explicit init is not strictly
+    // necessary if all properties are non-optional or have defaults, and are settable (vars or initialized).
+    // But it's good practice for classes. For 'let' properties, they must be set in an init.
+    init(id: String, content: String, created_at: String?, account: AccountData, media_attachments: [MediaAttachmentData], favourited: Bool?, reblogged: Bool?, reblogs_count: Int, favourites_count: Int, replies_count: Int, url: String?, uri: String?, visibility: String?, application: ApplicationData?, mentions: [MentionData]?, tags: [TagData]?, reblog: PostData?) {
+        self.id = id
+        self.content = content
+        self.created_at = created_at
+        self.account = account
+        self.media_attachments = media_attachments
+        self.favourited = favourited
+        self.reblogged = reblogged
+        self.reblogs_count = reblogs_count
+        self.favourites_count = favourites_count
+        self.replies_count = replies_count
+        self.url = url
+        self.uri = uri
+        self.visibility = visibility
+        self.application = application
+        self.mentions = mentions
+        self.tags = tags
+        self.reblog = reblog
+    }
+    
+    // Codable automatically synthesizes init(from: Decoder) and encode(to: Encoder)
+    // for classes as well, provided all stored properties are Codable.
 
     /// Converts `PostData` to the app's `Post` model.
     func toPost(instanceURL: URL) -> Post? {
-        // Decode createdAt safely
         let createdDate: Date
         if let createdAtString = created_at,
-           let parsedDate = NetworkSessionManager.iso8601DateFormatter.date(from: createdAtString) { // Using NetworkSessionManager
+           let parsedDate = NetworkSessionManager.iso8601DateFormatter.date(from: createdAtString) {
             createdDate = parsedDate
         } else {
             print("Invalid or missing date format for post \(id), defaulting to current date.")
-            createdDate = Date() // Default value if key is missing or invalid
+            createdDate = Date()
         }
 
         let acc = account.toAccount(instanceURL: instanceURL)
         let attachments = media_attachments.map { $0.toMediaAttachment() }
         let postMentions = mentions?.map { $0.toMention() } ?? []
         let postTags = tags?.map { $0.toTag() } ?? []
+        
+        let rebloggedPost = self.reblog?.toPost(instanceURL: instanceURL)
 
         return Post(
             id: id,
             content: content,
-            createdAt: createdDate, // Always valid
+            createdAt: createdDate,
             account: acc,
             mediaAttachments: attachments,
             isFavourited: favourited ?? false,
@@ -59,15 +88,14 @@ struct PostData: Codable {
             repliesCount: replies_count,
             mentions: postMentions,
             tags: postTags,
-            card: nil, // Pass nil for card
-            url: self.url // Pass the url from PostData
+            card: nil,
+            url: self.url,
+            reblog: rebloggedPost
         )
     }
 }
 
-// MARK: - AccountData
-
-/// Represents the account data within a Mastodon post.
+// MARK: - AccountData (remains a struct)
 struct AccountData: Codable {
     let id: String
     let username: String
@@ -90,7 +118,6 @@ struct AccountData: Codable {
     let discoverable: Bool?
     let suspended: Bool?
 
-    /// Converts `AccountData` to the app's `Account` model.
     func toAccount(instanceURL: URL) -> Account {
         return Account(
             id: id,
@@ -113,7 +140,7 @@ struct AccountData: Codable {
     }
 }
 
-// MARK: - Supporting Models
+// MARK: - Supporting Models (remain structs)
 
 struct MediaAttachmentData: Codable {
     let id: String
@@ -181,9 +208,8 @@ struct FieldData: Codable {
     let verified_at: String?
 
     func toField() -> Field {
-        // Use centralized date formatter for verification date
         let verifiedDate = verified_at.flatMap {
-            NetworkSessionManager.iso8601DateFormatter.date(from: $0) // Using NetworkSessionManager
+            NetworkSessionManager.iso8601DateFormatter.date(from: $0)
         }
         
         return Field(
