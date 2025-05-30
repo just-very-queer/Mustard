@@ -28,7 +28,8 @@ class InstanceModel: Identifiable {
     var statuses: String?
     var connections: String?
     var openRegistrations: Bool?
-    var info: InstanceInformationModel?  // Nested Model
+    // Relationship to the corrected InstanceInformationModel
+    @Relationship(deleteRule: .cascade) var info: InstanceInformationModel?
     var thumbnail: String?
     var thumbnailProxy: String?
     var activeUsers: Int?
@@ -64,7 +65,6 @@ class InstanceModel: Identifiable {
         self.instanceDescription = instanceDescription
     }
 
-    // Convenience initializer to create an InstanceModel from an Instance
       convenience init(from instance: Instance) {
           self.init(
               id: instance.id,
@@ -85,7 +85,7 @@ class InstanceModel: Identifiable {
               statuses: instance.statuses,
               connections: instance.connections,
               openRegistrations: instance.openRegistrations,
-              info: instance.info.map { InstanceInformationModel(from: $0) }, // Convert nested struct
+              info: instance.info.map { InstanceInformationModel(from: $0) },
               thumbnail: instance.thumbnail,
               thumbnailProxy: instance.thumbnailProxy,
               activeUsers: instance.activeUsers,
@@ -101,26 +101,77 @@ class InstanceInformationModel {
     var shortDescription: String?
     var fullDescription: String?
     var topic: String?
-    var languages: [String]?
     var otherLanguagesAccepted: Bool?
     var federatesWith: String?
-    var prohibitedContent: [String]?
-    var categories: [String]?
     var title: String?
     var thumbnail: URL?
 
-    init(shortDescription: String? = nil, fullDescription: String? = nil, topic: String? = nil, languages: [String]? = nil, otherLanguagesAccepted: Bool? = nil, federatesWith: String? = nil, prohibitedContent: [String]? = nil, categories: [String]? = nil, title: String? = nil, thumbnail: URL? = nil) {
+    // Store arrays as Data and provide computed properties
+    private var languagesData: Data?
+    private var prohibitedContentData: Data?
+    private var categoriesData: Data?
+
+    var languages: [String]? {
+        get {
+            guard let data = languagesData else { return nil }
+            return try? JSONDecoder().decode([String].self, from: data)
+        }
+        set {
+            if let newValue = newValue {
+                languagesData = try? JSONEncoder().encode(newValue)
+            } else {
+                languagesData = nil
+            }
+        }
+    }
+
+    var prohibitedContent: [String]? {
+        get {
+            guard let data = prohibitedContentData else { return nil }
+            return try? JSONDecoder().decode([String].self, from: data)
+        }
+        set {
+            if let newValue = newValue {
+                prohibitedContentData = try? JSONEncoder().encode(newValue)
+            } else {
+                prohibitedContentData = nil
+            }
+        }
+    }
+
+    var categories: [String]? {
+        get {
+            guard let data = categoriesData else { return nil }
+            return try? JSONDecoder().decode([String].self, from: data)
+        }
+        set {
+            if let newValue = newValue {
+                categoriesData = try? JSONEncoder().encode(newValue)
+            } else {
+                categoriesData = nil
+            }
+        }
+    }
+
+    // Main initializer
+    init(shortDescription: String? = nil, fullDescription: String? = nil, topic: String? = nil,
+         languages: [String]? = nil, otherLanguagesAccepted: Bool? = nil,
+         federatesWith: String? = nil, prohibitedContent: [String]? = nil,
+         categories: [String]? = nil, title: String? = nil, thumbnail: URL? = nil) {
         self.shortDescription = shortDescription
         self.fullDescription = fullDescription
         self.topic = topic
-        self.languages = languages
         self.otherLanguagesAccepted = otherLanguagesAccepted
         self.federatesWith = federatesWith
-        self.prohibitedContent = prohibitedContent
-        self.categories = categories
         self.title = title
         self.thumbnail = thumbnail
+        // Set through computed property setters to ensure correct encoding to Data
+        self.languages = languages
+        self.prohibitedContent = prohibitedContent
+        self.categories = categories
     }
+    
+    // Convenience initializer to convert from the non-Model 'InstanceInformation' struct
     convenience init(from info: InstanceInformation) {
         self.init(
             shortDescription: info.shortDescription,
