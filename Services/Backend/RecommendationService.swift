@@ -19,7 +19,7 @@ actor BackgroundActor {
 class RecommendationService: ObservableObject {
     static let shared = RecommendationService()
 
-    private var modelContext: ModelContext?
+    internal var modelContext: ModelContext?
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "RecommendationService")
 
     private init() {
@@ -46,7 +46,7 @@ class RecommendationService: ObservableObject {
     // This method might be called from various contexts, ensure it's actor-safe
     // or explicitly mark its actor context if it manipulates shared state
     // that isn't already protected (modelContext is actor-isolated by itself).
-    private func getContext() throws -> ModelContext {
+    public func getContext() throws -> ModelContext {
         guard let context = modelContext else {
             let errorMsg = "RecommendationService ModelContext not configured."
             logger.critical("\(errorMsg, privacy: .public)")

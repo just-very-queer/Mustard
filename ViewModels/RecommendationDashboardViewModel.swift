@@ -1,3 +1,10 @@
+//
+//  RecommendationDashboardViewModel.swift
+//  Mustard
+//
+//  Created by VAIBHAV SRIVASTAVA on 24/01/25.
+//  (REVISED & FIXED)
+
 import SwiftUI
 import Combine
 import SwiftData
@@ -16,36 +23,11 @@ class RecommendationDashboardViewModel: ObservableObject {
 
     init(recommendationService: RecommendationService = RecommendationService.shared) {
         self.recommendationService = recommendationService
-        Task {
-            await recommendationService.configure(modelContext: getContext())
-        }
+        // Removed the Task that was incorrectly re-configuring the service.
     }
 
-    private func getContext() -> ModelContext {
-        // Assuming a shared model container or a way to access it.
-        // This might need adjustment based on your app's architecture.
-        // For now, let's assume a global context exists or can be created.
-        // This is a placeholder and might need to be passed in or accessed differently.
-        let schema = Schema([
-            UserAffinity.self,
-            HashtagAffinity.self,
-            Interaction.self,
-            Post.self,
-            Account.self,
-            MediaAttachment.self,
-            ServerModel.self,
-            InstanceModel.self,
-            Config.self
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            let container = try ModelContainer(for: schema, configurations: [modelConfiguration])
-            return ModelContext(container)
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }
+    // The getContext() method has been removed as it was creating an incorrect, isolated data store.
+    // The view model now relies on the shared RecommendationService being configured at app launch.
 
     func fetchAffinities() async {
         // RecommendationService.calculateAffinities() should have populated and saved these.
@@ -60,11 +42,11 @@ class RecommendationDashboardViewModel: ObservableObject {
 
         do {
             // Fetch UserAffinities
-            var userDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
+            let userDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
             self.userAffinities = try context.fetch(userDescriptor)
 
             // Fetch HashtagAffinities
-            var hashtagDescriptor = FetchDescriptor<HashtagAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
+            let hashtagDescriptor = FetchDescriptor<HashtagAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
             self.hashtagAffinities = try context.fetch(hashtagDescriptor)
 
             print("Successfully fetched affinities. Users: \(self.userAffinities.count), Hashtags: \(self.hashtagAffinities.count)")
