@@ -137,34 +137,54 @@ class RecommendationService: ObservableObject {
 
         var authorScores: [String: Double] = [:]
         var authorInteractionCounts: [String: Int] = [:]
+        var tagScores: [String: Double] = [:]
+        var tagInteractionCounts: [String: Int] = [:]
+
         for interaction in interactions {
-            guard let authorId = interaction.authorAccountID else { continue }
-            let scoreBoost = weights[interaction.actionType] ?? 0.0
-            authorScores[authorId, default: 0.0] += scoreBoost
-            authorInteractionCounts[authorId, default: 0] += 1
+            var currentScoreBoost = weights[interaction.actionType] ?? 0.0
+
+            // Enhance like interactions with popularity
+            if interaction.actionType == .like, let postIdString = interaction.statusID {
+                // The Post model uses a String id
+                let fetchDescriptor = FetchDescriptor<Post>(predicate: #Predicate { $0.id == postIdString })
+
+                // Perform fetch within a do-catch block for error handling, though try? is used here for brevity
+                if let likedPost = try? backgroundContext.fetch(fetchDescriptor).first {
+                    let popularityFactor = 0.001 // Example factor
+                    // Assuming Post model has these properties as Int. Cast to Double for calculation.
+                    let totalPopularity = Double(likedPost.favouritesCount + likedPost.reblogsCount + likedPost.repliesCount)
+                    currentScoreBoost += totalPopularity * popularityFactor
+                    logger.debug("Popularity boost of \(totalPopularity * popularityFactor) applied to post \(postIdString) for like interaction.")
+                } else {
+                    logger.debug("Could not fetch Post with ID \(postIdString) for popularity boost calculation.")
+                }
+            }
+
+            // Apply score to author affinity
+            if let authorId = interaction.authorAccountID {
+                authorScores[authorId, default: 0.0] += currentScoreBoost
+                authorInteractionCounts[authorId, default: 0] += 1
+            }
+
+            // Apply score to tag affinity
+            if let tags = interaction.tags, !tags.isEmpty {
+                for tagName in tags {
+                    tagScores[tagName, default: 0.0] += currentScoreBoost
+                    tagInteractionCounts[tagName, default: 0] += 1
+                }
+            }
         }
 
+        // Update UserAffinities
         for (authorId, calculatedScore) in authorScores {
             let count = authorInteractionCounts[authorId] ?? 0
-            // This method is also marked @BackgroundActor, so this call is fine.
             await self.updateUserAffinityOnBackground(authorAccountID: authorId, score: calculatedScore, interactionCount: count, context: backgroundContext)
         }
         logger.info("Background: Author affinities updated.")
 
-        var tagScores: [String: Double] = [:]
-        var tagInteractionCounts: [String: Int] = [:]
-        for interaction in interactions {
-            guard let tags = interaction.tags, !tags.isEmpty else { continue }
-            let scoreBoost = weights[interaction.actionType] ?? 0.0
-            for tagName in tags {
-                tagScores[tagName, default: 0.0] += scoreBoost
-                tagInteractionCounts[tagName, default: 0] += 1
-            }
-        }
-
+        // Update HashtagAffinities
         for (tagName, calculatedScore) in tagScores {
             let count = tagInteractionCounts[tagName] ?? 0
-            // This method is also marked @BackgroundActor.
             await self.updateHashtagAffinityOnBackground(tag: tagName, score: calculatedScore, interactionCount: count, context: backgroundContext)
         }
         logger.info("Background: Hashtag affinities updated.")
