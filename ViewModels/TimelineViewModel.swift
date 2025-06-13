@@ -461,6 +461,39 @@ final class TimelineViewModel: ObservableObject {
         selectedPostForComments = post
         showingCommentSheet = true
     }
+
+    public func logNotInterested(for post: Post) {
+        // The 'post' parameter here is the one displayed, which could be a reblog or an original post.
+        // We want to log the interaction for the *content* of the post.
+        let targetPost = post.reblog ?? post
+
+        logger.info("Logging 'Not Interested' for post ID: \(targetPost.id)")
+
+        self.recommendationService.logInteraction(
+            statusID: targetPost.id,
+            actionType: .dislikePost,
+            accountID: currentUserAccountID, // ID of the user performing the action
+            authorAccountID: targetPost.account?.id, // ID of the post's author
+            postURL: targetPost.url,
+            tags: targetPost.tags?.compactMap { $0.name }
+        )
+
+        // Optional: After logging "Not Interested", you might want to hide the post from the timeline.
+        // This is a UX decision and is commented out for now.
+        /*
+        if let index = posts.firstIndex(where: { $0.id == post.id || ($0.reblog != nil && $0.reblog!.id == post.id) }) {
+            posts.remove(at: index)
+        }
+        if selectedFilter == .recommended {
+            if let index = recommendedForYouPosts.firstIndex(where: { $0.id == post.id || ($0.reblog != nil && $0.reblog!.id == post.id) }) {
+                recommendedForYouPosts.remove(at: index)
+            }
+            if let index = recommendedChronologicalPosts.firstIndex(where: { $0.id == post.id || ($0.reblog != nil && $0.reblog!.id == post.id) }) {
+                recommendedChronologicalPosts.remove(at: index)
+            }
+        }
+        */
+    }
     
     // MARK: - Loading State Management
     

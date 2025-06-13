@@ -10,7 +10,7 @@ import Foundation
 import SwiftData
 
 enum InteractionType: String, Codable, Sendable {
-    case like, unlike, repost, unrepost, comment, view, timeSpent, linkOpen
+    case like, unlike, repost, unrepost, comment, view, timeSpent, linkOpen, manualUserAffinity, manualHashtagAffinity, dislikePost
 }
 
 @Model
