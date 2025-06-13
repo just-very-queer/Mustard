@@ -132,7 +132,7 @@ class RecommendationService: ObservableObject {
 
         let weights: [InteractionType: Double] = [
             .like: 1.0, .comment: 3.0, .repost: 2.0, .linkOpen: 1.5, .view: 0.2,
-            .unlike: -0.5, .unrepost: -0.5
+            .unlike: -0.5, .unrepost: -0.5, .manualUserAffinity: 5.0, .manualHashtagAffinity: 4.0, .dislikePost: -10.0
         ]
 
         var authorScores: [String: Double] = [:]
@@ -359,5 +359,39 @@ class RecommendationService: ObservableObject {
         }
         
         return score
+    }
+
+    @BackgroundActor
+    func getInteractionSummary(forDays days: Int) async throws -> [InteractionType: Int] {
+        let context = try getContext() // Use existing method to get ModelContext
+        logger.info("Calculating interaction summary for the last \(days) days on BackgroundActor...")
+
+        guard let summaryDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) else {
+            logger.error("Background: Could not calculate summaryDate for interaction summary.")
+            // Or throw a specific error
+            throw AppError(type: .other("Could not calculate summary date."))
+        }
+
+        let predicate = #Predicate<Interaction> { interaction in
+            interaction.timestamp >= summaryDate
+        }
+
+        let descriptor = FetchDescriptor<Interaction>(predicate: predicate)
+
+        let interactions = try context.fetch(descriptor)
+
+        if interactions.isEmpty {
+            logger.info("Background: No interactions found for the last \(days) days.")
+            return [:]
+        }
+
+        // Aggregate interactions by type
+        var summary: [InteractionType: Int] = [:]
+        for interaction in interactions {
+            summary[interaction.actionType, default: 0] += 1
+        }
+
+        logger.info("Background: Interaction summary calculated with \(summary.count) types of interactions.")
+        return summary
     }
 }

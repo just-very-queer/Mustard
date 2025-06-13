@@ -133,6 +133,16 @@ struct PostActionsViewRevised: View {
 
             Spacer()
 
+            Button {
+                viewModel.logNotInterested(for: post)
+            } label: {
+                Image(systemName: "hand.thumbsdown")
+                    .foregroundColor(.gray)
+            }
+            .buttonStyle(PlainButtonStyle())
+
+            Spacer()
+
             if let urlString = post.url, let url = URL(string: urlString) {
                 ShareLink(item: url) {
                     Image(systemName: "square.and.arrow.up")

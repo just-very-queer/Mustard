@@ -48,6 +48,17 @@ struct SettingsView: View {
                     }
                 }
 
+                // Recommendations Section
+                Section(header: Text("Recommendations").font(.headline)) {
+                    NavigationLink(destination: RecommendationDashboardView()) {
+                        HStack {
+                            Image(systemName: "hand.thumbsup.fill")
+                                .foregroundColor(.purple)
+                            Text("My Recommendations")
+                        }
+                    }
+                }
+
                 // Preferences Section
                 Section(header: Text("Preferences").font(.headline)) {
                     Toggle(isOn: $isDarkMode) {
