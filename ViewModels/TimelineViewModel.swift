@@ -256,42 +256,50 @@ final class TimelineViewModel: ObservableObject {
     
     // MARK: - Post Actions
     
-    func toggleLike(for post: Post) {
-        guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
-        
-        // Store original values for potential revert
-        let originalIsFavourited = posts[index].isFavourited
-        let originalFavouritesCount = posts[index].favouritesCount
-        
-        // Optimistic update
-        posts[index].isFavourited.toggle()
-        posts[index].favouritesCount += posts[index].isFavourited ? 1 : -1
-        
-        // Explicitly signal change to SwiftUI for the main posts array
-        let updatedPostForUIMain = posts[index]
-        posts[index] = updatedPostForUIMain
-        
-        if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
-            // Optimistic update for topPosts
-            topPosts[topIndex].isFavourited = posts[index].isFavourited
-            topPosts[topIndex].favouritesCount = posts[index].favouritesCount
-            // Explicitly signal change to SwiftUI for the topPosts array
-            let updatedPostForUITop = topPosts[topIndex]
-            topPosts[topIndex] = updatedPostForUITop
-        }
-        
-        updateLoadingState(for: post.id, isLoading: true)
-        
+    // In TimelineViewModel.swift, replace existing toggleLike method
+    func toggleLike(for post: Post) { // 'post' here is the displayPost (original content)
+        // Calculate the new state for optimistic update
+        let newIsFavourited = !post.isFavourited
+        let newFavouritesCount = post.favouritesCount + (newIsFavourited ? 1 : -1)
+
+        // Create a temporary Post object representing the desired optimistic state
+        let optimisticPost = Post(id: post.id, content: post.content, createdAt: post.createdAt,
+                                  account: post.account, mediaAttachments: post.mediaAttachments,
+                                  isFavourited: newIsFavourited,
+                                  isReblogged: post.isReblogged,
+                                  reblogsCount: post.reblogsCount,
+                                  favouritesCount: newFavouritesCount,
+                                  repliesCount: post.repliesCount, mentions: post.mentions, tags: post.tags,
+                                  card: post.card, url: post.url, inReplyTo: post.inReplyTo,
+                                  reblog: nil, // This represents the original post's state, not a wrapper
+                                  rebloggedBy: post.rebloggedBy)
+
+        // Apply optimistic update to all relevant arrays
+        updatePostInArray(&posts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&topPosts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&recommendedForYouPosts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&recommendedChronologicalPosts, with: optimisticPost, isOptimistic: true)
+
+        updateLoadingState(for: post.id, isLoading: true) // Use displayPost ID for loading state
+
         Task {
             defer { updateLoadingState(for: post.id, isLoading: false) }
             do {
                 let returnedPost = try await postActionService.toggleLike(postID: post.id)
                 if let updated = returnedPost {
-                    updatePostInAllLists(updated)
+                    // Update all arrays with the actual post returned from the API
+                    updatePostInArray(&posts, with: updated, isOptimistic: false)
+                    updatePostInArray(&topPosts, with: updated, isOptimistic: false)
+                    updatePostInArray(&recommendedForYouPosts, with: updated, isOptimistic: false)
+                    updatePostInArray(&recommendedChronologicalPosts, with: updated, isOptimistic: false)
+                } else {
+                    // If API returns nil, assume optimistic update was correct (success without new object)
+                    // Or, if this means no change, then revert. Need to clarify API contract.
+                    // Assuming returnedPost == nil implies success but no new object, so optimistic update stands.
                 }
                 RecommendationService.shared.logInteraction(
                     statusID: post.id,
-                    actionType: posts[index].isFavourited ? InteractionType.like : InteractionType.unlike,
+                    actionType: newIsFavourited ? .like : .unlike,
                     accountID: currentUserAccountID,
                     authorAccountID: post.account?.id,
                     postURL: post.url,
@@ -299,59 +307,62 @@ final class TimelineViewModel: ObservableObject {
                 )
             } catch {
                 logger.error("Failed toggleLike: \(error.localizedDescription)")
-                // Revert optimistic update
-                posts[index].isFavourited = originalIsFavourited
-                posts[index].favouritesCount = originalFavouritesCount
-                let revertedPostForUIMain = posts[index]
-                posts[index] = revertedPostForUIMain
-                
-                if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
-                    topPosts[topIndex].isFavourited = originalIsFavourited
-                    topPosts[topIndex].favouritesCount = originalFavouritesCount
-                    let revertedPostForUITop = topPosts[topIndex]
-                    topPosts[topIndex] = revertedPostForUITop
-                }
+                // Revert optimistic update on error by creating a post with original state
+                let originalStatePost = Post(id: post.id, content: post.content, createdAt: post.createdAt,
+                                             account: post.account, mediaAttachments: post.mediaAttachments,
+                                             isFavourited: post.isFavourited, // Original state
+                                             isReblogged: post.isReblogged,
+                                             reblogsCount: post.reblogsCount,
+                                             favouritesCount: post.favouritesCount, // Original count
+                                             repliesCount: post.repliesCount, mentions: post.mentions, tags: post.tags,
+                                             card: post.card, url: post.url, inReplyTo: post.inReplyTo,
+                                             reblog: nil, // Represents original post state
+                                             rebloggedBy: post.rebloggedBy)
+                updatePostInArray(&posts, with: originalStatePost, isOptimistic: false) // Revert state in all lists
+                updatePostInArray(&topPosts, with: originalStatePost, isOptimistic: false)
+                updatePostInArray(&recommendedForYouPosts, with: originalStatePost, isOptimistic: false)
+                updatePostInArray(&recommendedChronologicalPosts, with: originalStatePost, isOptimistic: false)
                 alertError = AppError(message: "Failed to like post", underlyingError: error)
             }
         }
     }
     
-    func toggleRepost(for post: Post) {
-        guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
-        
-        // Store original values for potential revert
-        let originalIsReblogged = posts[index].isReblogged
-        let originalReblogsCount = posts[index].reblogsCount
-        
-        // Optimistic update
-        posts[index].isReblogged.toggle()
-        posts[index].reblogsCount += posts[index].isReblogged ? 1 : -1
-        
-        // Explicitly signal change to SwiftUI for the main posts array
-        let updatedPostForUIMain = posts[index]
-        posts[index] = updatedPostForUIMain
-        
-        if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
-            // Optimistic update for topPosts
-            topPosts[topIndex].isReblogged = posts[index].isReblogged
-            topPosts[topIndex].reblogsCount = posts[index].reblogsCount
-            // Explicitly signal change to SwiftUI for the topPosts array
-            let updatedPostForUITop = topPosts[topIndex]
-            topPosts[topIndex] = updatedPostForUITop
-        }
-        
+    // In TimelineViewModel.swift, replace existing toggleRepost method
+    func toggleRepost(for post: Post) { // 'post' here is the displayPost (original content)
+        let newIsReblogged = !post.isReblogged
+        let newReblogsCount = post.reblogsCount + (newIsReblogged ? 1 : -1)
+
+        let optimisticPost = Post(id: post.id, content: post.content, createdAt: post.createdAt,
+                                  account: post.account, mediaAttachments: post.mediaAttachments,
+                                  isFavourited: post.isFavourited,
+                                  isReblogged: newIsReblogged, // Toggled state
+                                  reblogsCount: newReblogsCount, // Toggled count
+                                  favouritesCount: post.favouritesCount,
+                                  repliesCount: post.repliesCount, mentions: post.mentions, tags: post.tags,
+                                  card: post.card, url: post.url, inReplyTo: post.inReplyTo,
+                                  reblog: nil,
+                                  rebloggedBy: post.rebloggedBy)
+
+        updatePostInArray(&posts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&topPosts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&recommendedForYouPosts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&recommendedChronologicalPosts, with: optimisticPost, isOptimistic: true)
+
         updateLoadingState(for: post.id, isLoading: true)
-        
+
         Task {
             defer { updateLoadingState(for: post.id, isLoading: false) }
             do {
                 let returnedPost = try await postActionService.toggleRepost(postID: post.id)
                 if let updated = returnedPost {
-                    updatePostInAllLists(updated)
+                    updatePostInArray(&posts, with: updated, isOptimistic: false)
+                    updatePostInArray(&topPosts, with: updated, isOptimistic: false)
+                    updatePostInArray(&recommendedForYouPosts, with: updated, isOptimistic: false)
+                    updatePostInArray(&recommendedChronologicalPosts, with: updated, isOptimistic: false)
                 }
                 RecommendationService.shared.logInteraction(
                     statusID: post.id,
-                    actionType: posts[index].isReblogged ? InteractionType.repost : InteractionType.unrepost,
+                    actionType: newIsReblogged ? .repost : .unrepost,
                     accountID: currentUserAccountID,
                     authorAccountID: post.account?.id,
                     postURL: post.url,
@@ -359,61 +370,65 @@ final class TimelineViewModel: ObservableObject {
                 )
             } catch {
                 logger.error("Failed toggleRepost: \(error.localizedDescription)")
-                // Revert optimistic update
-                posts[index].isReblogged = originalIsReblogged
-                posts[index].reblogsCount = originalReblogsCount
-                let revertedPostForUIMain = posts[index]
-                posts[index] = revertedPostForUIMain
-                
-                if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
-                    topPosts[topIndex].isReblogged = originalIsReblogged
-                    topPosts[topIndex].reblogsCount = originalReblogsCount
-                    let revertedPostForUITop = topPosts[topIndex]
-                    topPosts[topIndex] = revertedPostForUITop
-                }
+                let originalStatePost = Post(id: post.id, content: post.content, createdAt: post.createdAt,
+                                             account: post.account, mediaAttachments: post.mediaAttachments,
+                                             isFavourited: post.isFavourited,
+                                             isReblogged: post.isReblogged, // Original state
+                                             reblogsCount: post.reblogsCount, // Original count
+                                             favouritesCount: post.favouritesCount,
+                                             repliesCount: post.repliesCount, mentions: post.mentions, tags: post.tags,
+                                             card: post.card, url: post.url, inReplyTo: post.inReplyTo,
+                                             reblog: nil,
+                                             rebloggedBy: post.rebloggedBy)
+                updatePostInArray(&posts, with: originalStatePost, isOptimistic: false)
+                updatePostInArray(&topPosts, with: originalStatePost, isOptimistic: false)
+                updatePostInArray(&recommendedForYouPosts, with: originalStatePost, isOptimistic: false)
+                updatePostInArray(&recommendedChronologicalPosts, with: originalStatePost, isOptimistic: false)
                 alertError = AppError(message: "Failed to repost", underlyingError: error)
             }
         }
     }
     
+    // In TimelineViewModel.swift, replace existing comment method
     func comment(on post: Post, content: String) {
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        
-        // Store original replies count for potential revert (though less critical as it's just a count)
-        var originalRepliesCountMain: Int?
-        if let index = posts.firstIndex(where: { $0.id == post.id }) {
-            originalRepliesCountMain = posts[index].repliesCount
-        }
-        var originalRepliesCountTop: Int?
-        if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
-            originalRepliesCountTop = topPosts[topIndex].repliesCount
-        }
-        
+
+        // Optimistic update for repliesCount
+        let newRepliesCount = post.repliesCount + 1
+
+        let optimisticPost = Post(id: post.id, content: post.content, createdAt: post.createdAt,
+                                  account: post.account, mediaAttachments: post.mediaAttachments,
+                                  isFavourited: post.isFavourited,
+                                  isReblogged: post.isReblogged,
+                                  reblogsCount: post.reblogsCount,
+                                  favouritesCount: post.favouritesCount,
+                                  repliesCount: newRepliesCount, // Incremented count
+                                  mentions: post.mentions, tags: post.tags,
+                                  card: post.card, url: post.url, inReplyTo: post.inReplyTo,
+                                  reblog: nil,
+                                  rebloggedBy: post.rebloggedBy)
+
+        updatePostInArray(&posts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&topPosts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&recommendedForYouPosts, with: optimisticPost, isOptimistic: true)
+        updatePostInArray(&recommendedChronologicalPosts, with: optimisticPost, isOptimistic: true)
+
         updateLoadingState(for: post.id, isLoading: true)
         Task {
             defer { updateLoadingState(for: post.id, isLoading: false) }
             do {
                 _ = try await postActionService.comment(postID: post.id, content: content)
-                
-                // Optimistic update for repliesCount
-                if let index = posts.firstIndex(where: { $0.id == post.id }) {
-                    posts[index].repliesCount += 1
-                    let updatedPostForUIMain = posts[index]
-                    posts[index] = updatedPostForUIMain
-                }
-                if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }) {
-                    topPosts[topIndex].repliesCount += 1
-                    let updatedPostForUITop = topPosts[topIndex]
-                    topPosts[topIndex] = updatedPostForUITop
-                }
-                
-                commentText = ""
-                showingCommentSheet = false
-                selectedPostForComments = nil
-                
+                // The comment API might not return the updated Post with repliesCount.
+                // Assuming it just returns the new comment post. So, rely on optimistic update.
+                // If API *does* return updated parent post, fetch context again or update with that.
+
+                commentText = "" // Expected to be a @Published property
+                showingCommentSheet = false // Expected to be a @Published property
+                selectedPostForComments = nil // Expected to be a @Published property
+
                 RecommendationService.shared.logInteraction(
                     statusID: post.id,
-                    actionType: InteractionType.comment,
+                    actionType: .comment,
                     accountID: currentUserAccountID,
                     authorAccountID: post.account?.id,
                     postURL: post.url,
@@ -421,17 +436,22 @@ final class TimelineViewModel: ObservableObject {
                 )
             } catch {
                 logger.error("Failed to post comment: \(error.localizedDescription)")
-                // Revert optimistic update for repliesCount if originalRepliesCount was captured
-                if let index = posts.firstIndex(where: { $0.id == post.id }), let originalCount = originalRepliesCountMain {
-                    posts[index].repliesCount = originalCount
-                    let revertedPostForUIMain = posts[index]
-                    posts[index] = revertedPostForUIMain
-                }
-                if let topIndex = topPosts.firstIndex(where: { $0.id == post.id }), let originalCount = originalRepliesCountTop {
-                    topPosts[topIndex].repliesCount = originalCount
-                    let revertedPostForUITop = topPosts[topIndex]
-                    topPosts[topIndex] = revertedPostForUITop
-                }
+                // Revert optimistic update on error for repliesCount
+                let originalStatePost = Post(id: post.id, content: post.content, createdAt: post.createdAt,
+                                             account: post.account, mediaAttachments: post.mediaAttachments,
+                                             isFavourited: post.isFavourited,
+                                             isReblogged: post.isReblogged,
+                                             reblogsCount: post.reblogsCount,
+                                             favouritesCount: post.favouritesCount,
+                                             repliesCount: post.repliesCount, // Original count
+                                             mentions: post.mentions, tags: post.tags,
+                                             card: post.card, url: post.url, inReplyTo: post.inReplyTo,
+                                             reblog: nil,
+                                             rebloggedBy: post.rebloggedBy)
+                updatePostInArray(&posts, with: originalStatePost, isOptimistic: false)
+                updatePostInArray(&topPosts, with: originalStatePost, isOptimistic: false)
+                updatePostInArray(&recommendedForYouPosts, with: originalStatePost, isOptimistic: false)
+                updatePostInArray(&recommendedChronologicalPosts, with: originalStatePost, isOptimistic: false)
                 alertError = AppError(message: "Failed to post comment", underlyingError: error)
             }
         }
@@ -465,6 +485,39 @@ final class TimelineViewModel: ObservableObject {
     
     // MARK: - Helper to update posts in all lists
     
+    private func updatePostInArray(_ array: inout [Post], with updatedPost: Post, isOptimistic: Bool) {
+        for i in 0..<array.count {
+            // Case 1: The current element in the array is the updated post itself (original post)
+            if array[i].id == updatedPost.id {
+                array[i].isFavourited = updatedPost.isFavourited
+                array[i].isReblogged = updatedPost.isReblogged
+                array[i].favouritesCount = updatedPost.favouritesCount
+                array[i].reblogsCount = updatedPost.reblogsCount
+                // Replies count update should be careful, only for comment actions or if returned API post has updated count
+                if isOptimistic || array[i].repliesCount != updatedPost.repliesCount {
+                     array[i].repliesCount = updatedPost.repliesCount
+                }
+                // Important: Reassign the element to trigger SwiftUI ForEach updates for class elements
+                array[i] = array[i]
+                return // Found and updated, exit
+            }
+            // Case 2: The current element is a reblog wrapper of the updated post
+            else if let rebloggedContent = array[i].reblog, rebloggedContent.id == updatedPost.id {
+                rebloggedContent.isFavourited = updatedPost.isFavourited
+                rebloggedContent.isReblogged = updatedPost.isReblogged
+                rebloggedContent.favouritesCount = updatedPost.favouritesCount
+                rebloggedContent.reblogsCount = updatedPost.reblogsCount
+                if isOptimistic || rebloggedContent.repliesCount != updatedPost.repliesCount {
+                     rebloggedContent.repliesCount = updatedPost.repliesCount
+                }
+                // Important: Reassign the reblog property and then the wrapper itself
+                array[i].reblog = rebloggedContent
+                array[i] = array[i]
+                return // Found and updated, exit
+            }
+        }
+    }
+
     private func updatePostInAllLists(_ updatedPost: Post) {
         if let idx = posts.firstIndex(where: { $0.id == updatedPost.id }) {
             posts[idx] = updatedPost
