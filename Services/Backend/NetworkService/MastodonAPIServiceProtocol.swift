@@ -20,6 +20,8 @@ protocol MastodonAPIServiceProtocol {
     // Add other methods from MastodonAPIService that ComposerViewModel or other ViewModels might need,
     // to ensure a consistent interface and improve testability.
     // For now, only adding postStatus as per the immediate requirement.
+
+    func fetchStatuses(by_ids ids: [String]) async throws -> [Post] // New method
 }
 
 // Note: The `inReplyToId` parameter was added to the protocol to match the existing

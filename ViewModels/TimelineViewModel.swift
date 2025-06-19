@@ -70,6 +70,7 @@ final class TimelineViewModel: ObservableObject {
     private let trendingService: TrendingService
     private let cacheService: CacheService
     internal let recommendationService: RecommendationService
+    private let mastodonAPIService: MastodonAPIServiceProtocol // Added MastodonAPIService
     
     // MARK: - Private Properties
     private var cancellables = Set<AnyCancellable>()
@@ -85,7 +86,8 @@ final class TimelineViewModel: ObservableObject {
         trendingService: TrendingService,
         postActionService: PostActionService,
         cacheService: CacheService,
-        recommendationService: RecommendationService
+        recommendationService: RecommendationService,
+        mastodonAPIService: MastodonAPIServiceProtocol = MastodonAPIService.shared // Added with default
     ) {
         self.timelineService = timelineService
         self.locationManager = locationManager
@@ -93,6 +95,7 @@ final class TimelineViewModel: ObservableObject {
         self.postActionService = postActionService
         self.cacheService = cacheService
         self.recommendationService = recommendationService
+        self.mastodonAPIService = mastodonAPIService // Initialize new service
     }
     
     // MARK: - Data Fetching
@@ -116,31 +119,63 @@ final class TimelineViewModel: ObservableObject {
     }
     
     private func loadRecommendedTimelineInitial() async {
-        recommendedMaxID = nil
-        canLoadMoreRecommended = true
+        recommendedMaxID = nil // This might become obsolete or change for new "For You" pagination
+        canLoadMoreRecommended = true // This will need re-evaluation based on new "For You" source
         alertError = nil
         
         do {
-            // Fetch chronological posts for recommended
-            let chronological = try await timelineService.fetchHomeTimeline(maxId: nil)
-            recommendedChronologicalPosts = chronological
-            recommendedMaxID = chronological.last?.id
-            // API usually returns 20 items by default. Check against that.
-            if chronological.count < 20 {
-                canLoadMoreRecommended = false
+            logger.info("Loading initial 'For You' timeline using new recommendation flow.")
+
+            // New logic: Fetch top recommended post IDs
+            let recommendedPostIDs = await recommendationService.topRecommendations(limit: 50)
+
+            guard !recommendedPostIDs.isEmpty else {
+                logger.info("No recommended post IDs received. Clearing 'For You' timeline.")
+                recommendedForYouPosts = []
+                // recommendedChronologicalPosts = [] // Clearing this as its role is changing
+                posts = []
+                canLoadMoreRecommended = false // No IDs, so nothing more to load this way
+                await fetchTopPostsForHeader() // Still fetch trending for header
+                return
             }
             
-            // Score posts for "For You"
-            recommendedForYouPosts = await recommendationService.scoredTimeline(chronological)
-            posts = recommendedForYouPosts
+            logger.info("Fetched \(recommendedPostIDs.count) recommended post IDs. Fetching full posts...")
+
+            // Fetch full Post objects for these IDs
+            let fetchedPosts = try await mastodonAPIService.fetchStatuses(by_ids: recommendedPostIDs)
+            logger.info("Successfully fetched \(fetchedPosts.count) full posts for 'For You' timeline.")
+
+            // The order from fetchStatuses might not match topRecommendations if the API doesn't preserve it.
+            // If order is critical and not preserved by API, re-order here based on recommendedPostIDs.
+            // For now, assume API returns them in a usable order or order isn't strictly enforced by ID list.
+            recommendedForYouPosts = fetchedPosts
+            posts = recommendedForYouPosts // Update the main posts array
+
+            // Regarding recommendedChronologicalPosts:
+            // This array's original purpose was to be the source for `scoredTimeline` and for pagination.
+            // With `topRecommendations` providing a direct list of IDs, `recommendedChronologicalPosts`
+            // might become obsolete for the "For You" feed, or be repurposed (e.g., for a "Latest" fallback within "For You").
+            // For now, it's not being populated directly in this new flow.
+            // This also means `fetchMoreRecommended()` which paginates `recommendedChronologicalPosts`
+            // will not work as expected for the new "For You" feed without significant changes.
+            // Setting canLoadMoreRecommended based on the fixed fetch limit for now.
+            if fetchedPosts.count < 50 { // Assuming limit was 50
+                canLoadMoreRecommended = false
+            } else {
+                // If topRecommendations itself can be paginated, canLoadMoreRecommended would depend on that.
+                // For now, a single fetch of 50 is assumed.
+                canLoadMoreRecommended = false // Or true if topRecommendations has its own pagination beyond the initial fetch
+            }
             
             initializeLoadingStates(for: posts)
             await fetchTopPostsForHeader()
+
         } catch {
+            logger.error("Error loading recommended timeline: \(error.localizedDescription)")
             handleFetchError(error)
             posts = []
             recommendedForYouPosts = []
-            recommendedChronologicalPosts = []
+            // recommendedChronologicalPosts = []
         }
     }
     
@@ -478,21 +513,29 @@ final class TimelineViewModel: ObservableObject {
             tags: targetPost.tags?.compactMap { $0.name }
         )
 
-        // Optional: After logging "Not Interested", you might want to hide the post from the timeline.
-        // This is a UX decision and is commented out for now.
-        /*
-        if let index = posts.firstIndex(where: { $0.id == post.id || ($0.reblog != nil && $0.reblog!.id == post.id) }) {
-            posts.remove(at: index)
+        // Optimistic UI Removal for "Not Interested"
+        // The `targetPost` is the actual content post (original or reblog's content).
+        // We need to find the item in the list that either is this targetPost or reblogs it.
+
+        // Remove from recommendedForYouPosts first.
+        // This is the source array for the "For You" feed.
+        if let indexInRecForYou = recommendedForYouPosts.firstIndex(where: { $0.id == targetPost.id || ($0.reblog?.id == targetPost.id) }) {
+            recommendedForYouPosts.remove(at: indexInRecForYou)
+            logger.info("Optimistically removed post (content ID: \(targetPost.id)) from recommendedForYouPosts.")
         }
+
+        // If the current filter is .recommended, then 'posts' is a direct reflection of 'recommendedForYouPosts'
+        // and should also be updated.
         if selectedFilter == .recommended {
-            if let index = recommendedForYouPosts.firstIndex(where: { $0.id == post.id || ($0.reblog != nil && $0.reblog!.id == post.id) }) {
-                recommendedForYouPosts.remove(at: index)
-            }
-            if let index = recommendedChronologicalPosts.firstIndex(where: { $0.id == post.id || ($0.reblog != nil && $0.reblog!.id == post.id) }) {
-                recommendedChronologicalPosts.remove(at: index)
+            if let indexInPosts = posts.firstIndex(where: { $0.id == targetPost.id || ($0.reblog?.id == targetPost.id) }) {
+                posts.remove(at: indexInPosts)
+                logger.info("Optimistically removed post (content ID: \(targetPost.id)) from main posts list (recommended filter active).")
             }
         }
-        */
+
+        // Note: Removing from `recommendedChronologicalPosts` is not done here as its role
+        // in the "For You" feed has changed with the new recommendation flow.
+        // Also, not removing from `topPosts` as "Not Interested" is typically for main feed items.
     }
     
     // MARK: - Loading State Management

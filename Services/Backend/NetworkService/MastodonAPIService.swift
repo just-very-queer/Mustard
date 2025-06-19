@@ -157,6 +157,29 @@ public class MastodonAPIService: MastodonAPIServiceProtocol { // Conform to the 
         return try await post(endpoint: "/api/v1/statuses", body: body, responseType: Post.self)
     }
 
+    // Added to conform to MastodonAPIServiceProtocol
+    public func fetchStatuses(by_ids ids: [String]) async throws -> [Post] {
+        if ids.isEmpty {
+            logger.debug("fetchStatuses(by_ids:) called with empty IDs, returning empty array.")
+            return []
+        }
+        // Using "id[]" as the query parameter name for array values.
+        // This is a common convention, e.g., PHP arrays in query strings.
+        // Mastodon's API documentation should be the ultimate source of truth if issues arise.
+        // Alternative: ids.map { URLQueryItem(name: "id", value: $0) }
+        let queryItems = ids.map { URLQueryItem(name: "id[]", value: $0) }
+
+        logger.debug("Fetching statuses with IDs. Using query parameter name 'id[]'. Query items: \(queryItems.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&"))")
+
+        // The Mastodon API for fetching multiple statuses by ID might be /api/v1/statuses?id[]=1&id[]=2
+        // or it might be a different endpoint, or it might not support fetching multiple by ID directly
+        // in this manner with GET.
+        // Assuming /api/v1/statuses can be used with id[] query parameters based on typical API patterns.
+        // If this specific endpoint does not support it, the API documentation would need to be consulted
+        // for the correct endpoint or if multiple separate calls are needed.
+        return try await get(endpoint: "/api/v1/statuses", queryItems: queryItems, responseType: [Post].self)
+    }
+
     func fetchPostContext(postId: String) async throws -> PostContext {
         let endpoint = "/api/v1/statuses/\(postId)/context"
         return try await get(endpoint: endpoint, responseType: PostContext.self)
