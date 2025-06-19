@@ -15,7 +15,7 @@ struct MustardWatchApp: App {
         ])
         
         // IMPORTANT: Replace this with your actual App Group ID
-        let appGroupIdentifier = "group.com.example.Mustard" 
+        let appGroupIdentifier = "titan.mustard.app.ao" // Corrected value
                                  // ^^^^^ USER ACTION: REPLACE THIS ^^^^^
 
         let modelConfiguration: ModelConfiguration
