@@ -115,7 +115,7 @@ class RecommendationService: ObservableObject {
         logger.info("Performing background affinity calculation on BackgroundActor...")
 
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
-        var interactionDescriptor = FetchDescriptor<Interaction>(
+        let interactionDescriptor = FetchDescriptor<Interaction>(
             predicate: #Predicate { $0.timestamp >= thirtyDaysAgo },
             sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
         )
@@ -300,11 +300,11 @@ class RecommendationService: ObservableObject {
         logger.info("Scoring timeline with \(timeline.count) posts...")
         if timeline.isEmpty { return [] }
 
-        var userAffinityDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
+        let userAffinityDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
         let userAffinities = (try? currentContext.fetch(userAffinityDescriptor)) ?? []
         let userAffinityMap = Dictionary(uniqueKeysWithValues: userAffinities.map { ($0.authorAccountID, $0.score) })
 
-        var hashtagAffinityDescriptor = FetchDescriptor<HashtagAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
+        let hashtagAffinityDescriptor = FetchDescriptor<HashtagAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
         let hashtagAffinities = (try? currentContext.fetch(hashtagAffinityDescriptor)) ?? []
         let hashtagAffinityMap = Dictionary(uniqueKeysWithValues: hashtagAffinities.map { ($0.tag, $0.score) })
         
