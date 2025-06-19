@@ -220,10 +220,15 @@ struct PostContentView: View {
         }
         .padding(.vertical, 5)
         .task(id: post.id) {
-            // Compute the attributed string on a background thread as it can be heavy
-            // and update the state variable on the main thread.
+            // Perform NSAttributedString creation off the main thread.
+            let newAttributedContent = HTMLUtils.nsAttributedStringFromHTML(htmlString: post.content)
+
+            // Check for cancellation before updating the UI.
+            if Task.isCancelled { return }
+
+            // Switch to the main actor to update the @State variable.
             await MainActor.run {
-                self.attributedContent = HTMLUtils.nsAttributedStringFromHTML(htmlString: post.content)
+                self.attributedContent = newAttributedContent
             }
 
             // Log "view" interaction
