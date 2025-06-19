@@ -8,7 +8,14 @@
 import Foundation
 import OSLog
 
-public class MastodonAPIService {
+// Assuming PostVisibility is defined in MastodonAPIServiceProtocol.swift or a shared Model file.
+// If not, it would need to be defined or imported here.
+// For example:
+// enum PostVisibility: String, Codable { /* cases */ }
+//
+// Assuming Post is a Decodable struct defined elsewhere.
+
+public class MastodonAPIService: MastodonAPIServiceProtocol { // Conform to the protocol
     // MARK: - Shared Instance
     public static let shared = MastodonAPIService() // Added singleton shared instance
 
@@ -137,12 +144,16 @@ public class MastodonAPIService {
     }
 
     // --- Statuses (Posts) ---
-    func postStatus(status: String, inReplyToId: String? = nil /*, add other params like media_ids, visibility etc. */) async throws -> Post {
-        var body: [String: String] = ["status": status]
+    // Updated to match MastodonAPIServiceProtocol
+    func postStatus(status: String, visibility: PostVisibility, inReplyToId: String? = nil) async throws -> Post {
+        var body: [String: String] = [
+            "status": status,
+            "visibility": visibility.rawValue // Add visibility to the request body
+        ]
         if let replyId = inReplyToId {
             body["in_reply_to_id"] = replyId
         }
-        // Add other parameters to body dictionary as needed
+        // Add other parameters to body dictionary as needed (e.g., media_ids)
         return try await post(endpoint: "/api/v1/statuses", body: body, responseType: Post.self)
     }
 
