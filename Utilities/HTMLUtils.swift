@@ -30,9 +30,33 @@ struct HTMLUtils {
     /// Converts an HTML string into an `NSAttributedString`. If conversion fails for any reason,
     /// it falls back to returning a plain‐text `NSAttributedString`.
     public static func nsAttributedStringFromHTML(htmlString: String) -> NSAttributedString {
+        var processedHtmlString = htmlString
+        var soupParsingError: Error? = nil
+
+        do {
+            let document: Document = try SwiftSoup.parse(htmlString)
+            // Try to get body's HTML. If empty or nil, try the whole document's HTML.
+            if let bodyHtml = try document.body()?.html(), !bodyHtml.isEmpty {
+                processedHtmlString = bodyHtml
+                // print("HTMLUtils: SwiftSoup successfully parsed body HTML.")
+            } else {
+                // Fallback to re-serializing the whole document if body is not suitable or empty
+                processedHtmlString = try document.html()
+                // print("HTMLUtils: SwiftSoup used full document re-serialization.")
+            }
+        } catch {
+            soupParsingError = error
+            // processedHtmlString remains the original htmlString
+            // Error will be printed later if NSAttributedString conversion also fails,
+            // or we can print it here unconditionally.
+            print("HTMLUtils: SwiftSoup parsing/serialization error: \(error). Using original HTML string for NSAttributedString conversion.")
+        }
+
         // If we can’t get UTF-8 data, immediately return a plain‐text fallback:
-        guard let data = htmlString.data(using: .utf8) else {
-            return NSAttributedString(string: htmlString)
+        guard let data = processedHtmlString.data(using: .utf8) else {
+            // This fallback uses processedHtmlString which might be the original or SwiftSoup output
+            print("HTMLUtils: Failed to convert processed HTML string to UTF-8 data. Falling back to plain string from processed HTML.")
+            return NSAttributedString(string: processedHtmlString)
         }
 
         // Build our options dictionary. Note: .characterEncoding expects an NSNumber.
@@ -43,20 +67,25 @@ struct HTMLUtils {
 
         // Always try to create on the current thread, but guard against Objective-C exceptions
         // using an autoreleasepool for better memory management.
-        var result = NSAttributedString(string: htmlString) // Default fallback
+
+        // Default fallback uses processedHtmlString
+        var result = NSAttributedString(string: processedHtmlString)
+
         autoreleasepool {
             do {
-                // The main thread check is usually for direct UI updates, but NSAttributedString
-                // creation from HTML can be heavy and might cause hangs if not done carefully.
-                // Since the crash indicates an AttributeGraph issue during update,
-                // it's best to create it, then apply to UI.
                 result = try NSAttributedString(
                     data: data,
                     options: options,
                     documentAttributes: nil
                 )
+                // If SwiftSoup failed earlier, but this succeeded, we might still want to know SwiftSoup failed.
+                if let soupError = soupParsingError {
+                    print("HTMLUtils: NSAttributedString conversion succeeded with original HTML after SwiftSoup failed with error: \(soupError)")
+                }
             } catch {
-                print("Error converting HTML to NSAttributedString: \(error). Falling back to plain string.")
+                // Log NSAttributedString conversion error
+                print("HTMLUtils: Error converting HTML (processed string was: \"\(processedHtmlString.prefix(100))...\") to NSAttributedString: \(error). Falling back to plain string from processed HTML.")
+                // result is already NSAttributedString(string: processedHtmlString)
             }
         }
         return result

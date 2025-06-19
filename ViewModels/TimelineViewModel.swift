@@ -76,6 +76,10 @@ final class TimelineViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "TimelineViewModel")
     
+    // Flags for lazy loading non-default timelines
+    private var hasLoadedLatestOnce = false
+    private var hasLoadedTrendingOnce = false
+
     // Placeholder for current user account ID - replace with real auth logic as needed
     internal var currentUserAccountID: String? = "USER_ID_PLACEHOLDER"
     
@@ -190,22 +194,28 @@ final class TimelineViewModel: ObservableObject {
             nextPageInfo = latestPosts.last?.id
             initializeLoadingStates(for: posts)
             await fetchTopPostsForHeader()
+            hasLoadedLatestOnce = true // Mark as loaded
+            logger.info("Successfully loaded 'Latest' timeline for the first time.")
         } catch {
             handleFetchError(error)
             posts = []
+            // Do not set hasLoadedLatestOnce = true on error, so it can retry on next selection.
         }
     }
     
     private func loadTrendingTimeline() async {
         do {
             posts = try await timelineService.fetchTrendingTimeline()
-            nextPageInfo = nil
+            nextPageInfo = nil // Trending usually not paginated with maxId like home timeline
             initializeLoadingStates(for: posts)
-            topPosts = try await trendingService.fetchTrendingPosts()
+            topPosts = try await trendingService.fetchTrendingPosts() // Fetch specific top posts for trending header
+            hasLoadedTrendingOnce = true // Mark as loaded
+            logger.info("Successfully loaded 'Trending' timeline for the first time.")
         } catch {
             handleFetchError(error)
             posts = []
             topPosts = []
+            // Do not set hasLoadedTrendingOnce = true on error.
         }
     }
     
