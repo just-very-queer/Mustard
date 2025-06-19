@@ -141,24 +141,45 @@ class RecommendationService: ObservableObject {
         var tagInteractionCounts: [String: Int] = [:]
 
         for interaction in interactions {
-            var currentScoreBoost = weights[interaction.actionType] ?? 0.0
+            // Calculate base score (weight + optional popularity boost)
+            var baseScore = weights[interaction.actionType] ?? 0.0
 
-            // Enhance like interactions with popularity
             if interaction.actionType == .like, let postIdString = interaction.statusID {
-                // The Post model uses a String id
                 let fetchDescriptor = FetchDescriptor<Post>(predicate: #Predicate { $0.id == postIdString })
-
-                // Perform fetch within a do-catch block for error handling, though try? is used here for brevity
                 if let likedPost = try? backgroundContext.fetch(fetchDescriptor).first {
-                    let popularityFactor = 0.001 // Example factor
-                    // Assuming Post model has these properties as Int. Cast to Double for calculation.
+                    let popularityFactor = 0.001 // Example factor for popularity
                     let totalPopularity = Double(likedPost.favouritesCount + likedPost.reblogsCount + likedPost.repliesCount)
-                    currentScoreBoost += totalPopularity * popularityFactor
-                    logger.debug("Popularity boost of \(totalPopularity * popularityFactor) applied to post \(postIdString) for like interaction.")
-                } else {
-                    logger.debug("Could not fetch Post with ID \(postIdString) for popularity boost calculation.")
+                    baseScore += totalPopularity * popularityFactor
+                    // logger.debug("Popularity boost of \(totalPopularity * popularityFactor) added to base score for post \(postIdString).")
                 }
             }
+
+            // Calculate time decay
+            let now = Date()
+            // Ensure interaction.timestamp is valid, though it should be from SwiftData
+            let ageInSeconds = now.timeIntervalSince(interaction.timestamp)
+            let maxAgeInSeconds = 30.0 * 24.0 * 60.0 * 60.0 // 30 days in seconds
+
+            // Effective age should not exceed maxAgeInSeconds for calculation purposes.
+            // The fetch descriptor already limits interactions to the last 30 days,
+            // but this ensures robustness if an older interaction somehow gets processed.
+            let effectiveAgeInSeconds = min(ageInSeconds, maxAgeInSeconds)
+
+            // Linear decay: multiplier goes from 1.0 (newest) to 0.0 (oldest at maxAgeInSeconds)
+            // Avoid division by zero if maxAgeInSeconds is somehow 0, though it's a constant here.
+            var decayMultiplier = 1.0 - (effectiveAgeInSeconds / (maxAgeInSeconds > 0 ? maxAgeInSeconds : 1.0))
+            decayMultiplier = max(0.0, min(1.0, decayMultiplier)) // Clamp between 0 and 1
+
+            // Apply decay to the combined base score
+            let currentScoreBoost = baseScore * decayMultiplier
+
+            self.logger.debug("""
+                Interaction \(interaction.actionType.rawValue, privacy: .public) for post \(interaction.statusID ?? "N/A", privacy: .public) \
+                (age: \(ageInSeconds/86400, specifier: "%.1f") days). \
+                Base score (weight+pop): \(baseScore, specifier: "%.2f"), \
+                Decay mult: \(decayMultiplier, specifier: "%.2f"), \
+                Final score: \(currentScoreBoost, specifier: "%.2f")
+                """)
 
             // Apply score to author affinity
             if let authorId = interaction.authorAccountID {
