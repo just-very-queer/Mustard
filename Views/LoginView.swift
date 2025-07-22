@@ -10,7 +10,7 @@ import SwiftData
 import OSLog
 
 struct LoginView: View {
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
+    @Environment(AppEnvironment.self) private var appEnvironment
     @EnvironmentObject var locationManager: LocationManager
     @State private var isAuthenticating: Bool = false
     @State private var showServerList: Bool = false
@@ -62,29 +62,28 @@ struct LoginView: View {
                 .sheet(isPresented: $showServerList) {
                     ServerListView(
                         onSelect: { server in
-                            authViewModel.selectedServer = server
                             showServerList = false
-
                             // Introduce a small delay
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                authViewModel.prepareAuthentication()
+                                Task {
+                                    await AuthenticationService.shared.authenticate(to: server)
+                                }
                             }
                         },
                         onCancel: {
                             showServerList = false
                         }
                     )
-                    .environmentObject(authViewModel)
                 }
                 .alert(isPresented: Binding<Bool>(
-                    get: { authViewModel.alertError != nil },
-                    set: { if !$0 { authViewModel.alertError = nil } }
+                    get: { appEnvironment.alertError != nil },
+                    set: { if !$0 { appEnvironment.alertError = nil } }
                 )) {
                     Alert(
                         title: Text("Authentication Failed"),
-                        message: Text(authViewModel.alertError?.message ?? "Please try again."),
+                        message: Text(appEnvironment.alertError?.message ?? "Please try again."),
                         dismissButton: .default(Text("OK")) {
-                            authViewModel.alertError = nil
+                            appEnvironment.alertError = nil
                         }
                     )
                 }
@@ -113,7 +112,7 @@ struct LoginView: View {
             }
             
             // Show progress view if authenticating
-            if authViewModel.authState == .authenticating {
+            if appEnvironment.authState == .authenticating {
                 ProgressView("Authenticating...")
                     .progressViewStyle(CircularProgressViewStyle())
             }

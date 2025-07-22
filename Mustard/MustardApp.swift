@@ -24,7 +24,7 @@ struct MustardApp: App {
     static let mastodonAPIServiceInstance = MastodonAPIService() // single instance
     
     @StateObject private var cacheService: CacheService
-    @StateObject private var authViewModel = AuthenticationViewModel()
+    @State private var appEnvironment = AppEnvironment()
     @StateObject private var locationManager: LocationManager
     
     // MARK: - SwiftData Container
@@ -79,12 +79,12 @@ struct MustardApp: App {
     // Extract view builder into a computed property
     @ViewBuilder
     private var contentView: some View {
-        switch authViewModel.authState {
+        switch appEnvironment.authState {
         case .checking:
             ProgressView("Loading...")
         case .unauthenticated, .authenticating:
             LoginView()
-                .environmentObject(authViewModel)
+                .environment(appEnvironment)
                 .environmentObject(locationManager)
         case .authenticated:
             MainAppView(
@@ -97,7 +97,7 @@ struct MustardApp: App {
                 locationManager: locationManager,
                 recommendationService: RecommendationService.shared
             )
-            .environmentObject(authViewModel)
+            .environment(appEnvironment)
             .environmentObject(locationManager)
             .environmentObject(cacheService)
         }

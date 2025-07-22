@@ -88,10 +88,15 @@ class AuthenticationService: NSObject, ObservableObject {
     
     // MARK: - Authentication Flow
     
-    func authenticate(to server: ServerModel) async throws {
+    func authenticate(to server: ServerModel?) async {
         #if os(iOS)
+        guard let server = server else {
+            alertError = AppError(message: "No server selected.")
+            return
+        }
+
         guard !isAuthenticating else {
-            throw AppError(mastodon: .operationInProgress)
+            return
         }
         isAuthenticating = true
         alertError = nil
@@ -118,14 +123,12 @@ class AuthenticationService: NSObject, ObservableObject {
         } catch {
             isAuthenticated = false
             handleError(error)
-            throw error
         }
         
         isAuthenticating = false
         #else
         // watchOS does not initiate this OAuth flow. It relies on shared tokens.
         logger.warning("Full authentication flow is not supported on watchOS. Check for shared credentials.")
-        throw AppError(message: "Authentication flow not available on this platform.")
         #endif
     }
     
