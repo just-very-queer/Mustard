@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct RecommendationDashboardView: View {
-    @StateObject var viewModel = RecommendationDashboardViewModel()
+    @State private var userAffinities: [UserAffinity] = []
+    @State private var hashtagAffinities: [HashtagAffinity] = []
     @State private var interactionSummary: [InteractionType: Int]? = nil
     @State private var summaryError: Error? = nil
 
@@ -30,10 +31,10 @@ struct RecommendationDashboardView: View {
                 }
 
                 Section("User Affinities") {
-                    if viewModel.userAffinities.isEmpty {
+                    if userAffinities.isEmpty {
                         Text("No user affinities found. Interact with posts to build them.")
                     }
-                    ForEach(viewModel.userAffinities) { affinity in
+                    ForEach(userAffinities) { affinity in
                         HStack {
                             // Placeholder for avatar - assuming UserAffinity has an identifiable ID and maybe a display name
                             // Actual avatar loading would require more info on Account model and image handling
@@ -54,7 +55,7 @@ struct RecommendationDashboardView: View {
                             Spacer()
 
                             Button {
-                                viewModel.logManualAffinityAdjustment(type: .user, id: affinity.authorAccountID, boost: 1.0)
+                                logManualAffinityAdjustment(type: .user, id: affinity.authorAccountID, boost: 1.0)
                             } label: {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundColor(.green)
@@ -62,7 +63,7 @@ struct RecommendationDashboardView: View {
                             .buttonStyle(BorderlessButtonStyle()) // Use BorderlessButtonStyle for buttons in a List row
 
                             Button {
-                                viewModel.logManualAffinityAdjustment(type: .user, id: affinity.authorAccountID, boost: -1.0) // Negative boost for dislike/decrease
+                                logManualAffinityAdjustment(type: .user, id: affinity.authorAccountID, boost: -1.0) // Negative boost for dislike/decrease
                             } label: {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundColor(.red)
@@ -73,10 +74,10 @@ struct RecommendationDashboardView: View {
                 }
 
                 Section("Hashtag Affinities") {
-                    if viewModel.hashtagAffinities.isEmpty {
+                    if hashtagAffinities.isEmpty {
                         Text("No hashtag affinities found. Interact with posts to build them.")
                     }
-                    ForEach(viewModel.hashtagAffinities) { affinity in
+                    ForEach(hashtagAffinities) { affinity in
                         HStack {
                             VStack(alignment: .leading) {
                                 Text("#\(affinity.tag)")
@@ -90,7 +91,7 @@ struct RecommendationDashboardView: View {
                             Spacer()
 
                             Button {
-                                viewModel.logManualAffinityAdjustment(type: .hashtag, id: affinity.tag, boost: 1.0)
+                                logManualAffinityAdjustment(type: .hashtag, id: affinity.tag, boost: 1.0)
                             } label: {
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundColor(.green)
@@ -98,7 +99,7 @@ struct RecommendationDashboardView: View {
                             .buttonStyle(BorderlessButtonStyle())
 
                             Button {
-                                viewModel.logManualAffinityAdjustment(type: .hashtag, id: affinity.tag, boost: -1.0) // Negative boost
+                                logManualAffinityAdjustment(type: .hashtag, id: affinity.tag, boost: -1.0) // Negative boost
                             } label: {
                                 Image(systemName: "minus.circle.fill")
                                     .foregroundColor(.red)
@@ -113,9 +114,10 @@ struct RecommendationDashboardView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         Task {
-                            await viewModel.fetchAffinities()
+                            await fetchAffinities()
                             do {
-                                self.interactionSummary = try await viewModel.recommendationService.getInteractionSummary(forDays: 90)
+                                let recommendationService = RecommendationService.shared
+                                self.interactionSummary = try await recommendationService.getInteractionSummary(forDays: 90)
                                 self.summaryError = nil
                             } catch {
                                 print("Error fetching interaction summary on refresh: \(error)")
@@ -128,9 +130,10 @@ struct RecommendationDashboardView: View {
                 }
             }
             .task { // Replaces onAppear for async tasks
-                await viewModel.fetchAffinities()
+                await fetchAffinities()
                 do {
-                    self.interactionSummary = try await viewModel.recommendationService.getInteractionSummary(forDays: 90)
+                    let recommendationService = RecommendationService.shared
+                    self.interactionSummary = try await recommendationService.getInteractionSummary(forDays: 90)
                     self.summaryError = nil
                 } catch {
                     print("Error fetching interaction summary: \(error)")
@@ -138,6 +141,51 @@ struct RecommendationDashboardView: View {
                     // self.interactionSummary = [:] // Example: set to empty on error to stop loading indicator
                 }
             }
+        }
+    }
+
+    func fetchAffinities() async {
+        let recommendationService = RecommendationService.shared
+        guard let context = recommendationService.modelContext else {
+            print("Error: RecommendationService ModelContext not configured.")
+            return
+        }
+
+        do {
+            let userDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
+            self.userAffinities = try context.fetch(userDescriptor)
+
+            let hashtagDescriptor = FetchDescriptor<HashtagAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
+            self.hashtagAffinities = try context.fetch(hashtagDescriptor)
+        } catch {
+            print("Error fetching affinities: \(error.localizedDescription)")
+        }
+    }
+
+    func logManualAffinityAdjustment(type: AffinityType, id: String, boost: Double) {
+        let recommendationService = RecommendationService.shared
+        let interactionType: InteractionType
+        var authorAccountID: String? = nil
+        var tags: [String]? = nil
+
+        switch type {
+        case .user:
+            interactionType = .manualUserAffinity
+            authorAccountID = id
+        case .hashtag:
+            interactionType = .manualHashtagAffinity
+            tags = [id]
+        }
+
+        recommendationService.logInteraction(
+            actionType: interactionType,
+            authorAccountID: authorAccountID,
+            tags: tags
+        )
+
+        Task {
+            await recommendationService.calculateAffinities()
+            await fetchAffinities()
         }
     }
 }

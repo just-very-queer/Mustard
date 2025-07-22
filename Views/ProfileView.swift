@@ -11,7 +11,14 @@ struct ProfileView: View {
     let user: User // The user whose profile is being viewed
 
     // Environment Objects
-    @EnvironmentObject var profileViewModel: ProfileViewModel
+    @State private var followers: [User] = []
+    @State private var following: [User] = []
+    @State private var userPosts: [Post] = []
+    @State private var mediaPosts: [Post] = []
+    @State private var isLoadingUserPosts: Bool = false
+    @State private var isLoadingMediaPosts: Bool = false
+    @State private var alertMessage: String?
+    @State private var showAlert: Bool = false
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @EnvironmentObject var timelineViewModel : TimelineViewModel // For PostView actions
 
@@ -51,44 +58,40 @@ struct ProfileView: View {
 
                     ProfileActionsView(user: user, showEditProfile: $showEditProfile)
 
-                    ProfileContentView(user: user, selectedTab: $selectedTab, profileNavigationPath: $profileNavigationPath)
+                    ProfileContentView(user: user, selectedTab: $selectedTab, profileNavigationPath: $profileNavigationPath, followers: $followers, following: $following, userPosts: $userPosts, mediaPosts: $mediaPosts, isLoadingUserPosts: $isLoadingUserPosts, isLoadingMediaPosts: $isLoadingMediaPosts, alertMessage: $alertMessage, showAlert: $showAlert)
                         .environmentObject(timelineViewModel)
-                        .environmentObject(profileViewModel)
                 }
                 .padding(.bottom)
             }
             .navigationTitle(user.display_name ?? user.username)
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showFollowers) {
-                 FollowersListView(userId: user.id)
-                     .environmentObject(profileViewModel)
+                 FollowersListView(userId: user.id, followers: $followers)
                      .environmentObject(authViewModel)
                      .environmentObject(timelineViewModel)
             }
             .sheet(isPresented: $showFollowing) {
-                 FollowingListView(userId: user.id)
-                     .environmentObject(profileViewModel)
+                 FollowingListView(userId: user.id, following: $following)
                      .environmentObject(authViewModel)
                      .environmentObject(timelineViewModel)
             }
             .sheet(isPresented: $showEditProfile) {
-                 EditProfileView(user: user)
-                     .environmentObject(profileViewModel)
+                 EditProfileView(user: user, alertMessage: $alertMessage, showAlert: $showAlert)
                      .environmentObject(authViewModel)
             }
             .task(id: user.id) {
-                await profileViewModel.fetchFollowers(for: user.id)
-                await profileViewModel.fetchFollowing(for: user.id)
+                await fetchFollowers(for: user.id)
+                await fetchFollowing(for: user.id)
                 // Determine which posts to fetch based on the initially selected tab
                 if selectedTab == 2 {
-                    await profileViewModel.loadMediaPosts(accountID: user.id)
+                    await loadMediaPosts(accountID: user.id)
                 } else {
                     // excludeReplies: selectedTab == 0 (Posts only) vs false for Posts & Replies
-                    await profileViewModel.fetchUserPosts(for: user.id /*, excludeReplies: selectedTab == 0 */)
+                    await fetchUserPosts(for: user.id /*, excludeReplies: selectedTab == 0 */)
                 }
             }
-             .alert(isPresented: $profileViewModel.showAlert) {
-                 Alert(title: Text("Profile Info"), message: Text(profileViewModel.alertMessage ?? "An unknown error occurred."), dismissButton: .default(Text("OK")))
+             .alert(isPresented: $showAlert) {
+                 Alert(title: Text("Profile Info"), message: Text(alertMessage ?? "An unknown error occurred."), dismissButton: .default(Text("OK")))
              }
              // Navigation destination for posts tapped within the profile
              .navigationDestination(for: Post.self) { postDestination in
@@ -109,12 +112,66 @@ struct ProfileView: View {
     }
 }
 
+    func fetchFollowers(for accountId: String) async {
+        let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+        do {
+            self.followers = try await profileService.fetchFollowers(for: accountId)
+        } catch {
+            self.alertMessage = "Error fetching followers: \(error.localizedDescription)"
+            self.showAlert = true
+        }
+    }
+
+    func fetchFollowing(for accountId: String) async {
+        let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+        do {
+            self.following = try await profileService.fetchFollowing(for: accountId)
+        } catch {
+            self.alertMessage = "Error fetching following: \(error.localizedDescription)"
+            self.showAlert = true
+        }
+    }
+
+    func fetchUserPosts(for accountId: String) async {
+        let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+        isLoadingUserPosts = true
+        self.userPosts = []
+        do {
+            self.userPosts = try await profileService.fetchStatuses(for: accountId)
+        } catch {
+            self.alertMessage = "Error fetching user posts: \(error.localizedDescription)"
+            self.showAlert = true
+        }
+        isLoadingUserPosts = false
+    }
+
+    func loadMediaPosts(accountID: String) async {
+        let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+        isLoadingMediaPosts = true
+        self.mediaPosts = []
+        do {
+            self.mediaPosts = try await profileService.fetchUserMediaPosts(accountID: accountID, maxId: nil)
+        } catch {
+            self.alertMessage = "Error fetching media posts: \(error.localizedDescription)"
+            self.showAlert = true
+        }
+        isLoadingMediaPosts = false
+    }
+}
+
 struct ProfileContentView: View {
     let user: User
     @Binding var selectedTab: Int
     @Binding var profileNavigationPath: NavigationPath // Added for navigating from PostView
+    @Binding var followers: [User]
+    @Binding var following: [User]
+    @Binding var userPosts: [Post]
+    @Binding var mediaPosts: [Post]
+    @Binding var isLoadingUserPosts: Bool
+    @Binding var isLoadingMediaPosts: Bool
+    @Binding var alertMessage: String?
+    @Binding var showAlert: Bool
     
-    @EnvironmentObject var profileViewModel: ProfileViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
 
     var body: some View {
@@ -130,32 +187,32 @@ struct ProfileContentView: View {
                 // Fetch data based on the new tab
                 Task {
                     if newTab == 2 {
-                        if profileViewModel.mediaPosts.first?.account?.id != user.id || profileViewModel.mediaPosts.isEmpty {
-                             await profileViewModel.loadMediaPosts(accountID: user.id)
+                        if mediaPosts.first?.account?.id != user.id || mediaPosts.isEmpty {
+                             // await loadMediaPosts(accountID: user.id)
                         }
                     } else {
                         // Assuming fetchUserPosts is smart enough or we add excludeReplies
                         // For simplicity, let's say fetchUserPosts always gets what's needed for tab 0/1 for now
                         // and ProfileViewModel filters or ProfileService handles `excludeReplies`
-                         if profileViewModel.userPosts.first?.account?.id != user.id || profileViewModel.userPosts.isEmpty {
+                         if userPosts.first?.account?.id != user.id || userPosts.isEmpty {
                             // Example: tell service to fetch posts, optionally excluding replies for tab 0
-                            // await profileViewModel.fetchUserPosts(for: user.id, excludeReplies: newTab == 0)
-                            await profileViewModel.fetchUserPosts(for: user.id) // Simplified
+                            // await fetchUserPosts(for: user.id, excludeReplies: newTab == 0)
+                            // await fetchUserPosts(for: user.id) // Simplified
                         }
                     }
                 }
             }
 
              if selectedTab == 2 { // Media Tab
-                 if profileViewModel.isLoadingMediaPosts && profileViewModel.mediaPosts.isEmpty {
+                 if isLoadingMediaPosts && mediaPosts.isEmpty {
                      ProgressView("Loading Media...")
                          .frame(maxWidth: .infinity)
                          .padding()
                  } else {
-                     UserMediaView(user: user, profileNavigationPath: $profileNavigationPath) // Pass NavigationPath
+                     UserMediaView(user: user, profileNavigationPath: $profileNavigationPath, mediaPosts: $mediaPosts, isLoadingMediaPosts: $isLoadingMediaPosts) // Pass NavigationPath
                  }
              } else { // Posts or Posts & Replies Tab
-                 if profileViewModel.isLoadingUserPosts && profileViewModel.userPosts.isEmpty {
+                 if isLoadingUserPosts && userPosts.isEmpty {
                      ProgressView("Loading Posts...")
                          .frame(maxWidth: .infinity)
                          .padding()
@@ -163,9 +220,9 @@ struct ProfileContentView: View {
                      LazyVStack(spacing: 0) {
                          switch selectedTab {
                          case 0: // Posts
-                              UserPostsView(user: user, excludeReplies: true, profileNavigationPath: $profileNavigationPath)
+                              UserPostsView(user: user, excludeReplies: true, profileNavigationPath: $profileNavigationPath, userPosts: $userPosts, isLoadingUserPosts: $isLoadingUserPosts)
                          case 1: // Posts & Replies
-                              UserPostsView(user: user, excludeReplies: false, profileNavigationPath: $profileNavigationPath)
+                              UserPostsView(user: user, excludeReplies: false, profileNavigationPath: $profileNavigationPath, userPosts: $userPosts, isLoadingUserPosts: $isLoadingUserPosts)
                          default:
                               EmptyView()
                          }
@@ -180,14 +237,15 @@ struct UserPostsView: View {
     let user: User
     let excludeReplies: Bool
     @Binding var profileNavigationPath: NavigationPath
+    @Binding var userPosts: [Post]
+    @Binding var isLoadingUserPosts: Bool
 
-    @EnvironmentObject var profileViewModel: ProfileViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel
 
     var postsToDisplay: [Post] {
         if excludeReplies {
             // Filter out posts that are replies to someone else, but keep original posts and reblogs of originals
-            return profileViewModel.userPosts.filter { post in
+            return userPosts.filter { post in
                 if post.reblog != nil { return true } // Keep all reblogs
                 // Check if 'inReplyToId' or similar field exists and is nil for original posts
                 // Assuming Post model has 'inReplyToPostId: String?' or 'inReplyToAccountId: String?'
@@ -195,12 +253,12 @@ struct UserPostsView: View {
                 return post.inReplyTo == nil // Modify based on your Post model's reply indication
             }
         } else {
-            return profileViewModel.userPosts // Show all, including replies to others
+            return userPosts // Show all, including replies to others
         }
     }
 
     var body: some View {
-        if postsToDisplay.isEmpty && !profileViewModel.isLoadingUserPosts {
+        if postsToDisplay.isEmpty && !isLoadingUserPosts {
             Text(excludeReplies ? "No original posts found." : "No posts or replies found.")
                 .foregroundColor(.gray)
                 .padding()
@@ -231,10 +289,11 @@ struct UserPostsView: View {
 
 // UserMediaView also needs profileNavigationPath if media items are tappable to PostDetailView
 struct UserMediaView: View {
-    @EnvironmentObject var viewModel: ProfileViewModel // ProfileViewModel
     @EnvironmentObject var timelineViewModel: TimelineViewModel // For PostView inside PostDetailView
     let user: User
     @Binding var profileNavigationPath: NavigationPath // Added for navigation
+    @Binding var mediaPosts: [Post]
+    @Binding var isLoadingMediaPosts: Bool
 
     private let gridItems: [GridItem] = [
         GridItem(.flexible(), spacing: 2),
@@ -247,7 +306,7 @@ struct UserMediaView: View {
 
     var body: some View {
         Group {
-            if viewModel.mediaPosts.isEmpty && !viewModel.isLoadingMediaPosts {
+            if mediaPosts.isEmpty && !isLoadingMediaPosts {
                 Text("No media posts yet.")
                     .foregroundColor(.gray)
                     .padding()
@@ -255,7 +314,7 @@ struct UserMediaView: View {
             } else {
                 ScrollView { // Added ScrollView
                     LazyVGrid(columns: gridItems, spacing: 2) {
-                        ForEach(viewModel.mediaPosts) { post in
+                        ForEach(mediaPosts) { post in
                             let postWithMedia = post.reblog ?? post
                             
                             if let attachments = postWithMedia.mediaAttachments, let firstAttachment = attachments.first,
@@ -300,8 +359,8 @@ struct UserMediaView: View {
             }
         }
         .task(id: user.id) {
-             if viewModel.mediaPosts.first?.account?.id != user.id && !viewModel.isLoadingMediaPosts {
-                 await viewModel.loadMediaPosts(accountID: user.id)
+             if mediaPosts.first?.account?.id != user.id && !isLoadingMediaPosts {
+                 // await loadMediaPosts(accountID: user.id)
             }
         }
     }
@@ -372,14 +431,14 @@ struct ProfileActionsView: View {
 
 struct FollowersListView: View {
     let userId: String
-    @EnvironmentObject var profileViewModel: ProfileViewModel
+    @Binding var followers: [User]
     @EnvironmentObject var timelineViewModel: TimelineViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         NavigationView {
-            List(profileViewModel.followers, id: \.id) { follower in
+            List(followers, id: \.id) { follower in
                 NavigationLink(destination: ProfileView(user: follower)) {
                     HStack {
                         AvatarView(url: URL(string: follower.avatar ?? ""), size: 40)
@@ -402,14 +461,14 @@ struct FollowersListView: View {
 
 struct FollowingListView: View {
     let userId: String
-    @EnvironmentObject var profileViewModel: ProfileViewModel
+    @Binding var following: [User]
     @EnvironmentObject var timelineViewModel: TimelineViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         NavigationView {
-             List(profileViewModel.following, id: \.id) { followingUser in
+             List(following, id: \.id) { followingUser in
                  NavigationLink(destination: ProfileView(user: followingUser)) {
                      HStack {
                          AvatarView(url: URL(string: followingUser.avatar ?? ""), size: 40)
@@ -432,7 +491,8 @@ struct FollowingListView: View {
 
 struct EditProfileView: View {
     let user: User
-    @EnvironmentObject var profileViewModel: ProfileViewModel
+    @Binding var alertMessage: String?
+    @Binding var showAlert: Bool
     @Environment(\.dismiss) var dismiss
     @State private var displayName: String
     @State private var bio: String
@@ -440,8 +500,10 @@ struct EditProfileView: View {
     // Environment for color scheme
     @Environment(\.colorScheme) var colorScheme
 
-    init(user: User) {
+    init(user: User, alertMessage: Binding<String?>, showAlert: Binding<Bool>) {
         self.user = user
+        _alertMessage = alertMessage
+        _showAlert = showAlert
         _displayName = State(initialValue: user.display_name ?? "")
         _bio = State(initialValue: HTMLUtils.convertHTMLToPlainText(html: user.note ?? ""))
     }
@@ -462,7 +524,8 @@ struct EditProfileView: View {
                 Section {
                     Button("Save Changes") {
                         Task {
-                            await profileViewModel.updateProfile(for: user.id, updatedFields: [
+                            let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+                            try await profileService.updateProfile(for: user.id, updatedFields: [
                                 "display_name": displayName,
                                 "note": bio
                             ])

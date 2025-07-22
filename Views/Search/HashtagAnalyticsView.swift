@@ -11,11 +11,13 @@ import Charts
 struct HashtagAnalyticsView: View {
     let hashtag: String
     let history: [TagHistory]
-    @Binding var selectedTimeRange: SearchViewModel.TimeRange
+    @State private var selectedTimeRange: SearchViewModel.TimeRange = .day
     @Binding var showHashtagAnalytics: Bool
 
     @State private var sortOrder: SortOrder = .latest
-    @ObservedObject var viewModel: SearchViewModel
+    @State private var posts: [Post] = []
+    @State private var isLoading = false
+    @State private var error: Error?
     @EnvironmentObject var timelineViewModel: TimelineViewModel
 
     enum SortOrder: String, Identifiable, CaseIterable {
@@ -27,9 +29,9 @@ struct HashtagAnalyticsView: View {
     var sortedPosts: [Post] {
         switch sortOrder {
         case .latest:
-            return viewModel.filteredPosts
+            return posts
         case .topLiked:
-            return viewModel.filteredPosts.sorted { $0.favouritesCount > $1.favouritesCount }
+            return posts.sorted { $0.favouritesCount > $1.favouritesCount }
         }
     }
 
@@ -56,11 +58,11 @@ struct HashtagAnalyticsView: View {
                     }
                 }
             }
-            .alert(item: $viewModel.error) { error in
-                Alert(title: Text("Error"), message: Text(error.message), dismissButton: .default(Text("OK")))
-            }
+            .alert(isPresented: .constant(error != nil), content: {
+                Alert(title: Text("Error"), message: Text(error?.localizedDescription ?? ""), dismissButton: .default(Text("OK")))
+            })
             .onAppear {
-                viewModel.filterPostsForHashtag(hashtag, timeRange: selectedTimeRange)
+                fetchPosts(for: hashtag)
             }
         }
     }
@@ -74,7 +76,7 @@ struct HashtagAnalyticsView: View {
         .pickerStyle(SegmentedPickerStyle())
         .padding(.horizontal)
         .onChange(of: selectedTimeRange) { newValue, oldValue in // Updated for newer iOS versions
-            viewModel.filterPostsForHashtag(hashtag, timeRange: newValue)
+            fetchPosts(for: hashtag)
         }
     }
 
@@ -109,9 +111,9 @@ struct HashtagAnalyticsView: View {
 
     private var postsSection: some View {
         Group {
-            if viewModel.isLoading {
+            if isLoading {
                 ProgressView("Loading Posts...")
-            } else if viewModel.filteredPosts.isEmpty {
+            } else if posts.isEmpty {
                 Text("No posts found for #\(hashtag) in the last \(selectedTimeRange.rawValue).")
                     .foregroundColor(.gray)
             } else {
@@ -139,6 +141,34 @@ struct HashtagAnalyticsView: View {
                 guard let date = df.date(from: item.day), let uses = Int(item.uses), date >= startDate else { return nil }
                 return TagHistory(day: df.string(from: date), uses: String(uses), accounts: "")
             }
+    }
+
+    private func fetchPosts(for hashtag: String) {
+        Task {
+            isLoading = true
+            do {
+                let searchService = SearchService(mastodonAPIService: MastodonAPIService.shared)
+                let fetchedPosts = try await searchService.fetchHashtagPosts(hashtag: hashtag)
+
+                let now = Date()
+                let calendar = Calendar.current
+                var startDate: Date
+
+                switch selectedTimeRange {
+                case .day: startDate = calendar.date(byAdding: .day, value: -1, to: now)!
+                case .week: startDate = calendar.date(byAdding: .day, value: -7, to: now)!
+                case .month: startDate = calendar.date(byAdding: .month, value: -1, to: now)!
+                case .year: startDate = calendar.date(byAdding: .year, value: -1, to: now)!
+                }
+
+                self.posts = fetchedPosts.filter { post in
+                    post.createdAt >= startDate
+                 }
+            } catch {
+                self.error = error
+            }
+            isLoading = false
+        }
     }
 }
 
