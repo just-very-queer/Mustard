@@ -305,12 +305,11 @@ struct SearchView: View {
          HashtagAnalyticsView(
              hashtag: tag.name,
              history: tag.history?.compactMap { TagHistory(day: $0.day, uses: $0.uses, accounts: $0.accounts) } ?? [],
-             selectedTimeRange: $viewModel.selectedTimeRange,
+             selectedTimeRange: .constant(.day),
              showHashtagAnalytics: Binding(
                  get: { selectedHashtagForAnalytics != nil },
                  set: { if !$0 { selectedHashtagForAnalytics = nil } }
-             ),
-             viewModel: viewModel
+             )
          )
          .environmentObject(timelineViewModel)
     }
