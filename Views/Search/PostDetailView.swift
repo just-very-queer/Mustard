@@ -10,7 +10,6 @@ import SwiftUI
 
 struct PostDetailView: View {
     let post: Post // The outer Post object, which might be a reblog
-    @ObservedObject var viewModel: TimelineViewModel
     @Binding var showDetail: Bool // Used to dismiss this view when presented as a sheet
 
     @State private var isCommentSectionExpanded: Bool = true // Remains true for detail view
@@ -19,6 +18,10 @@ struct PostDetailView: View {
     // State for fetched replies specific to this detail view
     @State private var detailedReplies: [Post]? = nil
     @State private var isLoadingReplies: Bool = false
+    @State private var showGlow = false
+
+    @Environment(TimelineService.self) private var timelineService
+    @EnvironmentObject private var timelineViewModel: TimelineViewModel // Keep for navigation temporarily
 
     // Helper to determine which post's details to display (original or reblogged)
     private var displayPost: Post {
@@ -26,16 +29,22 @@ struct PostDetailView: View {
     }
     
     var body: some View {
-        NavigationView {
-            ZStack(alignment: .topTrailing) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Display the main post
-                        PostView(
+        ZStack {
+            if showGlow {
+                GlowEffect()
+                    .edgesIgnoringSafeArea(.all)
+                    .transition(.opacity)
+            }
+
+            NavigationView {
+                ZStack(alignment: .topTrailing) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            // Display the main post
+                            PostView(
                             post: post, // Pass the original post; PostView will handle displayPost internally
-                            viewModel: viewModel,
                             viewProfileAction: { user in
-                                viewModel.navigateToProfile(user)
+                                timelineViewModel.navigateToProfile(user)
                                 // If presented modally, navigating might require dismissing the sheet first
                                 // or using a more complex navigation setup if full navigation stack is needed in sheet.
                                 print("Profile tapped in Detail View: \(user.username)")
@@ -49,7 +58,6 @@ struct PostDetailView: View {
                             post: displayPost, // This is the post being replied to
                             isExpanded: $isCommentSectionExpanded, // Should always be true here
                             commentText: $commentInputText, // Text for new reply to displayPost
-                            viewModel: viewModel,
                             repliesToDisplay: detailedReplies,
                             isLoadingReplies: $isLoadingReplies,
                             currentDetailPost: displayPost // Pass the post being detailed
@@ -67,18 +75,32 @@ struct PostDetailView: View {
                 }
             }
             .task(id: displayPost.id) { // Reload replies if the displayPost changes
+                triggerGlow()
                 await loadReplies(forPost: displayPost)
             }
         }
     }
     
+    private func triggerGlow() {
+        withAnimation {
+            showGlow = true
+        }
+        Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+            withAnimation(.easeOut(duration: 1.0)) {
+                showGlow = false
+            }
+        }
+    }
+
     private func loadReplies(forPost: Post) async {
         isLoadingReplies = true
         self.detailedReplies = nil // Clear previous replies
         
-        if let context = await viewModel.fetchContext(for: forPost) {
+        do {
+            let context = try await timelineService.fetchPostContext(postId: forPost.id)
             self.detailedReplies = context.descendants
-        } else {
+        } catch {
+            print("Error loading replies: \(error.localizedDescription)")
             self.detailedReplies = [] // Default to empty on error or no context
         }
         isLoadingReplies = false
@@ -86,14 +108,18 @@ struct PostDetailView: View {
 }
 
 struct ExpandedCommentsSection: View {
-    let post: Post // The post to which these comments are replies (displayPost from parent)
+    @Bindable var post: Post // The post to which these comments are replies (displayPost from parent)
     @Binding var isExpanded: Bool
     @Binding var commentText: String // For writing a new reply to `post`
-    @ObservedObject var viewModel: TimelineViewModel
     let repliesToDisplay: [Post]?
     @Binding var isLoadingReplies: Bool
     
     let currentDetailPost: Post // The post for which this comment section is being shown
+
+    @Environment(PostActionService.self) private var postActionService
+    @Environment(RecommendationService.self) private var recommendationService
+    @EnvironmentObject private var authViewModel: AuthenticationViewModel
+    @EnvironmentObject private var timelineViewModel: TimelineViewModel // Keep for navigation temporarily
 
     // State for presenting a tapped comment in its own PostDetailView
     @State private var selectedCommentForDetailSheet: Post? = nil
@@ -120,9 +146,8 @@ struct ExpandedCommentsSection: View {
                             // This makes each comment look like a full post, with its own actions, content, etc.
                             PostView(
                                 post: reply, // The reply itself
-                                viewModel: viewModel,
                                 viewProfileAction: { user in
-                                    viewModel.navigateToProfile(user)
+                                    timelineViewModel.navigateToProfile(user)
                                 },
                                 interestScore: 0.0 // Or fetch interest score for the reply if needed
                             )
@@ -143,7 +168,6 @@ struct ExpandedCommentsSection: View {
                     // showDetail binding here controls the presentation of THIS sheet
                     PostDetailView(
                         post: tappedReply,
-                        viewModel: viewModel,
                         showDetail: Binding( // This binding controls the newly presented sheet
                             get: { selectedCommentForDetailSheet != nil },
                             set: { if !$0 { selectedCommentForDetailSheet = nil } }
@@ -167,22 +191,18 @@ struct ExpandedCommentsSection: View {
                     .cornerRadius(8)
                 
                 Button {
-                    viewModel.comment(on: post, content: commentText) // 'post' here is the one being replied to
-                    commentText = "" // Clear input after sending
-                    // Optionally, trigger a refresh of replies for the `currentDetailPost`
                     Task {
-                        // This reloads replies for the main post this comment section belongs to
-                        if (await viewModel.fetchContext(for: currentDetailPost)) != nil {
-                             // This state update might need to be passed up or handled via a shared mechanism
-                             // For simplicity, assuming viewModel handles updating its own state which parent observes
-                             // Or, if detailedReplies is directly mutable from parent:
-                             // parent.detailedReplies = context.descendants (this is not how @State works directly)
-                             // A direct refresh function call on parent might be cleaner or a callback.
-                             // For now, let's assume parent PostDetailView's .task(id: displayPost.id) will re-fetch
-                             // if displayPost's relevant properties (like repliesCount) change or if we explicitly trigger.
-                             // A simple way is to just re-call the loadReplies on the viewModel for the *currentDetailPost*.
-                            // This part can get complex depending on how state flows.
-                            // The loadReplies in PostDetailView should be sufficient if it's re-triggered.
+                        do {
+                            try await post.comment(
+                                with: commentText,
+                                using: postActionService,
+                                recommendationService: recommendationService,
+                                currentUserAccountID: authViewModel.currentUser?.id
+                            )
+                            commentText = "" // Clear input after sending
+                        } catch {
+                            // TODO: Show error to user
+                            print("Error posting comment: \(error.localizedDescription)")
                         }
                     }
                 } label: {

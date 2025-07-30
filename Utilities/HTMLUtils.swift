@@ -73,19 +73,36 @@ struct HTMLUtils {
 
         autoreleasepool {
             do {
-                result = try NSAttributedString(
+                let initialResult = try NSAttributedString(
                     data: data,
                     options: options,
                     documentAttributes: nil
                 )
-                // If SwiftSoup failed earlier, but this succeeded, we might still want to know SwiftSoup failed.
+
+                // Post-process to style mentions and hashtags
+                let mutableAttributedString = NSMutableAttributedString(attributedString: initialResult)
+
+                let fullRange = NSRange(location: 0, length: mutableAttributedString.length)
+
+                mutableAttributedString.enumerateAttribute(.link, in: fullRange, options: []) { value, range, _ in
+                    guard let url = value as? URL else { return }
+
+                    // Check if the link is a hashtag or mention
+                    let linkString = url.absoluteString
+                    if linkString.contains("/tags/") { // Hashtag
+                        mutableAttributedString.addAttribute(.foregroundColor, value: UIColor.systemBlue, range: range)
+                    } else if linkString.contains("@") || (linkString.contains("/users/") && !linkString.contains("/statuses/")) { // Mention
+                        mutableAttributedString.addAttribute(.foregroundColor, value: UIColor.systemBlue, range: range)
+                    }
+                }
+
+                result = mutableAttributedString
+
                 if let soupError = soupParsingError {
                     print("HTMLUtils: NSAttributedString conversion succeeded with original HTML after SwiftSoup failed with error: \(soupError)")
                 }
             } catch {
-                // Log NSAttributedString conversion error
-                print("HTMLUtils: Error converting HTML (processed string was: \"\(processedHtmlString.prefix(100))...\") to NSAttributedString: \(error). Falling back to plain string from processed HTML.")
-                // result is already NSAttributedString(string: processedHtmlString)
+                print("HTMLUtils: Error converting HTML to NSAttributedString: \(error). Falling back to plain string.")
             }
         }
         return result

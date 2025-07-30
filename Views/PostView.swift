@@ -14,11 +14,13 @@ import SwiftSoup
 // MARK: - PostView (Main View)
 struct PostView: View {
     let post: Post          // Outer post, might be a reblog
-    @ObservedObject var viewModel: TimelineViewModel
+    // @ObservedObject var viewModel: TimelineViewModel // REPLACED
     var viewProfileAction: (User) -> Void
 
     @State private var showImageViewer = false
     @State private var showBrowserView = false
+    @State private var isPerformingAction = false
+    @State private var actionError: Error?
 
     let interestScore: Double
 
@@ -42,7 +44,7 @@ struct PostView: View {
 
             PostContentView(
                 post: displayPost,
-                currentUserAccountID: viewModel.currentUserAccountID
+                currentUserAccountID: nil // TODO: Get from auth service
             )
 
             MediaAttachmentView(
@@ -52,11 +54,12 @@ struct PostView: View {
 
             PostActionsViewRevised(
                 post: displayPost,
-                viewModel: viewModel
+                isPerformingAction: $isPerformingAction,
+                actionError: $actionError
             )
             .padding(.top, 5)
 
-            if viewModel.isLoading(forPostId: displayPost.id) {
+            if isPerformingAction {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 5)
@@ -84,18 +87,46 @@ struct PostView: View {
             }
         }
         .interestHighlight(isActive: interestScore > 5.0, score: interestScore)
+        .alert("An Error Occurred", isPresented: .constant(actionError != nil), actions: {
+            Button("OK") { actionError = nil }
+        }, message: {
+            Text(actionError?.localizedDescription ?? "Unknown error.")
+        })
     }
 }
 
 // MARK: - Revised PostActionsView
 struct PostActionsViewRevised: View {
-    let post: Post
-    @ObservedObject var viewModel: TimelineViewModel
+    @Bindable var post: Post
+    @Binding var isPerformingAction: Bool
+    @Binding var actionError: Error?
+
+    @Environment(PostActionService.self) private var postActionService
+    @Environment(RecommendationService.self) private var recommendationService
+    @EnvironmentObject private var authViewModel: AuthenticationViewModel
+
+    private func performAction(_ action: @escaping () async throws -> Void) {
+        Task {
+            isPerformingAction = true
+            do {
+                try await action()
+            } catch {
+                actionError = error
+            }
+            isPerformingAction = false
+        }
+    }
 
     var body: some View {
         HStack {
             Button {
-                viewModel.toggleLike(for: post)
+                performAction {
+                    try await post.toggleLike(
+                        using: postActionService,
+                        recommendationService: recommendationService,
+                        currentUserAccountID: authViewModel.currentUser?.id
+                    )
+                }
             } label: {
                 Image(systemName: post.isFavourited ? "heart.fill" : "heart")
                     .foregroundColor(post.isFavourited ? .red : .gray)
@@ -108,7 +139,13 @@ struct PostActionsViewRevised: View {
             Spacer()
 
             Button {
-                viewModel.toggleRepost(for: post)
+                performAction {
+                    try await post.toggleRepost(
+                        using: postActionService,
+                        recommendationService: recommendationService,
+                        currentUserAccountID: authViewModel.currentUser?.id
+                    )
+                }
             } label: {
                 Image(systemName: "arrow.2.squarepath")
                     .foregroundColor(post.isReblogged ? .green : .gray)
@@ -121,7 +158,8 @@ struct PostActionsViewRevised: View {
             Spacer()
 
             Button {
-                viewModel.showComments(for: post)
+                // TODO: Re-implement comment functionality.
+                // This now requires coordination with the parent view that presents the sheet.
             } label: {
                 Image(systemName: "bubble.left")
                     .foregroundColor(.gray)
@@ -134,7 +172,8 @@ struct PostActionsViewRevised: View {
             Spacer()
 
             Button {
-                viewModel.logNotInterested(for: post)
+                // TODO: Re-implement "Not Interested" functionality.
+                // This requires telling the parent list to hide this post.
             } label: {
                 Image(systemName: "hand.thumbsdown")
                     .foregroundColor(.gray)
@@ -163,8 +202,6 @@ struct PostContentView: View {
     let post: Post
     let currentUserAccountID: String?
 
-    // For dynamically sizing the AttributedTextView
-    @State private var desiredTextHeight: CGFloat = 0
     // State to hold the computed NSAttributedString
     @State private var attributedContent: NSAttributedString = NSAttributedString()
 
@@ -176,34 +213,28 @@ struct PostContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // If the post has HTML content, render it via AttributedTextView
+            // If the post has HTML content, render it via the new SwiftUI view
             if !post.content.isEmpty {
-                GeometryReader { geometry in
-                    AttributedTextView(
-                        attributedString: attributedContent, // Use the state variable
-                        maxLayoutWidth: geometry.size.width,
-                        onLinkTap: { url in
-                            // Log the tap interaction
-                            RecommendationService.shared.logInteraction(
-                                statusID: post.id,
-                                actionType: .linkOpen,
-                                accountID: currentUserAccountID,
-                                linkURL: url.absoluteString
-                            )
+                SwiftUIAttributedTextView(
+                    attributedString: attributedContent,
+                    onLinkTap: { url in
+                        // Log the tap interaction
+                        RecommendationService.shared.logInteraction(
+                            statusID: post.id,
+                            actionType: .linkOpen,
+                            accountID: currentUserAccountID,
+                            linkURL: url.absoluteString
+                        )
 
-                            // If it's a web URL, open in browser
-    #if canImport(UIKit) && !os(watchOS)
-                            if url.scheme?.starts(with: "http") == true || url.scheme?.starts(with: "https") == true {
-                                UIApplication.shared.open(url)
-                            }
-    #endif
-                            // You can add more logic for mention URLs (e.g., navigate to profile)
-                        },
-                        desiredHeight: $desiredTextHeight
-                    )
-                    .frame(minHeight: desiredTextHeight)
-                }
-                .frame(minHeight: desiredTextHeight)
+                        // If it's a web URL, open in browser
+#if canImport(UIKit) && !os(watchOS)
+                        if url.scheme?.starts(with: "http") == true || url.scheme?.starts(with: "https") == true {
+                            UIApplication.shared.open(url)
+                        }
+#endif
+                        // You can add more logic for mention URLs (e.g., navigate to profile)
+                    }
+                )
                 .padding(.horizontal)
             }
 

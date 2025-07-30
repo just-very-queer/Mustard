@@ -11,7 +11,7 @@ import Charts
 struct HashtagAnalyticsView: View {
     let hashtag: String
     let history: [TagHistory]
-    @State private var selectedTimeRange: SearchViewModel.TimeRange = .day
+    @State private var selectedTimeRange: TimeRange = .day
     @Binding var showHashtagAnalytics: Bool
 
     @State private var sortOrder: SortOrder = .latest
@@ -69,13 +69,13 @@ struct HashtagAnalyticsView: View {
 
     private var timeRangePicker: some View {
         Picker("Time Range", selection: $selectedTimeRange) {
-            ForEach(SearchViewModel.TimeRange.allCases) { range in
+            ForEach(TimeRange.allCases) { range in
                 Text(range.rawValue).tag(range)
             }
         }
         .pickerStyle(SegmentedPickerStyle())
         .padding(.horizontal)
-        .onChange(of: selectedTimeRange) { newValue, oldValue in // Updated for newer iOS versions
+        .onChange(of: selectedTimeRange) {
             fetchPosts(for: hashtag)
         }
     }
@@ -125,7 +125,7 @@ struct HashtagAnalyticsView: View {
         .environmentObject(timelineViewModel)
     }
 
-    private func filteredHistory(for range: SearchViewModel.TimeRange) -> [TagHistory] {
+    private func filteredHistory(for range: TimeRange) -> [TagHistory] {
         let now = Date()
         let calendar = Calendar.current
         let startDate: Date
@@ -212,7 +212,6 @@ struct HashtagPostsView: View {
             ForEach(posts) { post in
                 PostView(
                     post: post,
-                    viewModel: timelineViewModel,
                     viewProfileAction: { user in
                         timelineViewModel.navigateToProfile(user)
                     },

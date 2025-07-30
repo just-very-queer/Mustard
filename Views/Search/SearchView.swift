@@ -8,30 +8,49 @@
 import SwiftUI
 import Combine
 
+
 struct SearchView: View {
-    // Environment Objects
+    // MARK: - Environment
     @EnvironmentObject var timelineViewModel: TimelineViewModel // For Post actions and navigation context
 
-    // State Objects
-    // FIX 1: Correctly initialize SearchService with the MastodonAPIService instance
-    @StateObject private var viewModel = SearchViewModel(searchService: SearchService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)) // Owns search logic and state
+    // MARK: - Services
+    private let searchService = SearchService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)
+
+    // MARK: - State
+    @State private var searchText: String = ""
+    @State private var searchResults: SearchResults = SearchResults()
+    @State private var trendingHashtags: [Tag] = []
+    @State private var selectedCategory: SearchCategory = .all
+    @State private var searchFilters: SearchFilters = SearchFilters()
+    @State private var error: IdentifiableError?
+    @State private var isLoading: Bool = false
+
+    @State private var searchTask: Task<Void, Never>?
 
     // Focus State
     @FocusState private var isSearchFieldFocused: Bool
 
-    // Local State for Sheet Presentation
+    // Sheet Presentation State
     @State private var showSearchFilters = false
     @State private var selectedPostForDetail: Post? = nil
     @State private var selectedHashtagForAnalytics: Tag? = nil
 
+    // Navigation
     @State private var navigationPath = NavigationPath()
-
+    @State private var showGlow = false
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            VStack(spacing: 0) {
-                searchBarArea
-                    .padding(.bottom, 8)
+        ZStack {
+            if showGlow {
+                GlowEffect()
+                    .edgesIgnoringSafeArea(.all)
+                    .transition(.opacity)
+            }
+
+            NavigationStack(path: $navigationPath) {
+                VStack(spacing: 0) {
+                    searchBarArea
+                        .padding(.bottom, 8)
 
                 categoryPicker
                     .padding(.bottom, 8)
@@ -48,56 +67,67 @@ struct SearchView: View {
             .sheet(item: $selectedHashtagForAnalytics) { tag in analyticsSheet(tag: tag) }
             .sheet(item: $selectedPostForDetail) { post in detailSheet(post: post) }
             .task {
-                if viewModel.trendingHashtags.isEmpty {
-                    await viewModel.loadTrendingHashtags()
+                triggerGlow()
+                if trendingHashtags.isEmpty {
+                    await loadTrendingHashtags()
                 }
             }
-            // FIX 2: Use errorContent.message in the alert
-            .alert(item: $viewModel.error) { errorContent in
+            .alert(item: $error) { errorContent in
                  Alert(title: Text("Error"), message: Text(errorContent.message), dismissButton: .default(Text("OK")))
             }
             .navigationDestination(for: User.self) { user in
                  ProfileView(user: user)
                      .environmentObject(timelineViewModel)
             }
+            .onChange(of: searchText) {
+                searchTask?.cancel()
+                searchTask = Task {
+                    do {
+                        try await Task.sleep(for: .seconds(0.5))
+                        await search(query: searchText)
+                    } catch {
+                        // Cancellation will throw an error, so we catch and return
+                        return
+                    }
+                }
+            }
         }
     }
 
-    // MARK: - Search Bar Area Components
+    // MARK: - Search Bar Area
     private var searchBarArea: some View {
         VStack(spacing: 5) {
-            SearchBar(text: $viewModel.searchText, isFocused: $isSearchFieldFocused)
+            SearchBar(text: $searchText, isFocused: $isSearchFieldFocused)
                 .padding(.horizontal)
 
-            if !viewModel.searchText.isEmpty || isSearchFieldFocused {
+            if !searchText.isEmpty || isSearchFieldFocused {
                 HStack {
                     Spacer()
                     Button("Cancel") {
-                        viewModel.searchText = ""
-                        viewModel.clearSearch()
+                        searchText = ""
+                        clearSearch()
                         isSearchFieldFocused = false
                     }
                     .padding(.trailing)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
-                .animation(.easeInOut(duration: 0.2), value: viewModel.searchText.isEmpty && !isSearchFieldFocused)
+                .animation(.easeInOut(duration: 0.2), value: searchText.isEmpty && !isSearchFieldFocused)
             }
         }
     }
 
     // MARK: - Category Picker
     private var categoryPicker: some View {
-        // FIX 3: This should resolve once ViewModel initialization is correct.
-        Picker("Search Category", selection: $viewModel.selectedCategory) {
-            ForEach(SearchViewModel.SearchCategory.allCases) { category in
+        Picker("Search Category", selection: $selectedCategory) {
+            ForEach(SearchCategory.allCases) { category in
                 Text(category.rawValue).tag(category)
             }
         }
         .pickerStyle(SegmentedPickerStyle())
         .padding(.horizontal)
-        .onChange(of: viewModel.selectedCategory) { _, _ in
+        .onChange(of: selectedCategory) {
             Task {
-                await viewModel.search(query: viewModel.searchText)
+                await search(query: searchText)
             }
         }
     }
@@ -105,13 +135,13 @@ struct SearchView: View {
     // MARK: - Results List
     @ViewBuilder
     private var searchResultsList: some View {
-        if viewModel.isLoading && viewModel.searchResults.accounts.isEmpty && viewModel.searchResults.statuses.isEmpty && viewModel.searchResults.hashtags.isEmpty {
+        if isLoading && searchResults.accounts.isEmpty && searchResults.statuses.isEmpty && searchResults.hashtags.isEmpty {
             Spacer()
             ProgressView("Searching...")
             Spacer()
         } else {
             List {
-                switch viewModel.selectedCategory {
+                switch selectedCategory {
                 case .all:      combinedResultsSections
                 case .accounts: accountResultsSection
                 case .posts:    postResultsSection
@@ -121,11 +151,11 @@ struct SearchView: View {
             }
             .listStyle(.plain)
             .overlay {
-                 if !viewModel.isLoading && viewModel.searchText.isEmpty && viewModel.selectedCategory != .trending {
+                 if !isLoading && searchText.isEmpty && selectedCategory != .trending {
                      Text("Enter a query to search.")
                          .foregroundColor(.gray)
-                 } else if !viewModel.isLoading && !viewModel.searchText.isEmpty && sectionsAreEmpty {
-                      Text("No results found for \"\(viewModel.searchText)\".")
+                 } else if !isLoading && !searchText.isEmpty && sectionsAreEmpty {
+                      Text("No results found for \"\(searchText)\".")
                          .foregroundColor(.gray)
                  }
             }
@@ -133,33 +163,32 @@ struct SearchView: View {
     }
 
     private var sectionsAreEmpty: Bool {
-        switch viewModel.selectedCategory {
+        switch selectedCategory {
         case .all:
-            return viewModel.searchResults.accounts.isEmpty && viewModel.searchResults.statuses.isEmpty && viewModel.searchResults.hashtags.isEmpty
+            return searchResults.accounts.isEmpty && searchResults.statuses.isEmpty && searchResults.hashtags.isEmpty
         case .accounts:
-            return viewModel.searchResults.accounts.isEmpty
+            return searchResults.accounts.isEmpty
         case .posts:
-            return viewModel.searchResults.statuses.isEmpty
+            return searchResults.statuses.isEmpty
         case .hashtags:
-            return viewModel.searchResults.hashtags.isEmpty
+            return searchResults.hashtags.isEmpty
         case .trending:
-            return viewModel.trendingHashtags.isEmpty
+            return trendingHashtags.isEmpty
         }
     }
 
-
-    // MARK: - List Section Views
+    // MARK: - List Sections
     private var combinedResultsSections: some View {
         Group {
-            if !viewModel.searchResults.accounts.isEmpty { accountSection }
-            if !viewModel.searchResults.statuses.isEmpty { postSection }
-            if !viewModel.searchResults.hashtags.isEmpty { hashtagSection }
+            if !searchResults.accounts.isEmpty { accountSection }
+            if !searchResults.statuses.isEmpty { postSection }
+            if !searchResults.hashtags.isEmpty { hashtagSection }
         }
     }
 
     private var accountSection: some View {
         Section(header: Text("Accounts").font(.headline)) {
-            ForEach(viewModel.searchResults.accounts) { account in
+            ForEach(searchResults.accounts) { account in
                 NavigationLink(value: account.toUser()) {
                     AccountRow(account: account)
                 }
@@ -169,11 +198,9 @@ struct SearchView: View {
 
     private var postSection: some View {
         Section(header: Text("Posts").font(.headline)) {
-            ForEach(viewModel.searchResults.statuses) { post in
-                // FIX 4: Added missing interestScore parameter
+            ForEach(searchResults.statuses) { post in
                 PostView(
                     post: post,
-                    viewModel: timelineViewModel,
                     viewProfileAction: { user in
                          navigationPath.append(user)
                     },
@@ -191,8 +218,7 @@ struct SearchView: View {
 
     private var hashtagSection: some View {
         Section(header: Text("Hashtags").font(.headline)) {
-            // FIX 5: Removed id: \.name, relying on Identifiable conformance of Tag
-            ForEach(viewModel.searchResults.hashtags) { hashtag in
+            ForEach(searchResults.hashtags) { hashtag in
                 HStack {
                     Text("#\(hashtag.name)")
                         .foregroundColor(.blue)
@@ -209,7 +235,7 @@ struct SearchView: View {
     }
 
     private var accountResultsSection: some View {
-        ForEach(viewModel.searchResults.accounts) { account in
+        ForEach(searchResults.accounts) { account in
              NavigationLink(value: account.toUser()) {
                  AccountRow(account: account)
              }
@@ -217,11 +243,9 @@ struct SearchView: View {
     }
 
     private var postResultsSection: some View {
-         ForEach(viewModel.searchResults.statuses) { post in
-             // FIX 6: Added missing interestScore parameter
+         ForEach(searchResults.statuses) { post in
              PostView(
                 post: post,
-                viewModel: timelineViewModel,
                 viewProfileAction: { user in navigationPath.append(user) },
                 interestScore: 0.0
              )
@@ -233,8 +257,7 @@ struct SearchView: View {
     }
 
     private var hashtagResultsSection: some View {
-         // FIX 7: Removed id: \.name, relying on Identifiable conformance of Tag
-         ForEach(viewModel.searchResults.hashtags) { hashtag in
+         ForEach(searchResults.hashtags) { hashtag in
              HStack {
                  Text("#\(hashtag.name)").foregroundColor(.blue)
                  Spacer()
@@ -247,8 +270,7 @@ struct SearchView: View {
 
     private var trendingHashtagsSection: some View {
         Section(header: Text("Trending Today").font(.headline)) {
-            // FIX 8: Removed id: \.name, relying on Identifiable conformance of Tag
-            ForEach(viewModel.trendingHashtags) { hashtag in
+            ForEach(trendingHashtags) { hashtag in
                  HStack {
                      Text("#\(hashtag.name)").foregroundColor(.blue)
                      Spacer()
@@ -282,8 +304,8 @@ struct SearchView: View {
     // MARK: - Sheet Views
     private var filtersSheet: some View {
         NavigationView {
-            SearchFiltersView(filters: $viewModel.searchFilters) {
-                 Task { await viewModel.search(query: viewModel.searchText) }
+            SearchFiltersView(filters: $searchFilters) {
+                 Task { await search(query: searchText) }
                  showSearchFilters = false
             }
             .navigationTitle("Filters")
@@ -293,7 +315,7 @@ struct SearchView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Apply") {
-                         Task { await viewModel.search(query: viewModel.searchText) }
+                         Task { await search(query: searchText) }
                          showSearchFilters = false
                     }
                 }
@@ -317,19 +339,89 @@ struct SearchView: View {
      private func detailSheet(post: Post) -> some View {
          PostDetailView(
              post: post,
-             viewModel: timelineViewModel,
              showDetail: Binding(
                  get: { selectedPostForDetail != nil },
                  set: { if !$0 { selectedPostForDetail = nil } }
              )
          )
      }
+
+    private func triggerGlow() {
+        withAnimation {
+            showGlow = true
+        }
+        Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+            withAnimation(.easeOut(duration: 1.0)) {
+                showGlow = false
+            }
+        }
+    }
+
+    // MARK: - Data Logic
+    private func search(query: String) async {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            self.searchResults = SearchResults()
+            return
+        }
+
+        isLoading = true
+        error = nil
+
+        do {
+            let results = try await searchService.search(
+                query: trimmedQuery,
+                type: searchApiTypeParameter,
+                limit: searchFilters.limit ?? 20,
+                resolve: searchFilters.resolve ?? true,
+                excludeUnreviewed: searchFilters.excludeUnreviewed ?? false,
+                accountId: searchFilters.accountId,
+                maxId: searchFilters.maxId,
+                minId: searchFilters.minId,
+                offset: searchFilters.offset
+            )
+            self.searchResults = results
+        } catch is CancellationError {
+            // Task was cancelled, so we can ignore it.
+        } catch let fetchError {
+            self.error = IdentifiableError(message: "Search failed: \(fetchError.localizedDescription)")
+            self.searchResults = SearchResults()
+        }
+
+        isLoading = false
+    }
+
+    private var searchApiTypeParameter: String? {
+        switch selectedCategory {
+        case .all: return nil
+        case .accounts: return "accounts"
+        case .posts: return "statuses"
+        case .hashtags: return "hashtags"
+        case .trending: return nil
+        }
+    }
+
+    private func loadTrendingHashtags() async {
+        isLoading = true
+        error = nil
+        do {
+            trendingHashtags = try await searchService.fetchTrendingHashtags()
+        } catch let fetchError {
+            self.error = IdentifiableError(message: "Could not load trending tags: \(fetchError.localizedDescription)")
+            self.trendingHashtags = []
+        }
+        isLoading = false
+    }
+
+    private func clearSearch() {
+        searchResults = SearchResults()
+    }
 }
 
 
 // MARK: - Placeholder Views (Ensure these exist)
 struct SearchFiltersView: View {
-    @Binding var filters: SearchViewModel.SearchFilters
+    @Binding var filters: SearchFilters
     var onApply: () -> Void
 
     @Environment(\.dismiss) var dismiss

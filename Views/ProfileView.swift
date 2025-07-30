@@ -30,14 +30,22 @@ struct ProfileView: View {
     
     // Navigation path for profile-specific post detail views
     @State private var profileNavigationPath = NavigationPath()
+    @State private var showGlow = false
 
 
     var body: some View {
-        // Wrap with NavigationStack to handle navigation from PostView
-        NavigationStack(path: $profileNavigationPath) {
-            ScrollView {
-                VStack(spacing: 20) {
-                    ProfileHeaderView(user: user)
+        ZStack {
+            if showGlow {
+                GlowEffect()
+                    .edgesIgnoringSafeArea(.all)
+                    .transition(.opacity)
+            }
+
+            // Wrap with NavigationStack to handle navigation from PostView
+            NavigationStack(path: $profileNavigationPath) {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        ProfileHeaderView(user: user)
 
                     if let bioNote = user.note, !bioNote.isEmpty {
                         // Use PostContentView for rich text display of bio
@@ -59,7 +67,6 @@ struct ProfileView: View {
                     ProfileActionsView(user: user, showEditProfile: $showEditProfile)
 
                     ProfileContentView(user: user, selectedTab: $selectedTab, profileNavigationPath: $profileNavigationPath, followers: $followers, following: $following, userPosts: $userPosts, mediaPosts: $mediaPosts, isLoadingUserPosts: $isLoadingUserPosts, isLoadingMediaPosts: $isLoadingMediaPosts, alertMessage: $alertMessage, showAlert: $showAlert)
-                        .environmentObject(timelineViewModel)
                 }
                 .padding(.bottom)
             }
@@ -68,18 +75,17 @@ struct ProfileView: View {
             .sheet(isPresented: $showFollowers) {
                  FollowersListView(userId: user.id, followers: $followers)
                      .environmentObject(authViewModel)
-                     .environmentObject(timelineViewModel)
             }
             .sheet(isPresented: $showFollowing) {
                  FollowingListView(userId: user.id, following: $following)
                      .environmentObject(authViewModel)
-                     .environmentObject(timelineViewModel)
             }
             .sheet(isPresented: $showEditProfile) {
                  EditProfileView(user: user, alertMessage: $alertMessage, showAlert: $showAlert)
                      .environmentObject(authViewModel)
             }
             .task(id: user.id) {
+                triggerGlow()
                 await fetchFollowers(for: user.id)
                 await fetchFollowing(for: user.id)
                 // Determine which posts to fetch based on the initially selected tab
@@ -95,7 +101,7 @@ struct ProfileView: View {
              }
              // Navigation destination for posts tapped within the profile
              .navigationDestination(for: Post.self) { postDestination in
-                 PostDetailView(post: postDestination, viewModel: timelineViewModel, showDetail: .constant(true))
+                 PostDetailView(post: postDestination, showDetail: .constant(true))
              }
              // Navigation destination for user profiles tapped within posts on the profile
              .navigationDestination(for: User.self) { userDestination in
@@ -108,6 +114,17 @@ struct ProfileView: View {
                      ProfileView(user: userDestination)
                  }
              }
+        }
+    }
+
+    private func triggerGlow() {
+        withAnimation {
+            showGlow = true
+        }
+        Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+            withAnimation(.easeOut(duration: 1.0)) {
+                showGlow = false
+            }
         }
     }
 }
@@ -171,8 +188,6 @@ struct ProfileContentView: View {
     @Binding var isLoadingMediaPosts: Bool
     @Binding var alertMessage: String?
     @Binding var showAlert: Bool
-    
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -240,8 +255,6 @@ struct UserPostsView: View {
     @Binding var userPosts: [Post]
     @Binding var isLoadingUserPosts: Bool
 
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
-
     var postsToDisplay: [Post] {
         if excludeReplies {
             // Filter out posts that are replies to someone else, but keep original posts and reblogs of originals
@@ -269,7 +282,6 @@ struct UserPostsView: View {
                 NavigationLink(value: post.reblog ?? post) {
                     PostView(
                         post: post, // Pass the full post object (could be a reblog wrapper)
-                        viewModel: timelineViewModel,
                         viewProfileAction: { profileUser in
                             // Use the passed-in NavigationPath for profile navigation
                             if profileUser.id != user.id { // Avoid navigating to self again from here
@@ -289,7 +301,6 @@ struct UserPostsView: View {
 
 // UserMediaView also needs profileNavigationPath if media items are tappable to PostDetailView
 struct UserMediaView: View {
-    @EnvironmentObject var timelineViewModel: TimelineViewModel // For PostView inside PostDetailView
     let user: User
     @Binding var profileNavigationPath: NavigationPath // Added for navigation
     @Binding var mediaPosts: [Post]
@@ -347,7 +358,6 @@ struct UserMediaView: View {
                      // The sheet now presents PostDetailView
                      PostDetailView(
                          post: postToDetail,
-                         viewModel: timelineViewModel,
                          showDetail: Binding( // This binding controls this sheet
                              get: { selectedPostForSheet != nil },
                              set: { if !$0 { selectedPostForSheet = nil } }
@@ -432,7 +442,6 @@ struct ProfileActionsView: View {
 struct FollowersListView: View {
     let userId: String
     @Binding var followers: [User]
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @Environment(\.dismiss) var dismiss
 
@@ -462,7 +471,6 @@ struct FollowersListView: View {
 struct FollowingListView: View {
     let userId: String
     @Binding var following: [User]
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
     @EnvironmentObject var authViewModel: AuthenticationViewModel
     @Environment(\.dismiss) var dismiss
 

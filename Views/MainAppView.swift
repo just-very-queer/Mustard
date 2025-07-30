@@ -20,13 +20,12 @@ struct MainAppView: View {
     let trendingService: TrendingService
     let postActionService: PostActionService
     let profileService: ProfileService
-    let searchService: SearchService
     let recommendationService: RecommendationService // Added to store the passed instance
 
     // State Objects (Initialized here, single source of truth for these ViewModels within MainAppView scope)
     @StateObject private var timelineViewModel: TimelineViewModel
     @StateObject private var profileViewModel: ProfileViewModel
-    @StateObject private var searchViewModel: SearchViewModel // For the Search tab
+    @State private var timelineProvider: TimelineProvider
 
     // Initializer to receive services and create ViewModels
     init(
@@ -34,7 +33,6 @@ struct MainAppView: View {
         trendingService: TrendingService,
         postActionService: PostActionService,
         profileService: ProfileService,
-        searchService: SearchService,
         cacheService: CacheService,
         locationManager: LocationManager,
         recommendationService: RecommendationService // Added parameter
@@ -43,27 +41,22 @@ struct MainAppView: View {
         self.trendingService = trendingService
         self.postActionService = postActionService
         self.profileService = profileService
-        self.searchService = searchService
         self.recommendationService = recommendationService // Store the instance
 
-        // Initialize the ViewModels, passing all required dependencies
-        _timelineViewModel = StateObject(
-            wrappedValue: TimelineViewModel(
-                timelineService: timelineService,
-                locationManager: locationManager,
-                trendingService: trendingService,
-                postActionService: postActionService,
-                cacheService: cacheService,
-                recommendationService: recommendationService // FIX: Pass the instance
-            )
-        )
+        // Initialize the ViewModels and Providers
+        _timelineViewModel = StateObject(wrappedValue: TimelineViewModel())
 
         _profileViewModel = StateObject(
             wrappedValue: ProfileViewModel(profileService: profileService)
         )
 
-        _searchViewModel = StateObject(
-            wrappedValue: SearchViewModel(searchService: searchService)
+        _timelineProvider = State(
+            wrappedValue: TimelineProvider(
+                timelineService: timelineService,
+                trendingService: trendingService,
+                recommendationService: recommendationService,
+                mastodonAPIService: MastodonAPIService.shared
+            )
         )
     }
 
@@ -112,9 +105,10 @@ struct MainAppView: View {
         .environmentObject(locationManager)
         .environmentObject(timelineViewModel)
         .environmentObject(profileViewModel)
-        .environmentObject(searchViewModel)
         .environmentObject(cacheService)
-        // Note: recommendationService is not typically added to the environment unless multiple disconnected views need it.
-        // It's passed directly to ViewModels that require it during their initialization.
+        .environment(postActionService)
+        .environment(recommendationService)
+        .environment(timelineService)
+        .environment(timelineProvider)
     }
 }
