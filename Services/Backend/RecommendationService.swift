@@ -21,8 +21,10 @@ class RecommendationService: ObservableObject {
 
     internal var modelContext: ModelContext?
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "RecommendationService")
+    private let aiService: OnDeviceAIService
 
     private init() {
+        self.aiService = OnDeviceAIService()
         logger.info("RecommendationService instance created. ModelContext needs configuration.")
     }
     
@@ -260,18 +262,17 @@ class RecommendationService: ObservableObject {
     // If RecommendationService is not @MainActor globally, these need to be.
     @MainActor
     func topRecommendations(limit: Int) async -> [String] {
-        guard let currentContext = try? getContext() else { return [] } // getContext ensures modelContext is available
-        logger.info("Fetching top recommendations (limit: \(limit))...")
-        var recommendedPostIDs: Set<String> = []
+        guard let currentContext = try? getContext() else { return [] }
+        logger.info("Fetching top recommendations using On-Device AI (limit: \(limit))...")
 
-        var userAffinityDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
-        userAffinityDescriptor.fetchLimit = limit
-        let topUserAffinities = (try? currentContext.fetch(userAffinityDescriptor)) ?? []
+        // Fetch affinities to use as features for the model.
+        let userAffinities = (try? currentContext.fetch(FetchDescriptor<UserAffinity>())) ?? []
+        let userAffinityMap = Dictionary(uniqueKeysWithValues: userAffinities.map { ($0.authorAccountID, $0.score) })
 
-        var hashtagAffinityDescriptor = FetchDescriptor<HashtagAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
-        hashtagAffinityDescriptor.fetchLimit = limit
-        let topHashtagAffinities = (try? currentContext.fetch(hashtagAffinityDescriptor)) ?? []
+        let hashtagAffinities = (try? currentContext.fetch(FetchDescriptor<HashtagAffinity>())) ?? []
+        let hashtagAffinityMap = Dictionary(uniqueKeysWithValues: hashtagAffinities.map { ($0.tag, $0.score) })
 
+        // Fetch recent posts to score.
         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
         let postDescriptor = FetchDescriptor<Post>(
             predicate: #Predicate { $0.createdAt >= sevenDaysAgo },
@@ -283,68 +284,53 @@ class RecommendationService: ObservableObject {
             logger.info("No recent posts found to generate recommendations.")
             return []
         }
-        
-        let userAffinityMap = Dictionary(uniqueKeysWithValues: topUserAffinities.map { ($0.authorAccountID, $0.score) })
-        let hashtagAffinityMap = Dictionary(uniqueKeysWithValues: topHashtagAffinities.map { ($0.tag, $0.score) })
 
-        var scoredPosts: [(postID: String, score: Double)] = []
-
-        for post in recentPosts {
-            var postScore: Double = 0.0
-            if let authorAffinity = userAffinityMap[post.account?.id ?? ""] {
-                postScore += authorAffinity
-            }
-            post.tags?.forEach { tag in
-                if let hashtagAffinity = hashtagAffinityMap[tag.name] {
-                    postScore += hashtagAffinity
-                }
-            }
-            let timeSinceCreation = Date().timeIntervalSince(post.createdAt)
-            let decayFactor = max(0, 1.0 - (timeSinceCreation / (7.0 * 24.0 * 60.0 * 60.0)))
-            postScore *= decayFactor
-
-            if postScore > 0.1 {
-                 scoredPosts.append((post.id, postScore))
-            }
+        // Score posts using the OnDeviceAIService.
+        let scoredPosts = recentPosts.map { post in
+            let score = aiService.getEngagementScore(
+                for: post,
+                userAffinities: userAffinityMap,
+                tagAffinities: hashtagAffinityMap
+            )
+            return (postID: post.id, score: score)
         }
+
+        // Sort by the new AI-driven score and return the top IDs.
+        let recommendedPostIDs = scoredPosts.sorted { $0.score > $1.score }
+                                          .prefix(limit)
+                                          .map { $0.postID }
         
-        scoredPosts.sort { $0.score > $1.score }
-        recommendedPostIDs = Set(scoredPosts.prefix(limit).map { $0.postID })
-        
-        logger.info("Found \(recommendedPostIDs.count) top recommended post IDs.")
+        logger.info("Found \(recommendedPostIDs.count) top recommended post IDs using On-Device AI.")
         return Array(recommendedPostIDs)
     }
 
     @MainActor
     func scoredTimeline(_ timeline: [Post]) async -> [Post] {
         guard let currentContext = try? getContext() else { return timeline }
-        logger.info("Scoring timeline with \(timeline.count) posts...")
+        logger.info("Scoring timeline with \(timeline.count) posts using On-Device AI...")
         if timeline.isEmpty { return [] }
 
-        let userAffinityDescriptor = FetchDescriptor<UserAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
-        let userAffinities = (try? currentContext.fetch(userAffinityDescriptor)) ?? []
+        // Fetch affinities to use as features for the model.
+        let userAffinities = (try? currentContext.fetch(FetchDescriptor<UserAffinity>())) ?? []
         let userAffinityMap = Dictionary(uniqueKeysWithValues: userAffinities.map { ($0.authorAccountID, $0.score) })
 
-        let hashtagAffinityDescriptor = FetchDescriptor<HashtagAffinity>(sortBy: [SortDescriptor(\.score, order: .reverse)])
-        let hashtagAffinities = (try? currentContext.fetch(hashtagAffinityDescriptor)) ?? []
+        let hashtagAffinities = (try? currentContext.fetch(FetchDescriptor<HashtagAffinity>())) ?? []
         let hashtagAffinityMap = Dictionary(uniqueKeysWithValues: hashtagAffinities.map { ($0.tag, $0.score) })
         
+        // Score posts using the OnDeviceAIService.
         let scoredPostsTuples = timeline.map { post -> (post: Post, score: Double) in
-            var postScore: Double = 0.0
-            if let authorId = post.account?.id, let affinityScore = userAffinityMap[authorId] {
-                postScore += affinityScore
-            }
-            post.tags?.forEach { tag in
-                if let affinityScore = hashtagAffinityMap[tag.name] {
-                    postScore += affinityScore
-                }
-            }
-            return (post, postScore)
+            let score = aiService.getEngagementScore(
+                for: post,
+                userAffinities: userAffinityMap,
+                tagAffinities: hashtagAffinityMap
+            )
+            return (post, score)
         }
 
+        // Sort by the new AI-driven score.
         let reorderedTimeline = scoredPostsTuples.sorted { $0.score > $1.score }.map { $0.post }
         
-        logger.info("Timeline scoring complete.")
+        logger.info("Timeline scoring with On-Device AI complete.")
         return reorderedTimeline
     }
 

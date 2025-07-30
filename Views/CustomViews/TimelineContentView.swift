@@ -100,7 +100,11 @@ struct PostFooterView: View {
 // MARK: - Main View: TimelineContentView
 
 struct TimelineContentView: View {
-    @ObservedObject var viewModel: TimelineViewModel
+    @ObservedObject var viewModel: TimelineViewModel // Manages UI state (filter, sheets, navigation)
+    @Environment(TimelineProvider.self) private var timelineProvider
+    @Environment(PostActionService.self) private var postActionService
+    @Environment(RecommendationService.self) private var recommendationService
+    @EnvironmentObject private var authViewModel: AuthenticationViewModel
 
     @State private var isShowingFullScreenImage = false
     @State private var selectedImageURL: URL?
@@ -108,15 +112,23 @@ struct TimelineContentView: View {
     // State for replies in the comment sheet
     @State private var sheetReplies: [Post]? = nil
     @State private var sheetIsLoadingReplies: Bool = false
+    @State private var showGlow = false
 
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "TimelineContentView")
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Filter", selection: $viewModel.selectedFilter) {
-                ForEach(TimelineViewModel.TimelineFilter.allCases) { filter in
-                    Text(filter.rawValue).tag(filter)
-                }
+        ZStack {
+            if showGlow {
+                GlowEffect()
+                    .edgesIgnoringSafeArea(.all)
+                    .transition(.opacity)
+            }
+
+            VStack(spacing: 0) {
+                Picker("Filter", selection: $viewModel.selectedFilter) {
+                    ForEach(TimelineFilter.allCases) { filter in
+                        Text(filter.rawValue).tag(filter)
+                    }
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.horizontal)
@@ -127,20 +139,27 @@ struct TimelineContentView: View {
                     topPostsSection
                         .padding(.top, 10)
 
-                    if !viewModel.posts.isEmpty {
+                    if !timelineProvider.posts.isEmpty {
                         Divider().padding(.horizontal)
                     }
                     timelineSection
                 }
             }
-            .task { // Replaces onAppear for async work tied to view lifecycle
-                if viewModel.posts.isEmpty && !viewModel.isLoading {
-                    await viewModel.initializeTimelineData()
+            .task {
+                if timelineProvider.posts.isEmpty && !timelineProvider.isLoading {
+                    triggerGlow()
+                    await timelineProvider.initializeTimelineData(for: viewModel.selectedFilter)
+                }
+            }
+            .onChange(of: viewModel.selectedFilter) {
+                Task {
+                    triggerGlow()
+                    await timelineProvider.initializeTimelineData(for: viewModel.selectedFilter)
                 }
             }
         }
         .refreshable {
-            await viewModel.refreshTimeline()
+            await timelineProvider.refreshTimeline(for: viewModel.selectedFilter)
         }
         .sheet(isPresented: $isShowingFullScreenImage) {
             if let imageURL = selectedImageURL {
@@ -152,15 +171,13 @@ struct TimelineContentView: View {
                 let targetPostForContext = postForSheet.reblog ?? postForSheet
                 
                 NavigationView {
-                    // Assuming ExpandedCommentsSection is defined in PostView.swift or PostDetailView.swift
                     ExpandedCommentsSection(
                         post: targetPostForContext,
                         isExpanded: .constant(true),
                         commentText: $viewModel.commentText,
-                        viewModel: viewModel,
                         repliesToDisplay: sheetReplies,
                         isLoadingReplies: $sheetIsLoadingReplies,
-                        currentDetailPost: targetPostForContext // <<< FIXED: Added missing argument
+                        currentDetailPost: targetPostForContext
                     )
                     .navigationTitle("Reply to @\(targetPostForContext.account?.acct ?? "user")")
                     .navigationBarTitleDisplayMode(.inline)
@@ -168,30 +185,42 @@ struct TimelineContentView: View {
                         ToolbarItem(placement: .navigationBarLeading) {
                             Button("Cancel") {
                                 viewModel.showingCommentSheet = false
-                                sheetReplies = nil // Reset sheet-specific state
+                                sheetReplies = nil
                                 sheetIsLoadingReplies = false
                             }
                         }
                         ToolbarItem(placement: .navigationBarTrailing) {
                             Button("Post") {
-                                viewModel.comment(on: targetPostForContext, content: viewModel.commentText)
-                                // Clearing commentText and potentially refreshing replies is handled in TimelineViewModel or PostDetailView's ExpandedCommentSection
+                                Task {
+                                    do {
+                                        try await targetPostForContext.comment(
+                                            with: viewModel.commentText,
+                                            using: postActionService,
+                                            recommendationService: recommendationService,
+                                            currentUserAccountID: authViewModel.currentUser?.id
+                                        )
+                                        viewModel.commentText = ""
+                                        viewModel.showingCommentSheet = false
+                                    } catch {
+                                        // TODO: Show error
+                                    }
+                                }
                             }
                             .disabled(viewModel.commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                     }
-                    .task(id: targetPostForContext.id) { // Load replies when the sheet appears or target post changes
+                    .task(id: targetPostForContext.id) {
                         sheetIsLoadingReplies = true
-                        sheetReplies = nil // Clear old replies
-                        if let context = await viewModel.fetchContext(for: targetPostForContext) {
+                        sheetReplies = nil
+                        if let context = await timelineProvider.fetchContext(for: targetPostForContext) {
                             sheetReplies = context.descendants
                         } else {
-                            sheetReplies = [] // Default to empty on error
+                            sheetReplies = []
                         }
                         sheetIsLoadingReplies = false
                     }
                 }
-                .onDisappear { // Ensure state is reset when the sheet is dismissed
+                .onDisappear {
                     sheetReplies = nil
                     sheetIsLoadingReplies = false
                 }
@@ -201,13 +230,13 @@ struct TimelineContentView: View {
              ProfileView(user: user)
         }
         .navigationDestination(for: Post.self) { post in
-             PostDetailView(post: post, viewModel: viewModel, showDetail: .constant(true))
+             PostDetailView(post: post, showDetail: .constant(true))
         }
-        .alert(item: $viewModel.alertError) { error in
+        .alert(item: $timelineProvider.alertError) { error in
              Alert(title: Text("Error"), message: Text(error.message), dismissButton: .default(Text("OK")))
          }
          .overlay {
-             if viewModel.isLoading && viewModel.posts.isEmpty {
+             if timelineProvider.isLoading && timelineProvider.posts.isEmpty {
                  ProgressView("Loading \(viewModel.selectedFilter.rawValue)...")
                      .padding()
                      .background(.thinMaterial)
@@ -217,9 +246,20 @@ struct TimelineContentView: View {
          }
     }
 
+    private func triggerGlow() {
+        withAnimation {
+            showGlow = true
+        }
+        Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { _ in
+            withAnimation(.easeOut(duration: 1.0)) {
+                showGlow = false
+            }
+        }
+    }
+
     @ViewBuilder
     private var topPostsSection: some View {
-        if !viewModel.topPosts.isEmpty {
+        if !timelineProvider.topPosts.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Trending Posts")
                     .font(.title2).bold()
@@ -227,7 +267,7 @@ struct TimelineContentView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(spacing: 15) {
-                        ForEach(viewModel.topPosts) { post in
+                        ForEach(timelineProvider.topPosts) { post in
                             NavigationLink(value: post.reblog ?? post) {
                                  TrendingPostCardView(post: post)
                             }
@@ -235,13 +275,12 @@ struct TimelineContentView: View {
                         }
                     }
                     .padding(.horizontal)
-                    .scrollTargetLayout() // For newer iOS if targeting page scrolling behavior
+                    .scrollTargetLayout()
                 }
-                .frame(height: 180) // Ensure consistent height
+                .frame(height: 180)
             }
             .padding(.bottom, 10)
-        } else if viewModel.isLoading && viewModel.selectedFilter != .trending { // Show placeholder only if not on trending tab already
-             // Placeholder for loading state of top posts if needed
+        } else if timelineProvider.isLoading && viewModel.selectedFilter != .trending {
              HStack { Spacer(); ProgressView(); Spacer() }
              .frame(height: 180)
              .padding(.bottom, 10)
@@ -249,44 +288,40 @@ struct TimelineContentView: View {
     }
 
     private var timelineSection: some View {
-        LazyVStack(spacing: 0) { // Use LazyVStack for performance
-            if viewModel.posts.isEmpty && !viewModel.isLoading {
+        LazyVStack(spacing: 0) {
+            if timelineProvider.posts.isEmpty && !timelineProvider.isLoading {
                  Text(viewModel.selectedFilter == .latest ? "Your timeline is empty." : "No posts found for \(viewModel.selectedFilter.rawValue).")
                     .foregroundColor(.gray)
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .center)
             } else {
-                ForEach(viewModel.posts) { post in
-                    NavigationLink(value: post.reblog ?? post) { // Navigate to the content post
+                ForEach(timelineProvider.posts) { post in
+                    NavigationLink(value: post.reblog ?? post) {
                          PostView(
-                             post: post, // Pass the wrapper post (which might be a reblog)
-                             viewModel: viewModel,
+                             post: post,
                              viewProfileAction: { user in
                                  viewModel.navigateToProfile(user)
                              },
-                             interestScore: 0.0 // Replace with actual score if available
+                             interestScore: 0.0
                          )
-                         // Removed .onImageTap as it's handled within PostView/MediaAttachmentView
                      }
-                     .buttonStyle(.plain) // Remove default button styling for the link
+                     .buttonStyle(.plain)
 
-                    CustomDivider().padding(.horizontal) // Visual separator
+                    CustomDivider().padding(.horizontal)
 
-                    // Pagination trigger
-                    if post.id == viewModel.posts.last?.id && !viewModel.isFetchingMore && (viewModel.selectedFilter == .latest || viewModel.selectedFilter == .recommended) {
-                         PostFooterView(isLoadingMore: viewModel.isFetchingMore) // Shows loading or spacer
+                    if post.id == timelineProvider.posts.last?.id && !timelineProvider.isFetchingMore && (viewModel.selectedFilter == .latest || viewModel.selectedFilter == .recommended) {
+                         PostFooterView(isLoadingMore: timelineProvider.isFetchingMore)
                              .padding(.vertical)
                              .onAppear {
                                  logger.debug("Last item appeared for filter \(viewModel.selectedFilter.rawValue), fetching more.")
                                  Task {
-                                     await viewModel.fetchMoreTimeline()
+                                     await timelineProvider.fetchMoreTimeline(for: viewModel.selectedFilter)
                                  }
                              }
                      }
                 }
 
-                // Show a loading indicator at the bottom if more posts are being fetched
-                 if viewModel.isFetchingMore && (viewModel.selectedFilter == .latest || viewModel.selectedFilter == .recommended) {
+                 if timelineProvider.isFetchingMore && (viewModel.selectedFilter == .latest || viewModel.selectedFilter == .recommended) {
                      ProgressView().padding(.vertical).frame(maxWidth: .infinity)
                  }
             }
