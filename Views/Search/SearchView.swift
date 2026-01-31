@@ -11,7 +11,7 @@ import Combine
 
 struct SearchView: View {
     // MARK: - Environment
-    @EnvironmentObject var timelineViewModel: TimelineViewModel // For Post actions and navigation context
+
 
     // MARK: - Services
     private let searchService = SearchService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)
@@ -77,7 +77,7 @@ struct SearchView: View {
             }
             .navigationDestination(for: User.self) { user in
                  ProfileView(user: user)
-                     .environmentObject(timelineViewModel)
+
             }
             .onChange(of: searchText) {
                 searchTask?.cancel()
@@ -333,7 +333,7 @@ struct SearchView: View {
                  set: { if !$0 { selectedHashtagForAnalytics = nil } }
              )
          )
-         .environmentObject(timelineViewModel)
+
     }
 
      private func detailSheet(post: Post) -> some View {

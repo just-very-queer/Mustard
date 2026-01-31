@@ -22,7 +22,7 @@ class AuthenticationService: NSObject, ObservableObject {
     // MARK: - Published Properties
     
     @Published private(set) var isAuthenticated = false
-    @Published private(set) var isAuthenticating = false // May have limited use on watchOS
+    @Published private(set) var isAuthenticating = false
     @Published private(set) var currentUser: User?
     @Published var alertError: AppError?
     
@@ -126,9 +126,6 @@ class AuthenticationService: NSObject, ObservableObject {
         }
         
         isAuthenticating = false
-        #else
-        // watchOS does not initiate this OAuth flow. It relies on shared tokens.
-        logger.warning("Full authentication flow is not supported on watchOS. Check for shared credentials.")
         #endif
     }
     

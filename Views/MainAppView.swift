@@ -10,8 +10,7 @@ import OSLog
 import SwiftData
 
 struct MainAppView: View {
-    // Environment Objects (Passed from MustardApp)
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
+    @Environment(AppEnvironment.self) private var appEnvironment
     @EnvironmentObject var locationManager: LocationManager
     @EnvironmentObject var cacheService: CacheService // Receives from environment
 
@@ -23,8 +22,6 @@ struct MainAppView: View {
     let recommendationService: RecommendationService // Added to store the passed instance
 
     // State Objects (Initialized here, single source of truth for these ViewModels within MainAppView scope)
-    @StateObject private var timelineViewModel: TimelineViewModel
-    @StateObject private var profileViewModel: ProfileViewModel
     @State private var timelineProvider: TimelineProvider
 
     // Initializer to receive services and create ViewModels
@@ -44,12 +41,6 @@ struct MainAppView: View {
         self.recommendationService = recommendationService // Store the instance
 
         // Initialize the ViewModels and Providers
-        _timelineViewModel = StateObject(wrappedValue: TimelineViewModel())
-
-        _profileViewModel = StateObject(
-            wrappedValue: ProfileViewModel(profileService: profileService)
-        )
-
         _timelineProvider = State(
             wrappedValue: TimelineProvider(
                 timelineService: timelineService,
@@ -63,17 +54,14 @@ struct MainAppView: View {
     var body: some View {
         TabView {
             // MARK: - Home Tab
-            NavigationStack(path: $timelineViewModel.navigationPath) {
-                TimelineScreen(viewModel: timelineViewModel)
-                    .navigationTitle("Timeline")
-            }
-            .tabItem {
-                Label("Home", systemImage: "house")
-            }
+            TimelineScreen()
+                .tabItem {
+                    Label("Home", systemImage: "house")
+                }
 
             // MARK: - Profile Tab
             NavigationStack {
-                if let currentUser = authViewModel.currentUser {
+                if let currentUser = appEnvironment.currentUser {
                     ProfileView(user: currentUser)
                 } else {
                     Text("Please log in to view your profile.")
@@ -101,14 +89,15 @@ struct MainAppView: View {
             }
         }
         // Inject ViewModels and other objects into the environment for descendant views
-        .environmentObject(authViewModel)
+        // Note: AppEnvironment is already injected in MustardApp, so checking strictly might be redundant here if MainAppView is child, 
+        // but if we need to pass it down further explicitly, we would.
+        // Usually AppEnvironment from MustardApp flows down.
         .environmentObject(locationManager)
-        .environmentObject(timelineViewModel)
-        .environmentObject(profileViewModel)
         .environmentObject(cacheService)
         .environment(postActionService)
         .environment(recommendationService)
         .environment(timelineService)
+        .environment(profileService)
         .environment(timelineProvider)
     }
 }

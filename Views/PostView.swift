@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-#if canImport(UIKit) && !os(watchOS) && !os(tvOS)
+#if canImport(UIKit) && !os(tvOS)
 import SafariServices
 #endif
 import SwiftSoup
@@ -15,7 +15,6 @@ import SwiftSoup
 struct PostView: View {
     let post: Post          // Outer post, might be a reblog
     // @ObservedObject var viewModel: TimelineViewModel // REPLACED
-    var viewProfileAction: (User) -> Void
 
     @State private var showImageViewer = false
     @State private var showBrowserView = false
@@ -38,8 +37,7 @@ struct PostView: View {
         VStack(alignment: .leading, spacing: 15) {
             UserHeaderView(
                 post: displayPost,
-                rebloggerAccount: rebloggerAccount,
-                viewProfileAction: viewProfileAction
+                rebloggerAccount: rebloggerAccount
             )
 
             PostContentView(
@@ -78,7 +76,7 @@ struct PostView: View {
         }
         .sheet(isPresented: $showBrowserView) {
             if let urlString = displayPost.url, let url = URL(string: urlString) {
-    #if canImport(UIKit) && !os(watchOS) && !os(tvOS)
+    #if canImport(UIKit) && !os(tvOS)
                 SafariView(url: url)
     #else
                 Text("Web browser preview not available on this platform. URL: \(url.absoluteString)")
@@ -103,7 +101,7 @@ struct PostActionsViewRevised: View {
 
     @Environment(PostActionService.self) private var postActionService
     @Environment(RecommendationService.self) private var recommendationService
-    @EnvironmentObject private var authViewModel: AuthenticationViewModel
+    @Environment(AppEnvironment.self) private var appEnvironment
 
     private func performAction(_ action: @escaping () async throws -> Void) {
         Task {
@@ -227,7 +225,7 @@ struct PostContentView: View {
                         )
 
                         // If it's a web URL, open in browser
-#if canImport(UIKit) && !os(watchOS)
+#if canImport(UIKit)
                         if url.scheme?.starts(with: "http") == true || url.scheme?.starts(with: "https") == true {
                             UIApplication.shared.open(url)
                         }
@@ -266,7 +264,7 @@ struct PostContentView: View {
             RecommendationService.shared.logInteraction(
                 statusID: post.id,
                 actionType: .view,
-                accountID: currentUserAccountID,
+                accountID: appEnvironment.currentUser?.id,
                 authorAccountID: post.account?.id,
                 postURL: post.url,
                 tags: post.tags?.compactMap { $0.name }
@@ -324,7 +322,6 @@ struct ShowMoreButton: View {
 struct UserHeaderView: View {
     let post: Post
     let rebloggerAccount: Account?
-    var viewProfileAction: (User) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -347,17 +344,19 @@ struct UserHeaderView: View {
             }
 
             HStack {
-                AvatarView(url: post.account?.avatar, size: 44)
-                    .onTapGesture {
-                        if let user = post.account?.toUser() {
-                            viewProfileAction(user)
-                        }
-                    }
+                NavigationLink(value: post.account?.toUser()) {
+                     AvatarView(url: post.account?.avatar, size: 44)
+                }
+                .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(post.account?.display_name ?? post.account?.username ?? "Unknown User")
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                    NavigationLink(value: post.account?.toUser()) {
+                        Text(post.account?.display_name ?? post.account?.username ?? "Unknown User")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    
                     Text("@\(post.account?.acct ?? "unknown")")
                         .font(.subheadline)
                         .foregroundColor(.gray)

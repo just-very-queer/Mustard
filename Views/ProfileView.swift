@@ -19,8 +19,8 @@ struct ProfileView: View {
     @State private var isLoadingMediaPosts: Bool = false
     @State private var alertMessage: String?
     @State private var showAlert: Bool = false
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
-    @EnvironmentObject var timelineViewModel : TimelineViewModel // For PostView actions
+    @Environment(AppEnvironment.self) private var appEnvironment
+    @Environment(ProfileService.self) private var profileService
 
     // State
     @State private var showFollowers = false
@@ -130,7 +130,7 @@ struct ProfileView: View {
 }
 
     func fetchFollowers(for accountId: String) async {
-        let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+        // let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared) // REPLACED: Using Environment version
         do {
             self.followers = try await profileService.fetchFollowers(for: accountId)
         } catch {
@@ -140,7 +140,7 @@ struct ProfileView: View {
     }
 
     func fetchFollowing(for accountId: String) async {
-        let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+        // let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared) // REPLACED: Using Environment version
         do {
             self.following = try await profileService.fetchFollowing(for: accountId)
         } catch {
@@ -150,7 +150,7 @@ struct ProfileView: View {
     }
 
     func fetchUserPosts(for accountId: String) async {
-        let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+        // let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared) // REPLACED: Using Environment version
         isLoadingUserPosts = true
         self.userPosts = []
         do {
@@ -163,7 +163,7 @@ struct ProfileView: View {
     }
 
     func loadMediaPosts(accountID: String) async {
-        let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
+        // let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared) // REPLACED: Using Environment version
         isLoadingMediaPosts = true
         self.mediaPosts = []
         do {
@@ -282,12 +282,6 @@ struct UserPostsView: View {
                 NavigationLink(value: post.reblog ?? post) {
                     PostView(
                         post: post, // Pass the full post object (could be a reblog wrapper)
-                        viewProfileAction: { profileUser in
-                            // Use the passed-in NavigationPath for profile navigation
-                            if profileUser.id != user.id { // Avoid navigating to self again from here
-                                profileNavigationPath.append(profileUser)
-                            }
-                        },
                         interestScore: 0.0 // Or fetch if needed
                     )
                 }
@@ -414,9 +408,9 @@ struct ProfileStatsView: View {
 struct ProfileActionsView: View {
     let user: User
     @Binding var showEditProfile: Bool
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
+    @EnvironmentObject var appEnvironment: AppEnvironment
      var body: some View {
-         if authViewModel.currentUser?.id == user.id {
+         if appEnvironment.currentUser?.id == user.id {
              Button { showEditProfile.toggle() } label: {
                  Text("Edit Profile")
                      .font(.headline)
@@ -442,7 +436,7 @@ struct ProfileActionsView: View {
 struct FollowersListView: View {
     let userId: String
     @Binding var followers: [User]
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
+    @Environment(AppEnvironment.self) private var appEnvironment
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -471,7 +465,7 @@ struct FollowersListView: View {
 struct FollowingListView: View {
     let userId: String
     @Binding var following: [User]
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
+    @Environment(AppEnvironment.self) private var appEnvironment
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -507,6 +501,7 @@ struct EditProfileView: View {
 
     // Environment for color scheme
     @Environment(\.colorScheme) var colorScheme
+    @Environment(ProfileService.self) private var profileService
 
     init(user: User, alertMessage: Binding<String?>, showAlert: Binding<Bool>) {
         self.user = user
@@ -532,7 +527,6 @@ struct EditProfileView: View {
                 Section {
                     Button("Save Changes") {
                         Task {
-                            let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared)
                             try await profileService.updateProfile(for: user.id, updatedFields: [
                                 "display_name": displayName,
                                 "note": bio

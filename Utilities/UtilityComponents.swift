@@ -109,10 +109,8 @@ struct LinkPreview: View {
                     linkURL: urlToOpen.absoluteString
                 )
 
-                #if canImport(UIKit) && !os(watchOS)
+                #if canImport(UIKit)
                 UIApplication.shared.open(urlToOpen)
-                #else
-                print("UIApplication not available to open URL.")
                 #endif
             }
         }

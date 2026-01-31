@@ -9,7 +9,7 @@ import SwiftUI
 import UserNotifications
 
 struct SettingsView: View {
-    @EnvironmentObject var authViewModel: AuthenticationViewModel
+    @Environment(AppEnvironment.self) private var appEnvironment
     @EnvironmentObject var locationManager: LocationManager // Make sure LocationManager is available
     @EnvironmentObject var cacheService: CacheService
     @State private var isShowingLogoutAlert = false
@@ -133,7 +133,7 @@ struct SettingsView: View {
                     title: Text("Log Out"),
                     message: Text("Are you sure you want to log out?"),
                     primaryButton: .destructive(Text("Log Out")) {
-                        Task { authViewModel.logout() }
+                        Task { await AuthenticationService.shared.logout() }
                     },
                     secondaryButton: .cancel()
                 )

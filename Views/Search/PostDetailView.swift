@@ -21,7 +21,6 @@ struct PostDetailView: View {
     @State private var showGlow = false
 
     @Environment(TimelineService.self) private var timelineService
-    @EnvironmentObject private var timelineViewModel: TimelineViewModel // Keep for navigation temporarily
 
     // Helper to determine which post's details to display (original or reblogged)
     private var displayPost: Post {
@@ -43,12 +42,6 @@ struct PostDetailView: View {
                             // Display the main post
                             PostView(
                             post: post, // Pass the original post; PostView will handle displayPost internally
-                            viewProfileAction: { user in
-                                timelineViewModel.navigateToProfile(user)
-                                // If presented modally, navigating might require dismissing the sheet first
-                                // or using a more complex navigation setup if full navigation stack is needed in sheet.
-                                print("Profile tapped in Detail View: \(user.username)")
-                            },
                             interestScore: 0.0 // Or fetch if relevant for the main post in detail view
                         )
                         .padding(.bottom, 10)
@@ -118,8 +111,7 @@ struct ExpandedCommentsSection: View {
 
     @Environment(PostActionService.self) private var postActionService
     @Environment(RecommendationService.self) private var recommendationService
-    @EnvironmentObject private var authViewModel: AuthenticationViewModel
-    @EnvironmentObject private var timelineViewModel: TimelineViewModel // Keep for navigation temporarily
+    @Environment(AppEnvironment.self) private var appEnvironment
 
     // State for presenting a tapped comment in its own PostDetailView
     @State private var selectedCommentForDetailSheet: Post? = nil
@@ -146,9 +138,6 @@ struct ExpandedCommentsSection: View {
                             // This makes each comment look like a full post, with its own actions, content, etc.
                             PostView(
                                 post: reply, // The reply itself
-                                viewProfileAction: { user in
-                                    timelineViewModel.navigateToProfile(user)
-                                },
                                 interestScore: 0.0 // Or fetch interest score for the reply if needed
                             )
                             .contentShape(Rectangle()) // Make the whole PostView tappable
@@ -197,7 +186,7 @@ struct ExpandedCommentsSection: View {
                                 with: commentText,
                                 using: postActionService,
                                 recommendationService: recommendationService,
-                                currentUserAccountID: authViewModel.currentUser?.id
+                                currentUserAccountID: appEnvironment.currentUser?.id
                             )
                             commentText = "" // Clear input after sending
                         } catch {

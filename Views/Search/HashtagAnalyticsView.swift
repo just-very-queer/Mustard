@@ -18,7 +18,7 @@ struct HashtagAnalyticsView: View {
     @State private var posts: [Post] = []
     @State private var isLoading = false
     @State private var error: Error?
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
+
 
     enum SortOrder: String, Identifiable, CaseIterable {
         case latest = "Latest"
@@ -122,7 +122,7 @@ struct HashtagAnalyticsView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .environmentObject(timelineViewModel)
+
     }
 
     private func filteredHistory(for range: TimeRange) -> [TagHistory] {
@@ -205,16 +205,13 @@ struct HashtagChartView: View {
 
 struct HashtagPostsView: View {
     let posts: [Post]
-    @EnvironmentObject var timelineViewModel: TimelineViewModel
+
 
     var body: some View {
         LazyVStack(spacing: 0) {
             ForEach(posts) { post in
                 PostView(
                     post: post,
-                    viewProfileAction: { user in
-                        timelineViewModel.navigateToProfile(user)
-                    },
                     interestScore: 0.0 // FIX: Added missing interestScore parameter with a default value
                 )
                 Divider().padding(.horizontal)
