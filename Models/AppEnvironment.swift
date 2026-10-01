@@ -7,8 +7,10 @@
 
 import SwiftUI
 import Combine
+import Observation
 
 @Observable
+@MainActor
 class AppEnvironment {
     var authState: AuthState = .checking
     var currentUser: User?

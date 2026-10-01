@@ -8,7 +8,9 @@
 
 import Foundation
 import OSLog
+import Observation
 
+@Observable
 class ProfileService {
     private let mastodonAPIService: MastodonAPIService
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "ProfileService")

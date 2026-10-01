@@ -72,6 +72,7 @@ struct PostDetailView: View {
                 await loadReplies(forPost: displayPost)
             }
         }
+        }
     }
     
     private func triggerGlow() {
@@ -101,7 +102,7 @@ struct PostDetailView: View {
 }
 
 struct ExpandedCommentsSection: View {
-    @Bindable var post: Post // The post to which these comments are replies (displayPost from parent)
+    let post: Post // The post to which these comments are replies (displayPost from parent)
     @Binding var isExpanded: Bool
     @Binding var commentText: String // For writing a new reply to `post`
     let repliesToDisplay: [Post]?

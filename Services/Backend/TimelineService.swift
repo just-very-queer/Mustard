@@ -11,6 +11,9 @@ import OSLog
 import CoreLocation
 import Combine
 
+import Observation
+
+@Observable
 @MainActor
 class TimelineService {
     // MARK: - Dependencies
@@ -23,16 +26,15 @@ class TimelineService {
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Published State
-    @Published private(set) var currentTimelinePosts: [Post] = []
-    @Published private(set) var isLoading: Bool = false
-    @Published private(set) var isFetchingMore: Bool = false
-    @Published private(set) var error: AppError?
+    // MARK: - Published State
+    private(set) var posts: [Post] = []
+    private(set) var topPosts: [Post] = []
+    private(set) var isLoading: Bool = false
+    private(set) var isFetchingMore: Bool = false
+    var error: AppError?
 
     // Exposed publishers for ViewModels
-    var timelinePostsPublisher: AnyPublisher<[Post], Never> { $currentTimelinePosts.eraseToAnyPublisher() }
-    var isLoadingPublisher: AnyPublisher<Bool, Never> { $isLoading.eraseToAnyPublisher() }
-    var isFetchingMorePublisher: AnyPublisher<Bool, Never> { $isFetchingMore.eraseToAnyPublisher() }
-    var errorPublisher: AnyPublisher<AppError?, Never> { $error.eraseToAnyPublisher() }
+
 
     // MARK: - Init
     init(
@@ -101,8 +103,8 @@ class TimelineService {
     func backgroundRefreshTimeline() async {
         isLoading = true
         do {
-            let posts = try await fetchHomeTimeline()
-            currentTimelinePosts = posts
+            let fetchedPosts = try await fetchHomeTimeline()
+            posts = fetchedPosts
             logger.info("Background refresh succeeded")
         } catch {
             logger.error("Background refresh failed: \(error.localizedDescription)")
@@ -119,6 +121,56 @@ class TimelineService {
 
     func toggleRepost(for post: Post) async throws {
         _ = try await postActionService.toggleRepost(postID: post.id)
+    }
+
+    // MARK: - View Interface Methods
+
+    func initializeTimelineData(for filter: TimelineFilter) async {
+        isLoading = true
+        error = nil
+        do {
+            switch filter {
+            case .latest:
+                posts = try await fetchHomeTimeline()
+            case .trending:
+                let trending = try await fetchTrendingTimeline()
+                posts = trending
+                topPosts = Array(trending.prefix(5))
+            case .recommended:
+                // TODO: Implement recommended fetch
+                posts = try await fetchHomeTimeline() // Fallback
+            }
+        } catch {
+            self.error = AppError(message: "Failed to load timeline", underlyingError: error)
+        }
+        isLoading = false
+    }
+
+    func refreshTimeline(for filter: TimelineFilter) async {
+        await initializeTimelineData(for: filter)
+    }
+
+    func fetchMoreTimeline(for filter: TimelineFilter) async {
+        guard !isFetchingMore, let lastId = posts.last?.id else { return }
+        isFetchingMore = true
+        do {
+            if filter == .latest {
+                let newPosts = try await fetchHomeTimeline(maxId: lastId)
+                posts.append(contentsOf: newPosts)
+            }
+            // Add other pagination logic if needed
+        } catch {
+             self.error = AppError(message: "Failed to load more posts", underlyingError: error)
+        }
+        isFetchingMore = false
+    }
+
+    func fetchContext(for post: Post) async -> PostContext? {
+        do {
+            return try await fetchPostContext(postId: post.id)
+        } catch {
+            return nil
+        }
     }
 
     func comment(on post: Post, content: String) async throws {

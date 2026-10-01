@@ -122,7 +122,7 @@ struct PostActionsViewRevised: View {
                     try await post.toggleLike(
                         using: postActionService,
                         recommendationService: recommendationService,
-                        currentUserAccountID: authViewModel.currentUser?.id
+                        currentUserAccountID: appEnvironment.currentUser?.id
                     )
                 }
             } label: {
@@ -141,7 +141,7 @@ struct PostActionsViewRevised: View {
                     try await post.toggleRepost(
                         using: postActionService,
                         recommendationService: recommendationService,
-                        currentUserAccountID: authViewModel.currentUser?.id
+                        currentUserAccountID: appEnvironment.currentUser?.id
                     )
                 }
             } label: {
@@ -208,32 +208,15 @@ struct PostContentView: View {
 
     // Environment to detect color scheme for theming
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(AppEnvironment.self) private var appEnvironment
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // If the post has HTML content, render it via the new SwiftUI view
             if !post.content.isEmpty {
-                SwiftUIAttributedTextView(
-                    attributedString: attributedContent,
-                    onLinkTap: { url in
-                        // Log the tap interaction
-                        RecommendationService.shared.logInteraction(
-                            statusID: post.id,
-                            actionType: .linkOpen,
-                            accountID: currentUserAccountID,
-                            linkURL: url.absoluteString
-                        )
 
-                        // If it's a web URL, open in browser
-#if canImport(UIKit)
-                        if url.scheme?.starts(with: "http") == true || url.scheme?.starts(with: "https") == true {
-                            UIApplication.shared.open(url)
-                        }
-#endif
-                        // You can add more logic for mention URLs (e.g., navigate to profile)
-                    }
-                )
-                .padding(.horizontal)
+                 Text(HTMLUtils.convertHTMLToPlainText(html: post.content)) // Fallback to plain text
+                     .padding(.horizontal)
             }
 
             // Link preview (if any)

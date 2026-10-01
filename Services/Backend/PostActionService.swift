@@ -8,8 +8,10 @@
 
 import Foundation
 import OSLog
+import Observation
 
-class PostActionService {
+@Observable
+class PostActionService: PostActionServiceProtocol {
     private let mastodonAPIService: MastodonAPIService
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "PostActionService")
 
@@ -51,9 +53,9 @@ class PostActionService {
     ///   - postID: The post being replied to
     ///   - content: The reply text
     /// - Returns: The new `Post` object
-    func comment(postID: String, content: String) async throws -> Post {
+    func comment(postID: String, content: String) async throws -> Post? {
         do {
-            let reply = try await mastodonAPIService.postStatus(status: content, inReplyToId: postID)
+            let reply = try await mastodonAPIService.postStatus(status: content, visibility: .public, inReplyToId: postID)
             logger.info("Comment added to post \(postID) successfully.")
             return reply
         } catch {

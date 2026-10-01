@@ -14,7 +14,7 @@ struct HTMLUtils {
     /// Converts a raw HTML string into plain text, stripping all tags.
     public static func convertHTMLToPlainText(html: String) -> String {
         do {
-            let document: Document = try SwiftSoup.parse(html)
+            let document: SwiftSoup.Document = try SwiftSoup.parse(html)
             return try document.text()
         } catch {
             print("Error parsing HTML to plain text with SwiftSoup: \(error). Falling back to regex.")
@@ -34,7 +34,7 @@ struct HTMLUtils {
         var soupParsingError: Error? = nil
 
         do {
-            let document: Document = try SwiftSoup.parse(htmlString)
+            let document: SwiftSoup.Document = try SwiftSoup.parse(htmlString)
             // Try to get body's HTML. If empty or nil, try the whole document's HTML.
             if let bodyHtml = try document.body()?.html(), !bodyHtml.isEmpty {
                 processedHtmlString = bodyHtml

@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		66292ADF2D43CA9D00883170 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66292ADE2D43CA9D00883170 /* User.swift */; };
 		66292AE32D43CACE00883170 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66292AE22D43CACE00883170 /* Config.swift */; };
-		66397F592D9BBFBB00AD1475 /* AttributedTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66397F582D9BBFBB00AD1475 /* AttributedTextView.swift */; };
+
 		663A900F2D5F5E7C001FFE8C /* InstanceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */; };
 		664DEFBC2DE9DF57005A44BB /* HashtagAffinity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */; };
 		664DEFBD2DE9DF57005A44BB /* Interaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFBA2DE9DF57005A44BB /* Interaction.swift */; };
@@ -28,12 +28,14 @@
 		66A3F2B42D6891F700F86646 /* CustomDivider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A3F2B32D6891F700F86646 /* CustomDivider.swift */; };
 		66A3F2B82D68987E00F86646 /* AccountRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A3F2B72D68987E00F86646 /* AccountRow.swift */; };
 		66FA9EB62D35AF9700564B25 /* HTMLUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FA9EB32D35AF9600564B25 /* HTMLUtils.swift */; };
+		DEADBEEF0000000000000002 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEADBEEF0000000000000001 /* AppEnvironment.swift */; };
+		DEADBEEF0000000000000004 /* Post+Actions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEADBEEF0000000000000003 /* Post+Actions.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		66292ADE2D43CA9D00883170 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		66292AE22D43CACE00883170 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
-		66397F582D9BBFBB00AD1475 /* AttributedTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttributedTextView.swift; sourceTree = "<group>"; };
+
 		663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceModel.swift; sourceTree = "<group>"; };
 		664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagAffinity.swift; sourceTree = "<group>"; };
 		664DEFBA2DE9DF57005A44BB /* Interaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Interaction.swift; sourceTree = "<group>"; };
@@ -52,6 +54,8 @@
 		66A3F2B32D6891F700F86646 /* CustomDivider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomDivider.swift; sourceTree = "<group>"; };
 		66A3F2B72D68987E00F86646 /* AccountRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRow.swift; sourceTree = "<group>"; };
 		66FA9EB32D35AF9600564B25 /* HTMLUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTMLUtils.swift; sourceTree = "<group>"; };
+		DEADBEEF0000000000000001 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
+		DEADBEEF0000000000000003 /* Post+Actions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Post+Actions.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -139,6 +143,8 @@
 		6687C37D2C95B147000ECC5D /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				DEADBEEF0000000000000001 /* AppEnvironment.swift */,
+				DEADBEEF0000000000000003 /* Post+Actions.swift */,
 				664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */,
 				664DEFBA2DE9DF57005A44BB /* Interaction.swift */,
 				664DEFBB2DE9DF57005A44BB /* UserAffinity.swift */,
@@ -164,7 +170,7 @@
 				66A3F2AF2D6890B300F86646 /* WebView.swift */,
 				66A3F2B32D6891F700F86646 /* CustomDivider.swift */,
 				66A3F2B72D68987E00F86646 /* AccountRow.swift */,
-				66397F582D9BBFBB00AD1475 /* AttributedTextView.swift */,
+
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -253,11 +259,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DEADBEEF0000000000000004 /* Post+Actions.swift in Sources */,
+				DEADBEEF0000000000000002 /* AppEnvironment.swift in Sources */,
 				664DEFBC2DE9DF57005A44BB /* HashtagAffinity.swift in Sources */,
 				664DEFBD2DE9DF57005A44BB /* Interaction.swift in Sources */,
 				664DEFBE2DE9DF57005A44BB /* UserAffinity.swift in Sources */,
 				66292ADF2D43CA9D00883170 /* User.swift in Sources */,
-				66397F592D9BBFBB00AD1475 /* AttributedTextView.swift in Sources */,
+
 				66A3F2B22D6890D700F86646 /* UtilityComponents.swift in Sources */,
 				66A3F2AC2D68903100F86646 /* BasicComponents.swift in Sources */,
 				66A3F2B02D6890B300F86646 /* WebView.swift in Sources */,

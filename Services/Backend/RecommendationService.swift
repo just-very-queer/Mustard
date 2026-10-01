@@ -8,6 +8,7 @@
 import Foundation
 import SwiftData
 import OSLog // For logging
+import Observation
 
 // FIX: Define the custom global actor
 @globalActor
@@ -16,7 +17,9 @@ actor BackgroundActor {
 }
 
 // Removed @MainActor from class declaration as methods are now explicitly annotated
-class RecommendationService: ObservableObject {
+@MainActor
+@Observable
+class RecommendationService {
     static let shared = RecommendationService()
 
     internal var modelContext: ModelContext?
@@ -177,10 +180,10 @@ class RecommendationService: ObservableObject {
 
             self.logger.debug("""
                 Interaction \(interaction.actionType.rawValue, privacy: .public) for post \(interaction.statusID ?? "N/A", privacy: .public) \
-                (age: \(ageInSeconds/86400, specifier: "%.1f") days). \
-                Base score (weight+pop): \(baseScore, specifier: "%.2f"), \
-                Decay mult: \(decayMultiplier, specifier: "%.2f"), \
-                Final score: \(currentScoreBoost, specifier: "%.2f")
+                (age: \(ageInSeconds/86400) days). \
+                Base score (weight+pop): \(baseScore), \
+                Decay mult: \(decayMultiplier), \
+                Final score: \(currentScoreBoost)
                 """)
 
             // Apply score to author affinity
@@ -368,7 +371,6 @@ class RecommendationService: ObservableObject {
         return score
     }
 
-    @BackgroundActor
     func getInteractionSummary(forDays days: Int) async throws -> [InteractionType: Int] {
         let context = try getContext() // Use existing method to get ModelContext
         logger.info("Calculating interaction summary for the last \(days) days on BackgroundActor...")

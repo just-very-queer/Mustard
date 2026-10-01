@@ -103,7 +103,7 @@ struct TimelineContentView: View {
     @Binding var selectedFilter: TimelineFilter
     @Binding var navigationPath: NavigationPath
 
-    @Environment(TimelineProvider.self) private var timelineProvider
+    @Environment(TimelineService.self) private var timelineProvider
     @Environment(PostActionService.self) private var postActionService
     @Environment(RecommendationService.self) private var recommendationService
     @Environment(AppEnvironment.self) private var appEnvironment
@@ -232,7 +232,7 @@ struct TimelineContentView: View {
         .navigationDestination(for: Post.self) { post in
              PostDetailView(post: post, showDetail: .constant(true))
         }
-        .alert(item: $timelineProvider.alertError) { error in
+        .alert(item: Bindable(timelineProvider).error) { error in
              Alert(title: Text("Error"), message: Text(error.message), dismissButton: .default(Text("OK")))
          }
          .overlay {

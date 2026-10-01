@@ -92,7 +92,7 @@ struct MustardApp: App {
                 trendingService: appServices.trendingService,
                 postActionService: appServices.postActionService,
                 profileService: appServices.profileService,
-                searchService: appServices.searchService,
+
                 cacheService: cacheService,
                 locationManager: locationManager,
                 recommendationService: RecommendationService.shared

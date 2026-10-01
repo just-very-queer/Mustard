@@ -23,7 +23,7 @@ struct SettingsView: View {
             List {
                 // Profile Section
                 Section(header: Text("Profile").font(.headline).padding(.top)) {
-                    if let user = authViewModel.currentUser {
+                    if let user = appEnvironment.currentUser {
                         NavigationLink(destination: ProfileView(user: user)) {
                             HStack {
                                 AvatarView(

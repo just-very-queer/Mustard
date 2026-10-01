@@ -1,4 +1,10 @@
 import SwiftUI
+import SwiftData
+
+enum AffinityType {
+    case user
+    case hashtag
+}
 
 struct RecommendationDashboardView: View {
     @State private var userAffinities: [UserAffinity] = []
@@ -196,7 +202,7 @@ struct RecommendationDashboardView_Previews: PreviewProvider {
         // Mock UserAffinity and HashtagAffinity for preview if needed
         // For now, just return the view with an empty ViewModel state
         RecommendationDashboardView()
-            .environmentObject(RecommendationDashboardViewModel()) // Example of injecting for preview
+            // .environmentObject(RecommendationDashboardViewModel()) // Missing
     }
 }
 

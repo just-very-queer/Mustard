@@ -158,7 +158,7 @@ public class MastodonAPIService: MastodonAPIServiceProtocol { // Conform to the 
     }
 
     // Added to conform to MastodonAPIServiceProtocol
-    public func fetchStatuses(by_ids ids: [String]) async throws -> [Post] {
+    func fetchStatuses(by_ids ids: [String]) async throws -> [Post] {
         if ids.isEmpty {
             logger.debug("fetchStatuses(by_ids:) called with empty IDs, returning empty array.")
             return []

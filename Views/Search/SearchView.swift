@@ -92,6 +92,7 @@ struct SearchView: View {
                 }
             }
         }
+        }
     }
 
     // MARK: - Search Bar Area
@@ -201,9 +202,6 @@ struct SearchView: View {
             ForEach(searchResults.statuses) { post in
                 PostView(
                     post: post,
-                    viewProfileAction: { user in
-                         navigationPath.append(user)
-                    },
                     interestScore: 0.0
                 )
                 .contentShape(Rectangle())
@@ -246,7 +244,6 @@ struct SearchView: View {
          ForEach(searchResults.statuses) { post in
              PostView(
                 post: post,
-                viewProfileAction: { user in navigationPath.append(user) },
                 interestScore: 0.0
              )
                  .contentShape(Rectangle())
@@ -327,7 +324,6 @@ struct SearchView: View {
          HashtagAnalyticsView(
              hashtag: tag.name,
              history: tag.history?.compactMap { TagHistory(day: $0.day, uses: $0.uses, accounts: $0.accounts) } ?? [],
-             selectedTimeRange: .constant(.day),
              showHashtagAnalytics: Binding(
                  get: { selectedHashtagForAnalytics != nil },
                  set: { if !$0 { selectedHashtagForAnalytics = nil } }

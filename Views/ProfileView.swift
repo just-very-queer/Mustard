@@ -74,15 +74,15 @@ struct ProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showFollowers) {
                  FollowersListView(userId: user.id, followers: $followers)
-                     .environmentObject(authViewModel)
+
             }
             .sheet(isPresented: $showFollowing) {
                  FollowingListView(userId: user.id, following: $following)
-                     .environmentObject(authViewModel)
+
             }
             .sheet(isPresented: $showEditProfile) {
                  EditProfileView(user: user, alertMessage: $alertMessage, showAlert: $showAlert)
-                     .environmentObject(authViewModel)
+
             }
             .task(id: user.id) {
                 triggerGlow()
@@ -116,6 +116,7 @@ struct ProfileView: View {
              }
         }
     }
+    }
 
     private func triggerGlow() {
         withAnimation {
@@ -127,7 +128,7 @@ struct ProfileView: View {
             }
         }
     }
-}
+
 
     func fetchFollowers(for accountId: String) async {
         // let profileService = ProfileService(mastodonAPIService: MastodonAPIService.shared) // REPLACED: Using Environment version
@@ -408,7 +409,7 @@ struct ProfileStatsView: View {
 struct ProfileActionsView: View {
     let user: User
     @Binding var showEditProfile: Bool
-    @EnvironmentObject var appEnvironment: AppEnvironment
+    @Environment(AppEnvironment.self) private var appEnvironment
      var body: some View {
          if appEnvironment.currentUser?.id == user.id {
              Button { showEditProfile.toggle() } label: {
