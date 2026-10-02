@@ -3,14 +3,16 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 24/01/25.
-//  UPDATED: Now uses MastodonAPIService and NetworkSessionManager
+//  UPDATED: Modernized with Observation (@Observable)
 //
 
 import Foundation
 import OSLog
+import Observation
 
 @MainActor
-final class CacheService: ObservableObject {
+@Observable
+final class CacheService {
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "CacheService")
     private let cacheDirectoryName = "titan.mustard.app.ao.datacache"
     private let fileManager = FileManager.default
@@ -19,6 +21,7 @@ final class CacheService: ObservableObject {
     private let jsonDecoder = NetworkSessionManager.shared.jsonDecoder
     private let mastodonAPIService: MastodonAPIService
 
+    @ObservationIgnored
     private lazy var cacheDirectoryURL: URL = {
         guard let directory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
             fatalError("Document directory not found")
@@ -28,8 +31,8 @@ final class CacheService: ObservableObject {
         return url
     }()
 
-    @Published var lastPrefetchDate: Date?
-    @Published var cacheSize: Int = 0
+    var lastPrefetchDate: Date?
+    var cacheSize: Int = 0
 
     // MARK: - Init
 

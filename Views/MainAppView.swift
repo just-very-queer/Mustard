@@ -3,7 +3,7 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 24/01/25.
-// (REVISED: Removed NetworkService dependency, aligned with MastodonAPIService)
+//
 
 import SwiftUI
 import OSLog
@@ -11,45 +11,13 @@ import SwiftData
 
 struct MainAppView: View {
     @Environment(AppEnvironment.self) private var appEnvironment
-    @EnvironmentObject var locationManager: LocationManager
-    @EnvironmentObject var cacheService: CacheService // Receives from environment
-
-    // Services (Passed from MustardApp - stored for ViewModel initialization)
-    let timelineService: TimelineService
-    let trendingService: TrendingService
-    let postActionService: PostActionService
-    let profileService: ProfileService
-    let recommendationService: RecommendationService // Added to store the passed instance
-
-    // State Objects (Initialized here, single source of truth for these ViewModels within MainAppView scope)
-    @State private var timelineProvider: TimelineProvider
-
-    // Initializer to receive services and create ViewModels
-    init(
-        timelineService: TimelineService,
-        trendingService: TrendingService,
-        postActionService: PostActionService,
-        profileService: ProfileService,
-        cacheService: CacheService,
-        locationManager: LocationManager,
-        recommendationService: RecommendationService // Added parameter
-    ) {
-        self.timelineService = timelineService
-        self.trendingService = trendingService
-        self.postActionService = postActionService
-        self.profileService = profileService
-        self.recommendationService = recommendationService // Store the instance
-
-        // Initialize the ViewModels and Providers
-        _timelineProvider = State(
-            wrappedValue: TimelineProvider(
-                timelineService: timelineService,
-                trendingService: trendingService,
-                recommendationService: recommendationService,
-                mastodonAPIService: MastodonAPIService.shared
-            )
-        )
-    }
+    @Environment(LocationManager.self) private var locationManager
+    @Environment(CacheService.self) private var cacheService
+    @Environment(TimelineService.self) private var timelineService
+    @Environment(TrendingService.self) private var trendingService
+    @Environment(PostActionService.self) private var postActionService
+    @Environment(ProfileService.self) private var profileService
+    @Environment(RecommendationService.self) private var recommendationService
 
     var body: some View {
         TabView {
@@ -88,16 +56,5 @@ struct MainAppView: View {
                 Label("Settings", systemImage: "gearshape")
             }
         }
-        // Inject ViewModels and other objects into the environment for descendant views
-        // Note: AppEnvironment is already injected in MustardApp, so checking strictly might be redundant here if MainAppView is child, 
-        // but if we need to pass it down further explicitly, we would.
-        // Usually AppEnvironment from MustardApp flows down.
-        .environmentObject(locationManager)
-        .environmentObject(cacheService)
-        .environment(postActionService)
-        .environment(recommendationService)
-        .environment(timelineService)
-        .environment(profileService)
-        .environment(timelineProvider)
     }
 }

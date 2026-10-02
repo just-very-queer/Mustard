@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		66292ADF2D43CA9D00883170 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66292ADE2D43CA9D00883170 /* User.swift */; };
 		66292AE32D43CACE00883170 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66292AE22D43CACE00883170 /* Config.swift */; };
-
 		663A900F2D5F5E7C001FFE8C /* InstanceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */; };
 		664DEFBC2DE9DF57005A44BB /* HashtagAffinity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */; };
 		664DEFBD2DE9DF57005A44BB /* Interaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664DEFBA2DE9DF57005A44BB /* Interaction.swift */; };
@@ -35,7 +34,6 @@
 /* Begin PBXFileReference section */
 		66292ADE2D43CA9D00883170 /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		66292AE22D43CACE00883170 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
-
 		663A900E2D5F5E7C001FFE8C /* InstanceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstanceModel.swift; sourceTree = "<group>"; };
 		664DEFB92DE9DF57005A44BB /* HashtagAffinity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HashtagAffinity.swift; sourceTree = "<group>"; };
 		664DEFBA2DE9DF57005A44BB /* Interaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Interaction.swift; sourceTree = "<group>"; };
@@ -170,7 +168,6 @@
 				66A3F2AF2D6890B300F86646 /* WebView.swift */,
 				66A3F2B32D6891F700F86646 /* CustomDivider.swift */,
 				66A3F2B72D68987E00F86646 /* AccountRow.swift */,
-
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -265,7 +262,6 @@
 				664DEFBD2DE9DF57005A44BB /* Interaction.swift in Sources */,
 				664DEFBE2DE9DF57005A44BB /* UserAffinity.swift in Sources */,
 				66292ADF2D43CA9D00883170 /* User.swift in Sources */,
-
 				66A3F2B22D6890D700F86646 /* UtilityComponents.swift in Sources */,
 				66A3F2AC2D68903100F86646 /* BasicComponents.swift in Sources */,
 				66A3F2B02D6890B300F86646 /* WebView.swift in Sources */,

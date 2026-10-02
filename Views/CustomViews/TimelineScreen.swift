@@ -3,7 +3,7 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 07/02/25.
-// (FIXED: Always fetch data on appear)
+//
 
 import SwiftUI
 
@@ -11,7 +11,7 @@ struct TimelineScreen: View {
     @State private var navigationPath = NavigationPath()
     @State private var selectedFilter: TimelineFilter = .recommended
     
-    @Environment(TimelineProvider.self) private var timelineProvider
+    @Environment(TimelineService.self) private var timelineService
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -24,9 +24,9 @@ struct TimelineScreen: View {
                 ProfileView(user: user)
             }
         }
-        .onAppear {
-            Task {
-                await timelineProvider.initializeTimelineData(for: selectedFilter)
+        .task {
+            if timelineService.posts.isEmpty {
+                await timelineService.initializeTimelineData(for: selectedFilter)
             }
         }
     }

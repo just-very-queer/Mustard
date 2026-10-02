@@ -6,9 +6,7 @@
 //  Copyright © 2024 Mustard. All rights reserved.
 //
 
-// Change the conditional compilation from canImport(UIKit) to os(iOS)
-// to be more specific about the platform for this app entry point.
-#if os(iOS) // Changed from canImport(UIKit)
+#if os(iOS)
 
 import SwiftUI
 import SwiftData
@@ -18,21 +16,17 @@ import UIKit
 @main
 struct MustardApp: App {
     
-    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    // MARK: - Shared Instances & Managers
-    static let mastodonAPIServiceInstance = MastodonAPIService() // single instance
+    // MARK: - Shared Network & Environment
+    static let mastodonAPIServiceInstance = MastodonAPIService()
     
-    @StateObject private var cacheService: CacheService
     @State private var appEnvironment = AppEnvironment()
-    @StateObject private var locationManager: LocationManager
+    @State private var cacheService = CacheService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)
+    @State private var locationManager = LocationManager()
+    @State private var appServices: AppServices
     
     // MARK: - SwiftData Container
     static var sharedModelContainer: ModelContainer!
     private let container: ModelContainer
-    
-    // MARK: - Service Environment
-    @StateObject private var appServices: AppServices
 
     // MARK: - Initialization
     init() {
@@ -49,31 +43,19 @@ struct MustardApp: App {
             MustardApp.sharedModelContainer = newContainer
             
             RecommendationService.shared.configure(modelContext: ModelContext(newContainer))
-            
             print("[MustardApp] ModelContainer and RecommendationService configured.")
         } catch {
             fatalError("Failed to initialize ModelContainer: \(error)")
         }
 
-        // 2. Create LocationManager instance locally
-        let locManager = LocationManager()
-        _locationManager = StateObject(wrappedValue: locManager)
-        
-        // 3. Initialize CacheService
-        let initialCache = CacheService(mastodonAPIService: MustardApp.mastodonAPIServiceInstance)
-        _cacheService = StateObject(wrappedValue: initialCache)
-
-        // 4. Initialize AppServices
+        // 2. Initialize AppServices
         let services = AppServices(
             mastodonAPIService: MustardApp.mastodonAPIServiceInstance,
-            cacheService: initialCache,
-            locationManager: locManager,
             recommendationService: RecommendationService.shared
         )
-        _appServices = StateObject(wrappedValue: services)
+        _appServices = State(wrappedValue: services)
 
-        print("[MustardApp] init() completed. AppServices & CacheService ready.")
-        Logger(subsystem: "titan.mustard.app", category: "App").info("AppServices initialized.")
+        print("[MustardApp] init() completed. AppServices ready.")
     }
 
     // Extract view builder into a computed property
@@ -84,22 +66,8 @@ struct MustardApp: App {
             ProgressView("Loading...")
         case .unauthenticated, .authenticating:
             LoginView()
-                .environment(appEnvironment)
-                .environmentObject(locationManager)
         case .authenticated:
-            MainAppView(
-                timelineService: appServices.timelineService,
-                trendingService: appServices.trendingService,
-                postActionService: appServices.postActionService,
-                profileService: appServices.profileService,
-
-                cacheService: cacheService,
-                locationManager: locationManager,
-                recommendationService: RecommendationService.shared
-            )
-            .environment(appEnvironment)
-            .environmentObject(locationManager)
-            .environmentObject(cacheService)
+            MainAppView()
         }
     }
 
@@ -109,24 +77,17 @@ struct MustardApp: App {
                 contentView
             }
             .modelContainer(container)
+            .environment(appEnvironment)
+            .environment(locationManager)
+            .environment(cacheService)
+            .environment(appServices.timelineService)
+            .environment(appServices.trendingService)
+            .environment(appServices.postActionService)
+            .environment(appServices.profileService)
+            .environment(appServices.searchService)
+            .environment(appServices.recommendationService)
         }
     }
 }
 
-// MARK: - AppDelegate
-class AppDelegate: NSObject, UIApplicationDelegate {
-    private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AppDelegate")
-    
-    func application(_ app: UIApplication,
-                     open url: URL,
-                     options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        logger.info("Received OAuth callback URL: \(url.absoluteString, privacy: .public)")
-        NotificationCenter.default.post(
-            name: .didReceiveOAuthCallback,
-            object: nil,
-            userInfo: ["url": url]
-        )
-        return true
-    }
-}
-#endif // os(iOS)
+#endif

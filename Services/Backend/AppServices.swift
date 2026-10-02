@@ -3,13 +3,15 @@
 //  Mustard
 //
 //  Created by VAIBHAV SRIVASTAVA on 04/04/25.
-//  (REVISED: Updated to use MastodonAPIService and ensure correct dependency injection)
+//  (REVISED: Modernized to @Observable and clean dependencies)
 
 import Foundation
 import OSLog
+import Observation
 
 @MainActor
-class AppServices: ObservableObject {
+@Observable
+class AppServices {
     // MARK: - Services
     let mastodonAPIService: MastodonAPIService
     let timelineService: TimelineService
@@ -17,37 +19,31 @@ class AppServices: ObservableObject {
     let postActionService: PostActionService
     let profileService: ProfileService
     let searchService: SearchService
-    let recommendationService: RecommendationService // Added service
+    let recommendationService: RecommendationService
 
     private let logger = Logger(subsystem: "titan.mustard.app.ao", category: "AppServices")
 
     // MARK: - Initialization
     init(
         mastodonAPIService: MastodonAPIService,
-        cacheService: CacheService,
-        locationManager: LocationManager,
-        recommendationService: RecommendationService // Added to initializer
+        recommendationService: RecommendationService
     ) {
         self.logger.info("Initializing AppServices...")
         self.mastodonAPIService = mastodonAPIService
-        self.recommendationService = recommendationService // Store the service
+        self.recommendationService = recommendationService
 
-        // Initialize other services that depend on mastodonAPIService, cache, location, etc.
         let postActionService = PostActionService(mastodonAPIService: mastodonAPIService)
         let profileService = ProfileService(mastodonAPIService: mastodonAPIService)
         let searchService = SearchService(mastodonAPIService: mastodonAPIService)
-        let trendingService = TrendingService(mastodonAPIService: mastodonAPIService, cacheService: cacheService)
+        let trendingService = TrendingService(mastodonAPIService: mastodonAPIService)
 
-        // TimelineService depends on other services but NOT directly on recommendationService
         let timelineService = TimelineService(
             mastodonAPIService: mastodonAPIService,
-            cacheService: cacheService,
             postActionService: postActionService,
-            locationManager: locationManager,
-            trendingService: trendingService
+            trendingService: trendingService,
+            recommendationService: recommendationService
         )
 
-        // Assign to properties
         self.postActionService = postActionService
         self.profileService = profileService
         self.searchService = searchService

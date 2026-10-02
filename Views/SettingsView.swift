@@ -10,8 +10,8 @@ import UserNotifications
 
 struct SettingsView: View {
     @Environment(AppEnvironment.self) private var appEnvironment
-    @EnvironmentObject var locationManager: LocationManager // Make sure LocationManager is available
-    @EnvironmentObject var cacheService: CacheService
+    @Environment(LocationManager.self) private var locationManager
+    @Environment(CacheService.self) private var cacheService
     @State private var isShowingLogoutAlert = false
     @State private var selectedCacheSize: Int = 100 // Default cache size
     @AppStorage("isDarkMode") private var isDarkMode = false // Dark mode setting
@@ -80,7 +80,6 @@ struct SettingsView: View {
                         Task {
                             isCachingPosts = true
                             await cacheService.prefetchPosts(count: selectedCacheSize, forKey: "offline_posts", progress: { progress in
-                                // Update the progress here
                                 cacheProgress = progress
                             })
                             isCachingPosts = false
@@ -139,7 +138,5 @@ struct SettingsView: View {
                 )
             }
         }
-        .preferredColorScheme(isDarkMode ? .dark : .light) // Corrected Dark Mode toggle
     }
 }
-

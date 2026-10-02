@@ -6,12 +6,13 @@
 //
 
 import Foundation
-import Combine
+import Observation
 import os
 
 /// Service responsible for handling search-related operations.
 @MainActor
-final class SearchService: ObservableObject {
+@Observable
+final class SearchService {
     private let mastodonAPIService: MastodonAPIService
     private let logger = Logger(subsystem: "com.mustard.Mustard", category: "SearchService")
 
